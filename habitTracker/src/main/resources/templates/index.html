@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit Tracker</title>
+    <link rel="stylesheet" th:href="@{/inputView/style.css}">
+</head>
+<body>
+    <div class="container">
+        <h1 class="date-header">
+            TODAY
+            <span class="date-tooltip" th:text="${#temporals.format(structure.date, 'EEEE, MMMM d, yyyy')}">Thursday, April 8, 2025</span>
+        </h1>
+
+        <ul class="habit-list">
+            <li class="habit-item" th:each="habit : ${structure.habits}">
+                <input type="checkbox" class="habit-checkbox" 
+                       th:id="'habit-' + ${habit.key}" 
+                       th:checked="${habit.value}"
+                       th:data-habit="${habit.key}"
+                       onchange="updateHabitStatus(this)">
+                <span class="habit-name" th:text="${habit.key}">Habit Name</span>
+            </li>
+        </ul>
+    </div>
+
+    <script th:src="@{/inputView/input.js}"></script>
+
+</body>
+</html>
