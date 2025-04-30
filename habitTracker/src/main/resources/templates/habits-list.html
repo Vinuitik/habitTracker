@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Habits</title>
+    <link rel="stylesheet" th:href="@{/listView/habits-list.css}">
+    <!-- Font Awesome for the three dots icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1 class="date-header">
+            My Habits
+            <span class="date-tooltip">Manage your habits here</span>
+        </h1>
+
+        <ul class="habits-list">
+            <li class="habit-item" th:each="habit : ${habits}">
+                <span class="habit-name" th:text="${habit.name}">Habit Name</span>
+                <div class="habit-actions">
+                    <div class="dropdown">
+                        <button class="dropdown-btn">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <div class="dropdown-content">
+                            <a href="#" th:href="@{/habits/edit/{name}(name=${habit.name})}">Edit</a>
+                            <a href="#" th:href="@{/habits/info/{name}(name=${habit.name})}">Info</a>
+                            <a href="#" class="delete-btn" th:data-habit="${habit.name}">Delete</a>
+                        </div>
+                    </div>
+                </div>
+            </li>
+        </ul>
+    </div>
+
+    <script th:src="@{/listView/habits-list.js}"></script>
+</body>
+</html>

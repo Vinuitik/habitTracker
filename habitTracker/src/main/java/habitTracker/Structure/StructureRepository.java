@@ -9,7 +9,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface StructureRepository extends MongoRepository<Structure, LocalDate> {
-    Optional<Structure> findFirstByOrderByDateDesc();
+    
 }
 
 

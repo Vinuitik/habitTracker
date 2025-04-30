@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Create New Habit</title>
+  <link rel="stylesheet" href="new-habit.css"/>
+</head>
+<body>
+
+  <h1 class="date-header">
+    Create a New Habit
+    <span class="date-tooltip">Add something to track daily!</span>
+  </h1>
+
+  <form class="habit-form" action="/new-habit" method="post">
+    <div class="form-group">
+      <label for="name">Habit Name</label>
+      <input type="text" id="name" name="name" class="habit-input" placeholder="Enter your new habit..." required />
+    </div>
+    
+    <div class="form-group">
+      <label for="frequency">Frequency</label>
+      <select id="frequency" name="frequency" class="habit-input" required>
+        <option value="">Select frequency</option>
+        <option value="1">Daily</option>
+        <option value="7">Weekly</option>
+        <option value="30">Monthly</option>
+        <option value="CUSTOM">Custom</option>
+      </select>
+    </div>
+    
+    <div id="custom-frequency-container" class="form-group" style="display: none;">
+      <label for="customFrequency">Custom Frequency</label>
+      <input type="text" id="customFrequency" class="habit-input" placeholder="E.g. Every 3 days, Twice a week" />
+      <small class="form-text">This will be added to your frequency field</small>
+    </div>
+    
+    <div class="form-group">
+      <label for="startDate">Start Date</label>
+      <input type="date" id="startDate" name="startDate" class="habit-input" required />
+    </div>
+    
+    <div class="form-group">
+      <label for="endDate">End Date (Optional)</label>
+      <input type="date" id="endDate" name="endDate" class="habit-input" />
+    </div>
+    
+    <button type="submit" class="habit-button">Add Habit</button>
+  </form>
+
+  <script src = "new-habit.js" ></script>
+
+</body>
+</html>

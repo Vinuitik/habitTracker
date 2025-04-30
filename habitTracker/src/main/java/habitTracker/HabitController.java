@@ -4,10 +4,13 @@ package habitTracker;
 import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,7 +32,7 @@ public class HabitController {
 
     @GetMapping({"/","/habit"})
     public String getMethodName(Model model) {
-        Structure structure = structureService.getLatestStructure();
+        Structure structure = structureService.getTodayStructure();
         model.addAttribute("structure", structure); 
         return "index";
     }
@@ -42,6 +45,32 @@ public class HabitController {
         boolean status = habitDTO.isStatus();
 
         return "index";
+    }
+
+    @PostMapping("/new-habit")
+    public String processHabitForm(@ModelAttribute Habit habit, BindingResult result, Model model) {
+        if (result.hasErrors()) {
+            model.addAttribute("habit", habit);
+            return "addHabitView/new-habit"; // Return to form with validation errors
+        }
+        habit.setCurDate(habit.getStartDate());
+        habitService.saveHabit(habit);
+        return "redirect:/habit";
+    }
+
+    @PostMapping("/habits/custom-add")
+    @ResponseBody
+    public String addHabitCustom(@RequestBody Habit habit) {
+        habit.setCurDate(habit.getStartDate());
+        habitService.saveHabit(habit);
+        return "Habit added successfully";
+    }
+
+    @GetMapping("/habits/list")
+    public String listHabits(Model model) {
+        List<Habit> habits = habitService.getAllHabits();
+        model.addAttribute("habits", habits);
+        return "habits-list";  // This will look for habits-list.html in templates folder
     }
     
 }
