@@ -1,40 +1,47 @@
 package habitTracker;
 
-
-import lombok.RequiredArgsConstructor;
-
-import java.time.LocalDate;
-import java.util.List;
-
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+
+import java.time.LocalDate;
+
+import org.springframework.http.HttpStatus;
 
 import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitDTO;
 import habitTracker.Habit.HabitService;
-import habitTracker.Structure.Structure;
-import habitTracker.Structure.StructureService;
-
+import lombok.RequiredArgsConstructor;
 
 @Controller
 @RequiredArgsConstructor
-public class HabitController {
-
+public class HabitWriteController {
+    
     private final HabitService habitService;
-    private final StructureService structureService;
 
-    @GetMapping({"/","/habit"})
-    public String getMethodName(Model model) {
-        Structure structure = structureService.getTodayStructure();
-        model.addAttribute("structure", structure); 
-        return "index";
+    @DeleteMapping("/habits/delete/{name}")
+    @ResponseBody
+    @Transactional
+    public ResponseEntity<Void> deleteHabit(@PathVariable String name) {
+        try {
+            habitService.deleteHabit(name);
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException e) {
+            // Habit not found
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            // Unexpected error
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     @PostMapping({"/habits/update"})
@@ -66,11 +73,15 @@ public class HabitController {
         return "Habit added successfully";
     }
 
-    @GetMapping("/habits/list")
-    public String listHabits(Model model) {
-        List<Habit> habits = habitService.getAllHabits();
-        model.addAttribute("habits", habits);
-        return "habits-list";  // This will look for habits-list.html in templates folder
+    @PostMapping("/habits/edit/{name}")
+    public String updateHabit(@PathVariable String name, 
+                            @ModelAttribute Habit updatedHabit,
+                            BindingResult result) {
+        if (result.hasErrors()) {
+            return "edit-habit";
+        }
+        
+        habitService.updateHabit(name, updatedHabit);
+        return "redirect:/habits/list";
     }
-    
 }

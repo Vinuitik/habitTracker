@@ -31,7 +31,20 @@ document.addEventListener('DOMContentLoaded', function() {
             e.stopPropagation();
             const habitName = btn.getAttribute('data-habit');
             if (confirm(`Are you sure you want to delete "${habitName}"?`)) {
-                console.log(`Deleting habit: ${habitName}`);
+                fetch(`/habits/delete/${habitName}`, {
+                    method: 'DELETE',
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    // Remove the habit item from the DOM
+                    btn.closest('.habit-item').remove();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to delete habit');
+                });
             }
         });
     });

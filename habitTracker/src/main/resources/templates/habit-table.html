@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Habit Table View</title>
+    <link rel="stylesheet" th:href="@{/tableView/habit-table.css}">
+</head>
+<body>
+    <div class="container">
+        <h1 class="table-header">
+            Habit Overview
+            <span class="date-range" th:text="${startDate + ' - ' + endDate}">Date Range</span>
+        </h1>
+
+        <div class="table-container">
+            <table class="habit-table">
+                <thead>
+                    <tr>
+                        <th class="date-column">Date</th>
+                        <th th:each="habit : ${habitNames}" th:text="${habit}">Habit Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="entry : ${tableData}">
+                        <td class="date-cell" th:text="${entry.date}">2025-04-30</td>
+                        <td th:each="habit : ${habitNames}" class="habit-cell">
+                            <input type="checkbox" 
+                                   th:checked="${entry.habitStatuses[habit]}"
+                                   th:data-date="${entry.date}"
+                                   th:data-habit="${habit}"
+                                   onchange="updateHabitStatus(this)">
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script th:src="@{/tableView/habit-table.js}"></script>
+</body>
+</html>

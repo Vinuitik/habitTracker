@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Edit Habit</title>
+    <link rel="stylesheet" th:href="@{/editView/edit-habit.css}"/>
+</head>
+<body>
+    <h1 class="date-header">
+        Edit Habit
+        <span class="date-tooltip">Modify your habit details</span>
+    </h1>
+
+    <form class="habit-form" th:action="@{/habits/edit/{name}(name=${habit.name})}" method="post">
+        <div class="form-group">
+            <label for="name">Habit Name</label>
+            <input type="text" id="name" name="name" class="habit-input" 
+                   th:value="${habit.name}" required readonly />
+        </div>
+        
+        <div class="form-group">
+            <label for="frequency">Frequency</label>
+            <select id="frequency" name="frequency" class="habit-input" required>
+                <option value="">Select frequency</option>
+                <option value="1" th:selected="${habit.frequency == 1}">Daily</option>
+                <option value="7" th:selected="${habit.frequency == 7}">Weekly</option>
+                <option value="30" th:selected="${habit.frequency == 30}">Monthly</option>
+                <option value="CUSTOM">Custom</option>
+            </select>
+        </div>
+        
+        <div id="custom-frequency-container" class="form-group" style="display: none;">
+            <label for="customFrequency">Custom Frequency</label>
+            <input type="text" id="customFrequency" class="habit-input" 
+                   placeholder="E.g. Every 3 days, Twice a week" />
+            <small class="form-text">This will be added to your frequency field</small>
+        </div>
+        
+        <button type="submit" class="habit-button">Update Habit</button>
+    </form>
+
+    <script th:src="@{/editView/edit-habit.js}"></script>
+</body>
+</html>
