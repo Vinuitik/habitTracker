@@ -21,6 +21,4 @@ public class Structure {
 
     @Id
     private LocalDate date;
-
-    private Map<String, Boolean> habits;
 }

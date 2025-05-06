@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  mongodbHabit:
+    image: mongo:latest
+    container_name: mongodbHabit
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_DATABASE: habits
+    restart: unless-stopped
+
+  javaapp:
+    build:
+      context: ./habitTracker
+      dockerfile: Dockerfile
+    container_name: javaapp
+    ports:
+      - "8089:8089"
+    depends_on:
+      - mongodbHabit
+    environment:
+      MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
+    restart: unless-stopped
+
+  updater:
+    build:
+      context: ./updater
+      dockerfile: Dockerfile
+    container_name: updater
+    ports:
+      - "8087:8087" # Map port 8087
+    depends_on:
+      - mongodbHabit
+    environment:
+      TZ: ${HOST_TIMEZONE:-UTC}
+      MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
+    restart: unless-stopped
+volumes:
+  mongodb_data:

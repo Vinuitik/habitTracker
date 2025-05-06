@@ -21,8 +21,9 @@ import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitDTO;
 import habitTracker.Habit.HabitService;
 import habitTracker.Structure.Structure;
+import habitTracker.Structure.StructureDTO;
 import habitTracker.Structure.StructureService;
-import habitTracker.Structure.TableViewDTO;
+import habitTracker.util.Pair;
 
 
 @Controller
@@ -34,16 +35,20 @@ public class HabitReadController {
 
     @GetMapping({"/","/habit"})
     public String getMethodName(Model model) {
-        Structure structure = structureService.getTodayStructure();
+        StructureDTO structure = structureService.getTodayStructure();
+        structure.getHabits().forEach((key, value) -> {
+            System.out.println("Habit: " + key + ", Details: " + value);
+        });
+        System.out.println("Structure: ");
         model.addAttribute("structure", structure); 
         return "index";
     }
 
     @GetMapping("/habits/list")
     public String listHabits(Model model) {
-        List<Habit> habits = habitService.getAllHabits();
+        List<HabitDTO> habits = habitService.getAllHabitsAsDTOs();
         model.addAttribute("habits", habits);
-        return "habits-list";  // This will look for habits-list.html in templates folder
+        return "habits-list"; // This will look for habits-list.html in templates folder
     }
     
     @GetMapping("/habits/table")
@@ -57,11 +62,15 @@ public class HabitReadController {
             endDate = LocalDate.now();
         }
         
-        List<String> habitNames = habitService.getAllUniqueHabitNames();
+        List<Pair<String,Integer> > habitNames = habitService.getAllUniqueHabitNamesIds();
 
-        List<TableViewDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate);
+        List<StructureDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate, habitNames);
+
+        for(StructureDTO structure : tableData) {
+            System.out.println("Structure: " + structure);
+        }
         
-        model.addAttribute("habitNames", habitNames);
+        model.addAttribute("habitNames", habitNames.stream().map(Pair::getKey).toList());
         model.addAttribute("tableData", tableData);
         model.addAttribute("startDate", startDate);
         model.addAttribute("endDate", endDate);
@@ -69,9 +78,12 @@ public class HabitReadController {
         return "habit-table";
     }
 
-    @GetMapping("/habits/edit/{name}")
-    public String showEditForm(@PathVariable String name, Model model) {
-        Habit habit = habitService.getHabitByName(name);
+    @GetMapping("/habits/edit/{id}")
+    public String showEditForm(@PathVariable Integer id, Model model) {
+        Habit habit = habitService.getHabitById(id);
+        if (habit == null) {
+            return "error-page"; // Replace with the name of your error page template
+        }
         model.addAttribute("habit", habit);
         return "edit-habit";
     }

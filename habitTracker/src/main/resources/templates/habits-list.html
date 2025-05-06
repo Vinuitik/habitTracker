@@ -24,9 +24,11 @@
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                         <div class="dropdown-content">
-                            <a href="#" th:href="@{/habits/edit/{name}(name=${habit.name})}">Edit</a>
-                            <a href="#" th:href="@{/habits/info/{name}(name=${habit.name})}">Info</a>
-                            <a href="#" class="delete-btn" th:data-habit="${habit.name}">Delete</a>
+                            <a href="#" th:href="@{/habits/edit/{id}(id=${habit.id})}">Edit</a>
+                            <a href="#" th:href="@{/habits/info/{id}(id=${habit.id})}">Info</a>
+                            <a href="#" class="delete-btn" 
+                               th:data-habit="${habit.name}" 
+                               th:data-habit-id="${habit.id}">Delete</a>
                         </div>
                     </div>
                 </div>

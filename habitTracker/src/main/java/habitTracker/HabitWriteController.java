@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitDTO;
 import habitTracker.Habit.HabitService;
+import habitTracker.Structure.StructureService;
 import lombok.RequiredArgsConstructor;
 
 @Controller
@@ -27,13 +29,14 @@ import lombok.RequiredArgsConstructor;
 public class HabitWriteController {
     
     private final HabitService habitService;
+    private final StructureService structureService;
 
-    @DeleteMapping("/habits/delete/{name}")
+    @DeleteMapping("/habits/delete/{id}")
     @ResponseBody
     @Transactional
-    public ResponseEntity<Void> deleteHabit(@PathVariable String name) {
+    public ResponseEntity<Void> deleteHabit(@PathVariable Integer id) {
         try {
-            habitService.deleteHabit(name);
+            habitService.deleteHabit(id);
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException e) {
             // Habit not found
@@ -44,16 +47,6 @@ public class HabitWriteController {
         }
     }
 
-    @PostMapping({"/habits/update"})
-    @ResponseBody
-    public String changeHabitStatus(@RequestBody HabitDTO habitDTO) {
-        LocalDate date = habitDTO.getDate();
-        String name = habitDTO.getName();
-        boolean status = habitDTO.isStatus();
-
-        return "index";
-    }
-
     @PostMapping("/new-habit")
     public String processHabitForm(@ModelAttribute Habit habit, BindingResult result, Model model) {
         if (result.hasErrors()) {
@@ -61,6 +54,7 @@ public class HabitWriteController {
             return "addHabitView/new-habit"; // Return to form with validation errors
         }
         habit.setCurDate(habit.getStartDate());
+        habit.setActive(true);
         habitService.saveHabit(habit);
         return "redirect:/habit";
     }
@@ -69,19 +63,29 @@ public class HabitWriteController {
     @ResponseBody
     public String addHabitCustom(@RequestBody Habit habit) {
         habit.setCurDate(habit.getStartDate());
+        habit.setActive(true);
         habitService.saveHabit(habit);
         return "Habit added successfully";
     }
 
-    @PostMapping("/habits/edit/{name}")
-    public String updateHabit(@PathVariable String name, 
-                            @ModelAttribute Habit updatedHabit,
-                            BindingResult result) {
+    @PostMapping("/habits/edit/{id}")
+    public String updateHabit(@PathVariable Integer id, 
+                              @ModelAttribute Habit updatedHabit,
+                              BindingResult result, Model model) {
         if (result.hasErrors()) {
-            return "edit-habit";
+            model.addAttribute("habit", updatedHabit);
+            return "editView/edit-habit"; // Return to the edit form with validation errors
         }
-        
-        habitService.updateHabit(name, updatedHabit);
-        return "redirect:/habits/list";
+
+        // Update the habit in the database
+        habitService.updateHabit(id, updatedHabit);
+        return "redirect:/habits/list"; // Redirect to the habits list after successful update
+    }
+    @PostMapping("/habits/update/{habitId}")
+    @ResponseBody
+    public ResponseEntity<String> updateHabit(@PathVariable Integer habitId, 
+                                              @RequestParam Boolean completed) {
+        structureService.updateHabitCompletion(habitId, completed);
+        return ResponseEntity.ok("Habit completion updated successfully");
     }
 }

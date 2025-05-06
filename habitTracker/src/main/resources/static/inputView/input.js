@@ -1,24 +1,24 @@
 function updateHabitStatus(checkbox) {
-    const name = checkbox.getAttribute('data-habit');
-    const checked = checkbox.checked;
-    
-    fetch('/habits/update', {
+    const habitId = checkbox.getAttribute('data-habit-id');
+    const completed = checkbox.checked;
+
+    // Create FormData or URLSearchParams object
+    const formData = new URLSearchParams();
+    formData.append('completed', completed);
+
+    fetch(`/habits/update/${habitId}`, {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded', // Change Content-Type
         },
-        body: JSON.stringify({
-            date: new Date().toISOString().split('T')[0],
-            name: name,
-            status: checked
-        })
+        body: formData // Send as form data
     })
     .then(response => {
         if (!response.ok) {
-            checkbox.checked = !checked; // Revert on error
-            throw new Error('Network response was not ok');
+            checkbox.checked = !completed;
+            throw new Error('Failed to update habit status');
         }
-        return response.json();
+        return response.text(); // Changed from json() since your endpoint returns a String
     })
     .then(data => console.log('Success:', data))
     .catch(error => {

@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         
         const formData = new FormData(this);
-        const habitName = document.getElementById('name').value;
 
         fetch(this.action, {
             method: 'POST',

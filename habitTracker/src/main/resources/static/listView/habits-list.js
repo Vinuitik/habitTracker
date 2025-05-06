@@ -29,9 +29,10 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const habitName = btn.getAttribute('data-habit');
+            const habitId = btn.getAttribute('data-habit-id'); // Use habit ID instead of name
+            const habitName = btn.getAttribute('data-habit'); // For confirmation message
             if (confirm(`Are you sure you want to delete "${habitName}"?`)) {
-                fetch(`/habits/delete/${habitName}`, {
+                fetch(`/habits/delete/${habitId}`, { // Send ID in the DELETE request
                     method: 'DELETE',
                 })
                 .then(response => {

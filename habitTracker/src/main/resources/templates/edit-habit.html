@@ -12,11 +12,11 @@
         <span class="date-tooltip">Modify your habit details</span>
     </h1>
 
-    <form class="habit-form" th:action="@{/habits/edit/{name}(name=${habit.name})}" method="post">
+    <form class="habit-form" th:action="@{/habits/edit/{id}(id=${habit.id})}" method="post">
         <div class="form-group">
             <label for="name">Habit Name</label>
             <input type="text" id="name" name="name" class="habit-input" 
-                   th:value="${habit.name}" required readonly />
+                   th:value="${habit.name}" required />
         </div>
         
         <div class="form-group">
@@ -35,6 +35,12 @@
             <input type="text" id="customFrequency" class="habit-input" 
                    placeholder="E.g. Every 3 days, Twice a week" />
             <small class="form-text">This will be added to your frequency field</small>
+        </div>
+
+        <div class="form-group">
+            <label for="endDate">End Date</label>
+            <input type="date" id="endDate" name="endDate" class="habit-input" 
+                   th:value="${habit.endDate}" />
         </div>
         
         <button type="submit" class="habit-button">Update Habit</button>

@@ -1,0 +1,7 @@
+updater\Updater.class
+updater\models\HabitStructure$HabitStructureBuilder.class
+updater\models\Habit$HabitBuilder.class
+updater\models\Habit.class
+updater\models\HabitStructure.class
+updater\HabitUpdater.class
+updater\models\LastRunDate.class

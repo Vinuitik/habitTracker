@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.bson.types.ObjectId;
 
 @Document(collection = "habits")
 @AllArgsConstructor
@@ -16,10 +17,13 @@ import lombok.NoArgsConstructor;
 @Builder
 public class Habit {
     @Id
+    private Integer id = new ObjectId().hashCode();
+
     private String name;
 
     private Integer frequency;
     private LocalDate startDate;
-    private LocalDate endDate;
     private LocalDate curDate;
+    private LocalDate endDate;
+    private Boolean active = true;
 }
