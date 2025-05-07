@@ -66,11 +66,8 @@ public class HabitReadController {
 
         List<StructureDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate, habitNames);
 
-        for(StructureDTO structure : tableData) {
-            System.out.println("Structure: " + structure);
-        }
         
-        model.addAttribute("habitNames", habitNames.stream().map(Pair::getKey).toList());
+        model.addAttribute("habitNames", habitNames);
         model.addAttribute("tableData", tableData);
         model.addAttribute("startDate", startDate);
         model.addAttribute("endDate", endDate);

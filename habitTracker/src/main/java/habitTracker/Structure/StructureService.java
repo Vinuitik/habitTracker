@@ -1,6 +1,8 @@
 package habitTracker.Structure;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -62,9 +64,11 @@ public class StructureService {
     @Transactional(readOnly = true)
     public List<StructureDTO> getStructuresForDateRange(LocalDate startDate, LocalDate endDate, List<Pair<String, Integer> > habitNames) {
 
-        // Convert startDate and endDate to UTC
-        startDate = startDate.atStartOfDay(java.time.Clock.systemUTC().getZone()).toLocalDate();
-        endDate = endDate.atStartOfDay(java.time.Clock.systemUTC().getZone()).toLocalDate();
+        // 1) Translate dates to UTC midnight
+        ZoneId localZone = ZoneId.systemDefault();
+
+        System.out.println("Local Zone: " + startDate);
+        System.out.println("Local Zone: " + endDate);
 
         // Step 1: Initialize the structure map for the date range
         Map<LocalDate, StructureDTO> structureMap = new HashMap<>();
@@ -76,7 +80,12 @@ public class StructureService {
         }
 
         // Step 2: Fetch all HabitStructures for the date range in one query
-        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDateBetween(startDate, endDate);
+        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDateBetween(startDate, endDate.plusDays(1)); ///boundary is not inclusive
+
+        for(HabitStructure habitStructure : habitStructures) {
+            System.out.println("Habit Structure: " + habitStructure);
+        }
+        System.out.println("Habit Structures Size: " + habitStructures.size());
 
 
         // Step 3: Collect all habit IDs to resolve their names in a single query
@@ -91,11 +100,8 @@ public class StructureService {
 
         // Step 5: Populate the structure map with HabitStructure data
         for (HabitStructure habitStructure : habitStructures) {
-
-            System.out.println("HabitStructure: " + habitStructure);
-
-            LocalDate date = habitStructure.getStructureDate();
-            StructureDTO structure = structureMap.get(date);
+            LocalDate storedDate = habitStructure.getStructureDate();
+            StructureDTO structure = structureMap.get(storedDate);
 
             String habitName = habitIdToNameMap.get(habitStructure.getHabitId());
             if (habitName != null) {

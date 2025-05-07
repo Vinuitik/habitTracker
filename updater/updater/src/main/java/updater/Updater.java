@@ -53,7 +53,7 @@ class HabitUpdater {
     // Schedule the updater to run every day at midnight
     @Scheduled(cron = "0 5 0 * * ?") // Cron expression for 12:00 AM daily
     public void updateHabits() {
-        LocalDate today = LocalDate.now(java.time.Clock.systemUTC());
+        LocalDate today = LocalDate.now();
 
         // Find the maximum date in the last_run_date collection
         // Updated to look for _id field instead of date field

@@ -17,18 +17,18 @@
                 <thead>
                     <tr>
                         <th class="date-column">Date</th>
-                        <th th:each="habit : ${habitNames}" th:text="${habit}">Habit Name</th>
+                        <th th:each="habit : ${habitNames}" th:text="${habit.getKey()}">Habit Name</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr th:each="entry : ${tableData}">
                         <td class="date-cell" th:text="${entry.date}">2025-04-30</td>
-                        <td th:each="habit, habitId : ${habitNames}" class="habit-cell">
+                        <td th:each="habit : ${habitNames}" class="habit-cell">
                             <input type="checkbox" 
-                                   th:checked="${entry.habits[new habitTracker.util.Pair(habit, habitId)]}"
+                                   th:checked="${entry.habits.get(habit)}"
                                    th:data-date="${entry.date}"
-                                   th:data-habit-name="${habit}"
-                                   th:data-habit-id="${habitId}"
+                                   th:data-habit-name="${habit.getKey()}"
+                                   th:data-habit-id="${habit.getValue()}"
                                    onchange="updateHabitStatus(this)">
                         </td>
                     </tr>
