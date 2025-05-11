@@ -1,0 +1,83 @@
+/* General body styling */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    line-height: 1.6;
+    color: #37352f;
+    background-color: #f9f9f9;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 40px 20px;
+}
+
+/* Header styling */
+.date-header {
+    font-size: 32px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #2eaadc;
+}
+
+/* Form container */
+.container {
+    background-color: #ffffff;
+    padding: 20px 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Form fields */
+.info-field {
+    margin-bottom: 20px;
+}
+
+.info-field label {
+    display: block;
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #333333;
+}
+
+.habit-input {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #e6e6e6;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+    transition: border-color 0.3s ease;
+}
+
+.habit-input:focus {
+    border-color: #2eaadc;
+    outline: none;
+    background-color: #ffffff;
+}
+
+/* Textarea styling */
+textarea.habit-input {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* Save button */
+.habit-add-button {
+    display: block;
+    width: 100%;
+    background-color: #2eaadc;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.habit-add-button:hover {
+    background-color: #1d8bb8;
+    transform: scale(1.05);
+}

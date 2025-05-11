@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Habit Info</title>
+    <link rel="stylesheet" th:href="@{/css/info.css}">
+    <link rel="stylesheet" th:href="@{/css/navigation.css}">
+</head>
+<body>
+    <nav th:fragment="navigation" class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/" class="nav-logo">HabitTracker</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1 class="date-header">Edit Habit Info</h1>
+
+        <form th:action="@{/habits/info/save}" method="post">
+            <div class="info-field">
+                <label for="habit-name">Habit Name:</label>
+                <input type="text" id="habit-name" name="name" class="habit-input" 
+                       th:value="${habit.name}" 
+                       th:data-id="${habit.id}">
+            </div>
+
+            <div class="info-field">
+                <label for="habit-description">Description:</label>
+                <textarea id="habit-description" name="description" class="habit-input" 
+                          th:text="${habit.description}"></textarea>
+            </div>
+
+            <div class="info-field">
+                <label for="two-minute-rule">2-Minute Rule:</label>
+                <textarea id="two-minute-rule" name="twoMinuteRule" class="habit-input" 
+                          th:text="${habit.twoMinuteRule}"></textarea>
+            </div>
+
+            <div class="info-field">
+                <label for="habit-status">Status:</label>
+                <select id="habit-status" name="status" class="habit-input">
+                    <option value="priority" th:selected="${habit.status == 'priority'}">Priority</option>
+                    <option value="maintaining" th:selected="${habit.status == 'maintaining'}">Maintaining</option>
+                    <option value="abandoned" th:selected="${habit.status == 'abandoned'}">Abandoned</option>
+                </select>
+            </div>
+
+            <div class="info-field">
+                <label for="habit-streak">Streak:</label>
+                <input type="number" id="habit-streak" name="streak" class="habit-input" 
+                       th:value="${habit.streak}">
+            </div>
+
+            <button type="submit" class="habit-add-button">Save</button>
+        </form>
+    </div>
+
+    <script th:src="@{/inputView/input.js}"></script>
+    <script th:src="@{/inputView/info.js}"></script>
+</body>
+</html>

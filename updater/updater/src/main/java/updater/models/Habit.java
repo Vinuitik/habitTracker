@@ -25,5 +25,6 @@ public class Habit {
     private LocalDate startDate;
     private LocalDate curDate;
     private LocalDate endDate;
-    private Boolean active = true;
+    private Boolean active;
+    private Integer streak;
 }

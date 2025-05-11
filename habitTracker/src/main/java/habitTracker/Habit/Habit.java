@@ -25,5 +25,10 @@ public class Habit {
     private LocalDate startDate;
     private LocalDate curDate;
     private LocalDate endDate;
-    private Boolean active = true;
+    private Boolean active;
+    private Integer streak = 0; // implement streaks
+    private Integer longestStreak = 0; // implement longest streaks
+    private String description;
+    private String status; // prioroty, maintaining, abandoned.
+    private String twoMinuteRule; // 2 minute rule
 }

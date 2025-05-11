@@ -118,4 +118,15 @@ public List<StructureDTO> getHabitTableData(
     return tableData;
 }
     
+    @GetMapping("/habits/info/{id}")
+    public String getHabitInfo(@PathVariable Integer id, Model model) {
+        Habit habit = habitService.getHabitById(id);
+        if (habit == null) {
+            return "error-page"; // Replace with the name of your error page template
+        }
+        model.addAttribute("habit", habit);
+        return "info"; // This will look for info.html in the templates folder
+    }
+
+    
 }

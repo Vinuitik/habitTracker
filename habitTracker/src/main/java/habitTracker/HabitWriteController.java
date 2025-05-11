@@ -89,4 +89,39 @@ public class HabitWriteController {
         structureService.updateHabitCompletion(habitId, completed, date);
         return ResponseEntity.ok("Habit completion updated successfully");
     }
+    @PostMapping("/habits/info/save")
+    @ResponseBody
+    public ResponseEntity<String> saveHabit(@RequestBody Habit habit) {
+        System.out.println("Received habit: " + habit);
+        System.out.println("Habit ID: " + habit.getId());
+        try {
+            Habit existingHabit = habitService.getHabitById(habit.getId());
+            
+            if (existingHabit != null) {
+                if (habit.getName() != null && !habit.getName().isEmpty()) {
+                    existingHabit.setName(habit.getName());
+                }
+                if (habit.getDescription() != null && !habit.getDescription().isEmpty()) {
+                    existingHabit.setDescription(habit.getDescription());
+                }
+                if (habit.getTwoMinuteRule() != null && !habit.getTwoMinuteRule().isEmpty()) {
+                    existingHabit.setTwoMinuteRule(habit.getTwoMinuteRule());
+                }
+                if (habit.getStatus() != null && !habit.getStatus().isEmpty()) {
+                    existingHabit.setStatus(habit.getStatus());
+                }
+                if (habit.getStreak() != null) {
+                    existingHabit.setStreak(habit.getStreak());
+                }
+                
+                habitService.saveHabit(existingHabit);
+                return ResponseEntity.ok("Habit saved successfully");
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Habit not found");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error saving habit");
+        }
+    }
+
 }
