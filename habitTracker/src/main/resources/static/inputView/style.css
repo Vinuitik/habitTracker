@@ -5,7 +5,7 @@ body {
     background-color: #ffffff;
     max-width: 900px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 80px 20px 20px 20px; /* Updated padding to account for fixed nav */
 }
 
 .date-header {
@@ -92,4 +92,33 @@ body {
 .habit-checkbox:checked + .habit-name {
     text-decoration: line-through;
     color: #b1b1b1;
+}
+
+.habit-add-button {
+    display: inline-block;
+    background-color: #2eaadc;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.habit-add-button:hover {
+    background-color: #1d8bb8;
+    transform: scale(1.05);
+}
+
+.habit-add-button a {
+    color: white;
+    text-decoration: none;
+}
+
+.habit-add-button a:hover {
+    text-decoration: underline;
 }

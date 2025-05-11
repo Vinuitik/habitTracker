@@ -1,10 +1,8 @@
 package habitTracker.Structure;
 
 import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -26,28 +24,30 @@ public class StructureService {
 
     @Transactional(readOnly = true)
     public StructureDTO getTodayStructure() {
-        // Convert today's date into UTC
-        LocalDate today = LocalDate.now(java.time.Clock.systemUTC());
+        LocalDate today = LocalDate.now();
+        return getStructureForDate(today);
+    }
 
-        // Step 1: Fetch all HabitStructures for today's date
-        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDate(today);
+    private StructureDTO getStructureForDate(LocalDate date) {
+        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDate(date);
+        Map<Integer, String> habitIdToNameMap = getHabitIdToNameMap(habitStructures);
+        return populateStructureDTO(date, habitStructures, habitIdToNameMap);
+    }
 
-        // Step 2: Collect all habit IDs to resolve their names in a single query
+    private Map<Integer, String> getHabitIdToNameMap(List<HabitStructure> habitStructures) {
         List<Integer> habitIds = habitStructures.stream()
             .map(HabitStructure::getHabitId)
             .distinct()
             .collect(Collectors.toList());
-        
 
-        // Step 3: Fetch all habits by their IDs in one query
         List<Habit> habits = habitService.getHabitsByIds(habitIds);
-        Map<Integer, String> habitIdToNameMap = habits.stream()
+        return habits.stream()
             .collect(Collectors.toMap(Habit::getId, Habit::getName));
+    }
 
-
-        // Step 4: Populate the StructureDTO with HabitStructure data
+    private StructureDTO populateStructureDTO(LocalDate date, List<HabitStructure> habitStructures, Map<Integer, String> habitIdToNameMap) {
         StructureDTO structure = new StructureDTO();
-        structure.setDate(today);
+        structure.setDate(date);
         structure.setHabits(new HashMap<>());
 
         for (HabitStructure habitStructure : habitStructures) {
@@ -62,15 +62,19 @@ public class StructureService {
     }
 
     @Transactional(readOnly = true)
-    public List<StructureDTO> getStructuresForDateRange(LocalDate startDate, LocalDate endDate, List<Pair<String, Integer> > habitNames) {
+    public List<StructureDTO> getStructuresForDateRange(LocalDate startDate, LocalDate endDate, List<Pair<String, Integer>> habitNames) {
+        Map<LocalDate, StructureDTO> structureMap = initializeStructureMap(startDate, endDate);
+        List<HabitStructure> habitStructures = fetchHabitStructures(startDate, endDate);
+        Map<Integer, String> habitIdToNameMap = getHabitIdToNameMap(habitStructures);
+        populateStructureMap(structureMap, habitStructures, habitIdToNameMap);
+        fillMissingHabits(structureMap, habitNames);
 
-        // 1) Translate dates to UTC midnight
-        ZoneId localZone = ZoneId.systemDefault();
+        return structureMap.values().stream()
+            .sorted((s1, s2) -> s1.getDate().compareTo(s2.getDate()))
+            .collect(Collectors.toList());
+    }
 
-        System.out.println("Local Zone: " + startDate);
-        System.out.println("Local Zone: " + endDate);
-
-        // Step 1: Initialize the structure map for the date range
+    private Map<LocalDate, StructureDTO> initializeStructureMap(LocalDate startDate, LocalDate endDate) {
         Map<LocalDate, StructureDTO> structureMap = new HashMap<>();
         for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
             StructureDTO structure = new StructureDTO();
@@ -78,27 +82,19 @@ public class StructureService {
             structure.setHabits(new HashMap<>());
             structureMap.put(date, structure);
         }
+        return structureMap;
+    }
 
-        // Step 2: Fetch all HabitStructures for the date range in one query
-        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDateBetween(startDate, endDate.plusDays(1)); ///boundary is not inclusive
-
+    private List<HabitStructure> fetchHabitStructures(LocalDate startDate, LocalDate endDate) {
+        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDateBetween(startDate.minusDays(1), endDate.plusDays(1));
         for(HabitStructure habitStructure : habitStructures) {
             System.out.println("Habit Structure: " + habitStructure);
         }
         System.out.println("Habit Structures Size: " + habitStructures.size());
+        return habitStructures;
+    }
 
-
-        // Step 3: Collect all habit IDs to resolve their names in a single query
-        List<Integer> habitIds = habitStructures.stream()
-            .map(HabitStructure::getHabitId)
-            .distinct()
-            .collect(Collectors.toList());
-
-        // Step 4: Fetch all habits by their IDs in one query
-        Map<Integer, String> habitIdToNameMap = habitService.getHabitsByIds(habitIds).stream()
-            .collect(Collectors.toMap(Habit::getId, Habit::getName));
-
-        // Step 5: Populate the structure map with HabitStructure data
+    private void populateStructureMap(Map<LocalDate, StructureDTO> structureMap, List<HabitStructure> habitStructures, Map<Integer, String> habitIdToNameMap) {
         for (HabitStructure habitStructure : habitStructures) {
             LocalDate storedDate = habitStructure.getStructureDate();
             StructureDTO structure = structureMap.get(storedDate);
@@ -110,24 +106,51 @@ public class StructureService {
             }
         }
 
-        for(StructureDTO dto : structureMap.values()){
-            for(Pair<String, Integer> habitName : habitNames) {
+        // Sort the habits in each StructureDTO by habit ID
+        for (StructureDTO structure : structureMap.values()) {
+            structure.setHabits(structure.getHabits().entrySet().stream()
+                .sorted((entry1, entry2) -> Integer.compare(entry1.getKey().getValue(), entry2.getKey().getValue())) // Sort by habit ID
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    Map.Entry::getValue,
+                    (e1, e2) -> e1,
+                    LinkedHashMap::new // Maintain sorted order
+                )));
+        }
+    }
+
+    private void fillMissingHabits(Map<LocalDate, StructureDTO> structureMap, List<Pair<String, Integer>> habitNames) {
+        for (StructureDTO dto : structureMap.values()) {
+            for (Pair<String, Integer> habitName : habitNames) {
                 if (!dto.getHabits().containsKey(habitName)) {
                     dto.getHabits().put(habitName, false); // Default to false if not present
                 }
             }
-        }
 
-        // Step 6: Return the list of StructureDTOs
-        return structureMap.values().stream()
-            .sorted((s1, s2) -> s1.getDate().compareTo(s2.getDate()))
-            .collect(Collectors.toList());
+            // Sort the habits after adding missing ones
+            dto.setHabits(dto.getHabits().entrySet().stream()
+                .sorted((entry1, entry2) -> Integer.compare(entry1.getKey().getValue(), entry2.getKey().getValue())) // Sort by habit ID
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    Map.Entry::getValue,
+                    (e1, e2) -> e1,
+                    LinkedHashMap::new // Maintain sorted order
+                )));
+        }
     }
 
     @Transactional
-    public void updateHabitCompletion(Integer habitId, Boolean completed) {
-        HabitStructure habitStructure = habitStructureRepository.findByHabitIdAndStructureDate(habitId, LocalDate.now())
-            .orElseThrow(() -> new IllegalArgumentException("HabitStructure not found with ID: " + habitId));
+    public void updateHabitCompletion(Integer habitId, Boolean completed, LocalDate date) {
+        if(date == null) {
+            date = LocalDate.now();
+        }
+        HabitStructure habitStructure = habitStructureRepository.findByHabitIdAndStructureDate(habitId, date)
+            .orElse(null);
+        if (habitStructure == null) {
+            habitStructure = new HabitStructure();
+            habitStructure.setHabitId(habitId);
+            habitStructure.setStructureDate(date);
+        }
         habitStructure.setCompleted(completed);
         habitStructureRepository.save(habitStructure);
     }

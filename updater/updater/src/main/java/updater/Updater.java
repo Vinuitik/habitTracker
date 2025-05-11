@@ -92,7 +92,12 @@ class HabitUpdater {
             LocalDate endDate = habit.getEndDate();
             LocalDate curDate = habit.getCurDate();
             LocalDate startDate = habit.getStartDate();
+            Boolean isActive = habit.getActive();
             int frequency = habit.getFrequency();
+
+            if(!isActive) {
+                continue;
+            }
 
             // Skip if today is after the end date
             if (endDate != null && today.isAfter(endDate)) {
@@ -100,7 +105,7 @@ class HabitUpdater {
             }
 
             // Save traceability if curDate is already today
-            if (curDate != null && curDate.isEqual(today)) {
+            if (curDate != null && curDate.isEqual(today) ) {
                 HabitStructure habitStructure = HabitStructure.builder()
                         .habitId(habit.getId())
                         .structureDate(today)

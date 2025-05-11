@@ -50,6 +50,11 @@ public class HabitReadController {
         model.addAttribute("habits", habits);
         return "habits-list"; // This will look for habits-list.html in templates folder
     }
+
+    @GetMapping("/habits/add")
+    public String showAddForm(Model model) {
+        return "redirect:/addHabitView/new-habit.html"; // This will look for add-habit.html in templates folder
+    }
     
     @GetMapping("/habits/table")
     public String getHabitTable(Model model, 
@@ -63,6 +68,7 @@ public class HabitReadController {
         }
         
         List<Pair<String,Integer> > habitNames = habitService.getAllUniqueHabitNamesIds();
+        habitNames.sort((a, b) -> Integer.compare(a.getValue(), b.getValue()));
 
         List<StructureDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate, habitNames);
 
@@ -84,5 +90,32 @@ public class HabitReadController {
         model.addAttribute("habit", habit);
         return "edit-habit";
     }
+
+    @GetMapping(value = "/habits/tableAsync", produces = "application/json")
+@ResponseBody
+public List<StructureDTO> getHabitTableData(
+        @RequestParam(required = false) LocalDate startDate,
+        @RequestParam(required = false) LocalDate endDate) {
+    if (startDate == null) {
+        startDate = LocalDate.now().minusDays(7);
+    }
+    if (endDate == null) {
+        endDate = LocalDate.now();
+    }
+
+    List<Pair<String, Integer>> habitNames = habitService.getAllUniqueHabitNamesIds();
+    habitNames.sort((a, b) -> Integer.compare(a.getValue(), b.getValue()));
+    for(Pair<String, Integer> habitName : habitNames) {
+        System.out.println("Habit Name: " + habitName.getKey() + ", ID: " + habitName.getValue());
+    }
+    List<StructureDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate, habitNames);
+    for(StructureDTO structure : tableData) {
+        System.out.println("Structure Date: " + structure.getDate());
+        for (Pair<String, Integer> habitName : structure.getHabits().keySet()) {
+            System.out.println("Habit Name: " + habitName.getKey() + ", ID: " + habitName.getValue() + ", Completed: " + structure.getHabits().get(habitName));
+        }
+    }
+    return tableData;
+}
     
 }

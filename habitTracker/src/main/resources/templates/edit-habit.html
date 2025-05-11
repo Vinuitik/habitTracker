@@ -5,8 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Edit Habit</title>
     <link rel="stylesheet" th:href="@{/editView/edit-habit.css}"/>
+    <link rel="stylesheet" th:href="@{/css/navigation.css}">
 </head>
 <body>
+    <nav th:fragment="navigation" class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/" class="nav-logo">HabitTracker</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+            </ul>
+        </div>
+    </nav>
+    
     <h1 class="date-header">
         Edit Habit
         <span class="date-tooltip">Modify your habit details</span>
@@ -35,6 +49,21 @@
             <input type="text" id="customFrequency" class="habit-input" 
                    placeholder="E.g. Every 3 days, Twice a week" />
             <small class="form-text">This will be added to your frequency field</small>
+        </div>
+
+        <div class="form-group">
+            <label for="isActive">Active Status</label>
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="isActive" name="active" 
+                       th:checked="${habit.active}" />
+                <span class="checkbox-label">Keep this habit active</span>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="endDate">Start Date</label>
+            <input type="date" id="startDate" name="startDate" class="habit-input" 
+                   th:value="${habit.endDate}" />
         </div>
 
         <div class="form-group">

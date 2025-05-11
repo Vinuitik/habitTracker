@@ -6,7 +6,7 @@ body {
     background-color: #ffffff;
     max-width: 600px; /* Reduced max-width for better form appearance */
     margin: 0 auto;
-    padding: 20px;
+    padding: 80px 20px 20px 20px; /* Updated padding to account for fixed nav */
 }
 
 /* Header styles */

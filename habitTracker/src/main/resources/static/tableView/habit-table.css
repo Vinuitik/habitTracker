@@ -4,7 +4,7 @@ body {
     color: #37352f;
     background-color: #ffffff;
     margin: 0;
-    padding: 20px;
+    padding: 80px 20px 20px 20px; /* Updated padding to account for fixed nav */
 }
 
 .container {
@@ -95,4 +95,35 @@ body {
 
 tr:hover {
     background-color: #f9f9f9;
+}
+
+.date-picker-container {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.date-picker-container label {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.date-picker-container input,
+.date-picker-container button {
+    padding: 8px;
+    font-size: 14px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.date-picker-container button {
+    background-color: #2eaadc;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.date-picker-container button:hover {
+    background-color: #1d8bb8;
 }

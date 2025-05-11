@@ -5,7 +5,7 @@ body {
     background-color: #ffffff;
     max-width: 900px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 80px 20px 20px 20px; /* Updated padding to account for fixed nav */
 }
 
 .date-header {

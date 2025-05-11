@@ -4,13 +4,37 @@
     <meta charset="UTF-8">
     <title>Habit Table View</title>
     <link rel="stylesheet" th:href="@{/tableView/habit-table.css}">
+    <link rel="stylesheet" th:href="@{/css/navigation.css}">
 </head>
 <body>
+    <nav th:fragment="navigation" class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/" class="nav-logo">HabitTracker</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+            </ul>
+        </div>
+    </nav>
+
     <div class="container">
         <h1 class="table-header">
             Habit Overview
             <span class="date-range" th:text="${startDate + ' - ' + endDate}">Date Range</span>
         </h1>
+
+        <div class="date-picker-container">
+            <label for="start-date">Start Date:</label>
+            <input type="date" id="start-date" th:value="${startDate}">
+            
+            <label for="end-date">End Date:</label>
+            <input type="date" id="end-date" th:value="${endDate}">
+            
+            <button id="update-table" onclick="fetchUpdatedTable()">Update</button>
+        </div>
 
         <div class="table-container">
             <table class="habit-table">

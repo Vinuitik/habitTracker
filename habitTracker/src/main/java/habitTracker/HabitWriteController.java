@@ -84,8 +84,9 @@ public class HabitWriteController {
     @PostMapping("/habits/update/{habitId}")
     @ResponseBody
     public ResponseEntity<String> updateHabit(@PathVariable Integer habitId, 
-                                              @RequestParam Boolean completed) {
-        structureService.updateHabitCompletion(habitId, completed);
+                                              @RequestParam Boolean completed,
+                                              @RequestParam(required = false) LocalDate date) {
+        structureService.updateHabitCompletion(habitId, completed, date);
         return ResponseEntity.ok("Habit completion updated successfully");
     }
 }

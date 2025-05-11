@@ -78,6 +78,12 @@ public class HabitService {
         if(updatedHabit.getFrequency() != null) {
             existingHabit.setFrequency(updatedHabit.getFrequency()); // Update frequency if needed
         }
+        if(updatedHabit.getStartDate() != null) {
+            existingHabit.setStartDate(updatedHabit.getStartDate()); // Update start date if needed
+        }
+        if(updatedHabit.getActive() != null) {
+            existingHabit.setActive(updatedHabit.getActive()); // Update current date if needed
+        }
 
         // Save the updated habit
         habitRepository.save(existingHabit);

@@ -7,8 +7,22 @@
     <link rel="stylesheet" th:href="@{/listView/habits-list.css}">
     <!-- Font Awesome for the three dots icon -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" th:href="@{/css/navigation.css}">
 </head>
 <body>
+    <nav th:fragment="navigation" class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/" class="nav-logo">HabitTracker</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+            </ul>
+        </div>
+    </nav>
+
     <div class="container">
         <h1 class="date-header">
             My Habits
