@@ -92,8 +92,6 @@ public class HabitWriteController {
     @PostMapping("/habits/info/save")
     @ResponseBody
     public ResponseEntity<String> saveHabit(@RequestBody Habit habit) {
-        System.out.println("Received habit: " + habit);
-        System.out.println("Habit ID: " + habit.getId());
         try {
             Habit existingHabit = habitService.getHabitById(habit.getId());
             

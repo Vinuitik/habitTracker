@@ -87,10 +87,6 @@ public class StructureService {
 
     private List<HabitStructure> fetchHabitStructures(LocalDate startDate, LocalDate endDate) {
         List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDateBetween(startDate.minusDays(1), endDate.plusDays(1));
-        for(HabitStructure habitStructure : habitStructures) {
-            System.out.println("Habit Structure: " + habitStructure);
-        }
-        System.out.println("Habit Structures Size: " + habitStructures.size());
         return habitStructures;
     }
 

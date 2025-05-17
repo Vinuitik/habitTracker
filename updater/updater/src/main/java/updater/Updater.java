@@ -130,7 +130,12 @@ class HabitUpdater {
             if (curDate != null && curDate.isBefore(today)) {
                 int daysSinceStart = (int) java.time.temporal.ChronoUnit.DAYS.between(startDate, today);
                 int offset = frequency - (daysSinceStart % frequency);
-                LocalDate newCurDate = today.plusDays(offset);
+                LocalDate newCurDate = null;
+                if(offset == frequency) {
+                    newCurDate = today;
+                }else{
+                    newCurDate = today.plusDays(offset);
+                }
 
                 // Update the habit's curDate
                 habit.setCurDate(newCurDate);

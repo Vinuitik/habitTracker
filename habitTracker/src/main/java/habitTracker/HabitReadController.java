@@ -36,10 +36,6 @@ public class HabitReadController {
     @GetMapping({"/","/habit"})
     public String getMethodName(Model model) {
         StructureDTO structure = structureService.getTodayStructure();
-        structure.getHabits().forEach((key, value) -> {
-            System.out.println("Habit: " + key + ", Details: " + value);
-        });
-        System.out.println("Structure: ");
         model.addAttribute("structure", structure); 
         return "index";
     }
@@ -105,16 +101,7 @@ public List<StructureDTO> getHabitTableData(
 
     List<Pair<String, Integer>> habitNames = habitService.getAllUniqueHabitNamesIds();
     habitNames.sort((a, b) -> Integer.compare(a.getValue(), b.getValue()));
-    for(Pair<String, Integer> habitName : habitNames) {
-        System.out.println("Habit Name: " + habitName.getKey() + ", ID: " + habitName.getValue());
-    }
     List<StructureDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate, habitNames);
-    for(StructureDTO structure : tableData) {
-        System.out.println("Structure Date: " + structure.getDate());
-        for (Pair<String, Integer> habitName : structure.getHabits().keySet()) {
-            System.out.println("Habit Name: " + habitName.getKey() + ", ID: " + habitName.getValue() + ", Completed: " + structure.getHabits().get(habitName));
-        }
-    }
     return tableData;
 }
     
@@ -126,6 +113,11 @@ public List<StructureDTO> getHabitTableData(
         }
         model.addAttribute("habit", habit);
         return "info"; // This will look for info.html in the templates folder
+    }
+
+    @GetMapping("/habits/rules")
+    public String showRuleSettingPage(Model model) {
+        return "rule-setting"; // Looks for rule-setting.html in templates
     }
 
     

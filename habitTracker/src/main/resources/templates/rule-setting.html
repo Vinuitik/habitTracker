@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set Habit Rules</title>
+    <link rel="stylesheet" th:href="@{/css/rule-setting.css}">
+    <link rel="stylesheet" th:href="@{/css/navigation.css}">
+</head>
+<body>
+    <nav th:fragment="navigation" class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/" class="nav-logo">HabitTracker</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+            </ul>
+        </div>
+    </nav>
+    <div class="rule-setting-container">
+        <h1>Set Habit Combination Rule</h1>
+        <div class="rule-setting-main">
+            <div class="habit-list-panel">
+                <h2>All Habits</h2>
+                <ul class="habit-list" id="all-habits">
+                    <!-- Example habits, replace with Thymeleaf loop -->
+                    <li>
+                        <span>Drink Water</span>
+                        <button class="add-to-combo">→</button>
+                    </li>
+                    <li>
+                        <span>Read Book</span>
+                        <button class="add-to-combo">→</button>
+                    </li>
+                    <li>
+                        <span>Exercise</span>
+                        <button class="add-to-combo">→</button>
+                    </li>
+                </ul>
+                <a href="/habits/add" class="new-habit-btn">+ Create New Habit</a>
+            </div>
+            <div class="habit-combo-panel">
+                <h2>Combine With</h2>
+                <ul class="habit-list" id="combo-habits">
+                    <!-- Habits selected for combination will appear here -->
+                </ul>
+            </div>
+        </div>
+        <div class="frequency-section">
+            <h3>Frequency Selection</h3>
+            <label>
+                <input type="radio" name="freq" value="average" checked>
+                Average of selected habits
+            </label>
+            <label>
+                <input type="radio" name="freq" value="gcd">
+                GCD of selected habits
+            </label>
+            <label>
+                <input type="radio" name="freq" value="custom">
+                Custom:
+                <input type="number" min="1" id="custom-freq" placeholder="Enter frequency" disabled>
+            </label>
+        </div>
+        <button class="save-rule-btn">Save Rule</button>
+    </div>
+    <script>
+        // Enable/disable custom frequency input
+        document.querySelectorAll('input[name="freq"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                document.getElementById('custom-freq').disabled = this.value !== 'custom';
+            });
+        });
+    </script>
+</body>
+</html>

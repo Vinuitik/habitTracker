@@ -27,4 +27,8 @@ public class Habit {
     private LocalDate endDate;
     private Boolean active;
     private Integer streak;
+    private Integer longestStreak; // keep track of maximum
+    private String description;
+    private String status; // prioroty, maintaining, abandoned.
+    private String twoMinuteRule; // 2 minute rule
 }
