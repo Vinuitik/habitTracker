@@ -38,6 +38,7 @@ public class HabitService {
 
     public List<Pair<String, Integer> > getAllUniqueHabitNamesIds() {
         return getAllHabits().stream()
+                           .filter(habit-> (habit.getActive() != null && habit.getActive()!= false))
                            .map(habit -> new Pair<>(habit.getName(), habit.getId()))
                            .distinct()
                            .collect(Collectors.toList());
@@ -106,5 +107,13 @@ public class HabitService {
     public HabitDTO getHabitDTOById(Integer id) {
         Habit habit = habitRepository.findById(id).orElse(null);
         return habit != null ? HabitDTO.fromHabit(habit) : null;
+    }
+    public List<Pair<Integer,Integer> > getStreaks(List<Integer> ids){
+        List<Pair<Integer,Integer> > streaks;
+        List<Habit> habits = habitRepository.findAllById(ids);
+        streaks = habits.stream()
+            .map(habit -> ( new Pair<Integer,Integer>(habit.getId(), habit.getStreak())))
+            .collect(Collectors.toList());
+        return streaks;
     }
 }

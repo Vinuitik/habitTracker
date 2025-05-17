@@ -120,5 +120,14 @@ public List<StructureDTO> getHabitTableData(
         return "rule-setting"; // Looks for rule-setting.html in templates
     }
 
+    @PostMapping("/habits/streaks")
+    @ResponseBody
+    public List< Pair< Integer, Integer > > getStreaks(@RequestBody List< Integer > habitIds) {
+        // Assuming habitIds is a list of habit IDs for which you want to get streaks
+        List< Pair< Integer, Integer > > streaks = habitService.getStreaks(habitIds);
+        return streaks;
+    }
+    
+
     
 }

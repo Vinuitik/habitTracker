@@ -30,13 +30,20 @@
 
         <ul class="habit-list">
             <li class="habit-item" th:each="habit : ${structure.habits}">
-                <input type="checkbox" class="habit-checkbox" 
-                       th:id="'habit-' + ${habit.key.key} + '-' + ${habit.key.value}" 
-                       th:checked="${habit.value}"
-                       th:data-habit-name="${habit.key.key}"
-                       th:data-habit-id="${habit.key.value}"
-                       onchange="updateHabitStatus(this)">
-                <span class="habit-name" th:text="${habit.key.key}">Habit Name</span>
+                <div class="habit-item-content">
+                    <div class="habit-left">
+                        <input type="checkbox" class="habit-checkbox" 
+                            th:id="'habit-' + ${habit.key.key} + '-' + ${habit.key.value}" 
+                            th:checked="${habit.value}"
+                            th:data-habit-name="${habit.key.key}"
+                            th:data-habit-id="${habit.key.value}"
+                            onchange="updateHabitStatus(this)">
+                        <span class="habit-name" th:text="${habit.key.key}">Habit Name</span>
+                    </div>
+                    <div class="habit-right">
+                        <span class="habit-streak" th:data-habit-id="${habit.key.value}">0 day streak</span>
+                    </div>
+                </div>
             </li>
         </ul>
     </div>

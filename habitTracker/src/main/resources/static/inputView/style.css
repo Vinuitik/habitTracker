@@ -53,6 +53,31 @@ body {
     border-bottom: 1px solid #f1f1f1;
 }
 
+.habit-item-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.habit-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.habit-right {
+    min-width: 90px;
+    text-align: right;
+}
+
+.habit-streak {
+    font-size: 15px;
+    font-weight: 500;
+    color: #2eaadc;
+    letter-spacing: 0.5px;
+}
+
 .habit-checkbox {
     appearance: none;
     -webkit-appearance: none;

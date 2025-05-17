@@ -55,6 +55,8 @@ public class HabitWriteController {
         }
         habit.setCurDate(habit.getStartDate());
         habit.setActive(true);
+        habit.setStreak(0);
+        habit.setLongestStreak(0);
         habitService.saveHabit(habit);
         return "redirect:/habit";
     }
