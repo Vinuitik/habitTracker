@@ -40,5 +40,24 @@ services:
       TZ: ${HOST_TIMEZONE:-UTC}
       MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
     restart: unless-stopped
+
+  mongo-backup:
+      build:
+        context: ./backup
+        dockerfile: Dockerfile
+      container_name: mongo-backup
+      depends_on:
+        - mongodbHabit
+      environment:
+        MONGO_HOST: mongodbHabit
+        MONGO_USER: root
+        MONGO_PASS: example
+        MONGO_DB: habits
+        MONGO_AUTH_DB: admin
+        TZ: ${HOST_TIMEZONE:-UTC}
+      volumes:
+        - ./backup/habitbackup.json:/app/habitbackup.json:ro
+      restart: unless-stopped
+
 volumes:
   mongodb_data:
