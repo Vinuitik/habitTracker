@@ -108,3 +108,26 @@ body {
 .dropdown-content a.delete-btn {
     color: #dc2e2e;
 }
+
+.toggle-btn-group {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 32px;
+    justify-content: center;
+}
+.toggle-btn {
+    padding: 10px 32px;
+    border: none;
+    border-radius: 24px;
+    background: #f1f1f1;
+    color: #37352f;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.toggle-btn.active {
+    background: #37352f;
+    color: #fff;
+}

@@ -29,6 +29,12 @@
             <span class="date-tooltip">Manage your habits here</span>
         </h1>
 
+        <!-- Toggle Buttons -->
+        <div class="toggle-btn-group">
+            <button id="activeBtn" class="toggle-btn active">Active</button>
+            <button id="inactiveBtn" class="toggle-btn" >Inactive</button>
+        </div>
+
         <ul class="habits-list">
             <li class="habit-item" th:each="habit : ${habits}">
                 <span class="habit-name" th:text="${habit.name}">Habit Name</span>

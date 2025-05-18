@@ -103,6 +103,18 @@ public class HabitService {
             .map(HabitDTO::fromHabit) // Convert Habit to HabitDTO
             .collect(Collectors.toList());
     }
+    public List<HabitDTO> getAllActiveHabitsAsDTOs() {
+        return habitRepository.findAll().stream()
+            .filter(habit -> (habit.getActive() != null && habit.getActive() != false))
+            .map(HabitDTO::fromHabit) // Convert Habit to HabitDTO
+            .collect(Collectors.toList());
+    }
+    public List<HabitDTO> getAllInactiveHabitsAsDTOs() {
+        return habitRepository.findAll().stream()
+            .filter(habit -> (habit.getActive() == null || habit.getActive() == false))
+            .map(HabitDTO::fromHabit) // Convert Habit to HabitDTO
+            .collect(Collectors.toList());
+    }
 
     public HabitDTO getHabitDTOById(Integer id) {
         Habit habit = habitRepository.findById(id).orElse(null);

@@ -42,7 +42,9 @@ public class HabitReadController {
 
     @GetMapping("/habits/list")
     public String listHabits(Model model) {
-        List<HabitDTO> habits = habitService.getAllHabitsAsDTOs();
+        List<HabitDTO> habits = habitService.getAllActiveHabitsAsDTOs();
+        habits.sort((a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+
         model.addAttribute("habits", habits);
         return "habits-list"; // This will look for habits-list.html in templates folder
     }
@@ -126,6 +128,13 @@ public List<StructureDTO> getHabitTableData(
         // Assuming habitIds is a list of habit IDs for which you want to get streaks
         List< Pair< Integer, Integer > > streaks = habitService.getStreaks(habitIds);
         return streaks;
+    }
+
+    @GetMapping("/habits/inactive")
+    @ResponseBody
+    public List<HabitDTO> getInactiveHabits() {
+        List<HabitDTO> inactiveHabits = habitService.getAllInactiveHabitsAsDTOs();
+        return inactiveHabits;
     }
     
 
