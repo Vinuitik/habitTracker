@@ -17,6 +17,7 @@
                 <li><a href="/" class="nav-item">Today</a></li>
                 <li><a href="/habits/list" class="nav-item">My Habits</a></li>
                 <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
             </ul>
         </div>
     </nav>
@@ -24,56 +25,55 @@
         <h1>Set Habit Combination Rule</h1>
         <div class="rule-setting-main">
             <div class="habit-list-panel">
-                <h2>All Habits</h2>
-                <ul class="habit-list" id="all-habits">
-                    <!-- Example habits, replace with Thymeleaf loop -->
-                    <li>
-                        <span>Drink Water</span>
-                        <button class="add-to-combo">→</button>
-                    </li>
-                    <li>
-                        <span>Read Book</span>
-                        <button class="add-to-combo">→</button>
-                    </li>
-                    <li>
-                        <span>Exercise</span>
-                        <button class="add-to-combo">→</button>
+                <h2>All Habits (Active)</h2>
+                <ul class="habit-list left-habit-list" id="left-habits">
+                    <li th:each="habit : ${leftHabits}"
+                        th:data-id="${habit.id}"
+                        th:data-frequency="${habit.frequency}"
+                        class="habit-item left-habit">
+                        <span class="habit-name" th:text="${habit.name}">Habit Name</span>
                     </li>
                 </ul>
                 <a href="/habits/add" class="new-habit-btn">+ Create New Habit</a>
             </div>
             <div class="habit-combo-panel">
                 <h2>Combine With</h2>
-                <ul class="habit-list" id="combo-habits">
-                    <!-- Habits selected for combination will appear here -->
+                <ul class="habit-list right-habit-list" id="right-habits">
+                    <li th:each="habit : ${rightHabits}"
+                        th:data-id="${habit.id}"
+                        th:data-frequency="${habit.frequency}"
+                        class="habit-item right-habit">
+                        <span class="habit-name" th:text="${habit.name}">Habit Name</span>
+                    </li>
                 </ul>
             </div>
         </div>
         <div class="frequency-section">
             <h3>Frequency Selection</h3>
-            <label>
-                <input type="radio" name="freq" value="average" checked>
-                Average of selected habits
-            </label>
-            <label>
-                <input type="radio" name="freq" value="gcd">
-                GCD of selected habits
-            </label>
-            <label>
-                <input type="radio" name="freq" value="custom">
-                Custom:
-                <input type="number" min="1" id="custom-freq" placeholder="Enter frequency" disabled>
-            </label>
+            <div class="frequency-options" style="display: flex; justify-content: space-around; align-items: center;">
+                <div>
+                    <label>
+                        <input type="radio" name="freq" value="average" checked>
+                        Average of selected habits
+                    </label>
+                    <label>
+                        <input type="radio" name="freq" value="gcd">
+                        GCD of selected habits
+                    </label>
+                    <label>
+                        <input type="radio" name="freq" value="custom">
+                        Custom:
+                        <input type="number" min="1" id="custom-freq" placeholder="Enter frequency" disabled>
+                    </label>
+                </div>
+                <div>
+                    <span style="font-weight: 600;">Resulting Frequency:</span>
+                    <span id="result-frequency" style="display: inline-block; min-width: 40px; margin-left: 10px; font-size: 1.2em; background: #e6f7fb; padding: 6px 16px; border-radius: 6px; color: #2eaadc;">-</span>
+                </div>
+            </div>
         </div>
         <button class="save-rule-btn">Save Rule</button>
     </div>
-    <script>
-        // Enable/disable custom frequency input
-        document.querySelectorAll('input[name="freq"]').forEach(radio => {
-            radio.addEventListener('change', function() {
-                document.getElementById('custom-freq').disabled = this.value !== 'custom';
-            });
-        });
-    </script>
+    <script th:src="@{/js/rule-setting.js}"></script>
 </body>
 </html>

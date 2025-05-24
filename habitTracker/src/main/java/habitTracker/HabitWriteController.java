@@ -71,6 +71,7 @@ public class HabitWriteController {
     }
 
     @PostMapping("/habits/edit/{id}")
+    @ResponseBody
     public String updateHabit(@PathVariable Integer id, 
                               @ModelAttribute Habit updatedHabit,
                               BindingResult result, Model model) {
@@ -81,7 +82,8 @@ public class HabitWriteController {
 
         // Update the habit in the database
         habitService.updateHabit(id, updatedHabit);
-        return "redirect:/habits/list"; // Redirect to the habits list after successful update
+        //return "redirect:/habits/list"; // Redirect to the habits list after successful update
+        return "Habit updated successfully";
     }
     @PostMapping("/habits/update/{habitId}")
     @ResponseBody

@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const formData = new FormData(this);
 
+        
         fetch(this.action, {
             method: 'POST',
             body: formData

@@ -12,7 +12,6 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/habits/inactive')
         .then(res => res.json())
         .then(data => {
-            console.log('Inactive habits:', data); // For verification
             // Build HTML structure for inactive habits
             const ul = document.createElement('ul');
             ul.className = 'habits-list';
@@ -41,10 +40,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Helper to swap the habits list
     function swapHabitsList(newList) {
-        if (!habitsList.parentNode) return;
-        const parent = habitsList.parentNode;
-        parent.replaceChild(newList.cloneNode(true), habitsList);
-        // Re-attach dropdown and delete handlers for new DOM
+        const currentHabitsList = document.querySelector('.habits-list');
+        if (!currentHabitsList) return;
+        currentHabitsList.innerHTML = newList.innerHTML;
         attachDropdownHandlers();
         attachDeleteHandlers();
     }
@@ -99,14 +97,12 @@ document.addEventListener('DOMContentLoaded', function() {
     activeBtn.addEventListener('click', function() {
         activeBtn.classList.add('active');
         inactiveBtn.classList.remove('active');
-        console.log('Active habits:', activeHabitsHTML); // For verification
         if (activeHabitsHTML) swapHabitsList(activeHabitsHTML);
     });
 
     inactiveBtn.addEventListener('click', function() {
         inactiveBtn.classList.add('active');
         activeBtn.classList.remove('active');
-        console.log('Inactive habits:', inactiveHabitsHTML); // For verification
         if (inactiveHabitsHTML) swapHabitsList(inactiveHabitsHTML);
     });
 

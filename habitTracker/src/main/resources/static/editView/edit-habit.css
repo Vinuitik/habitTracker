@@ -43,15 +43,19 @@ body {
 
 .habit-form {
     max-width: 500px;
+    width: 100%; /* Ensure it doesn't overflow parent */
     margin: 0 auto;
     padding: 20px;
     background: #fff;
     border-radius: 12px;
+    box-sizing: border-box; /* Add this */
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .form-group {
     margin-bottom: 20px;
+    width: 100%; /* Add this */
+    box-sizing: border-box; /* Add this */
 }
 
 .form-group label {
@@ -63,11 +67,13 @@ body {
 
 .habit-input {
     width: 100%;
+    max-width: 100%; /* Prevent overflow */
     padding: 12px;
     border: 2px solid #e6e6e6;
     border-radius: 8px;
     font-size: 16px;
     transition: border-color 0.3s ease;
+    box-sizing: border-box; /* Add this */
 }
 
 .habit-input:focus {

@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitDTO;
 import habitTracker.Habit.HabitService;
+import habitTracker.Rules.RuleDTO;
 import habitTracker.Structure.Structure;
 import habitTracker.Structure.StructureDTO;
 import habitTracker.Structure.StructureService;
@@ -118,10 +120,32 @@ public List<StructureDTO> getHabitTableData(
     }
 
     @GetMapping("/habits/rules")
-    public String showRuleSettingPage(Model model) {
-        return "rule-setting"; // Looks for rule-setting.html in templates
-    }
+    public String showRuleSetting(Model model) {
+        List<Habit> allHabits = habitService.getAllHabits();
+        List<Habit> activeHabits = allHabits.stream()
+            .filter(Habit::getActive)
+            .collect(Collectors.toList());
 
+        List<RuleDTO> leftHabits = activeHabits.stream()
+            .map(habit -> RuleDTO.builder()
+                .id(habit.getId())
+                .name(habit.getName())
+                .frequency(habit.getFrequency())
+                .build())
+            .collect(Collectors.toList());
+
+        List<RuleDTO> rightHabits = allHabits.stream()
+            .map(habit -> RuleDTO.builder()
+                .id(habit.getId())
+                .name(habit.getName())
+                .frequency(habit.getFrequency())
+                .build())
+            .collect(Collectors.toList());
+
+        model.addAttribute("leftHabits", leftHabits);
+        model.addAttribute("rightHabits", rightHabits);
+        return "rule-setting";
+    }
     @PostMapping("/habits/streaks")
     @ResponseBody
     public List< Pair< Integer, Integer > > getStreaks(@RequestBody List< Integer > habitIds) {

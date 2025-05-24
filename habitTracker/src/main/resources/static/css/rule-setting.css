@@ -40,10 +40,24 @@ body {
 .habit-list li {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center; /* Center the name */
     padding: 12px 0;
     border-bottom: 1px solid #e6e6e6;
     font-size: 16px;
+    cursor: pointer; /* Indicate clickable */
+    transition: background 0.2s, color 0.2s;
+}
+
+.habit-list li.active {
+    background: #2eaadc;
+    color: #fff;
+    font-weight: bold;
+    border-radius: 6px;
+}
+
+.habit-name {
+    width: 100%;
+    text-align: center;
 }
 
 .add-to-combo {

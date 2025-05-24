@@ -82,9 +82,22 @@ public class HabitService {
         if(updatedHabit.getStartDate() != null) {
             existingHabit.setStartDate(updatedHabit.getStartDate()); // Update start date if needed
         }
-        if(updatedHabit.getActive() != null) {
-            existingHabit.setActive(updatedHabit.getActive()); // Update current date if needed
+    
+        Boolean isActive = updatedHabit.getActive();
+        if(isActive == null){
+            isActive = false;
         }
+        if(!isActive) {
+            habitStructureRepository.deleteByHabitIdAndStructureDate(
+                existingHabit.getId(), LocalDate.now());
+        } else if( isActive && existingHabit.getActive() != true ) {
+            habitStructureRepository.save(  HabitStructure.builder()
+                .habitId(existingHabit.getId())
+                .structureDate(LocalDate.now())
+                .completed(false)
+                .build());
+        }
+        existingHabit.setActive(isActive); // Update active status
 
         // Save the updated habit
         habitRepository.save(existingHabit);
