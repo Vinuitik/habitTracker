@@ -7,8 +7,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.transaction.annotation.Transactional;
 
+import habitTracker.Rules.RuleService;
+import habitTracker.Rules.UpdateDTO;
 import habitTracker.Structure.HabitStructure;
 import habitTracker.Structure.HabitStructureRepository;
 import habitTracker.util.Pair;
@@ -18,8 +21,10 @@ public class HabitService {
 
     private final HabitRepository habitRepository;
     private final HabitStructureRepository habitStructureRepository;
+    private final RuleService ruleService;
 
-    public HabitService(HabitRepository habitRepository, HabitStructureRepository habitStructureRepository) {
+    public HabitService(HabitRepository habitRepository, HabitStructureRepository habitStructureRepository, RuleService ruleService) {
+        this.ruleService = ruleService;
         this.habitRepository = habitRepository;
         this.habitStructureRepository = habitStructureRepository;
     }
@@ -87,17 +92,31 @@ public class HabitService {
         if(isActive == null){
             isActive = false;
         }
+        Integer maxStreak = 0;
         if(!isActive) {
             habitStructureRepository.deleteByHabitIdAndStructureDate(
                 existingHabit.getId(), LocalDate.now());
         } else if( isActive && existingHabit.getActive() != true ) {
-            habitStructureRepository.save(  HabitStructure.builder()
-                .habitId(existingHabit.getId())
-                .structureDate(LocalDate.now())
-                .completed(false)
-                .build());
+            List<Integer> mainIds = ruleService.getMainIdsBySubId(existingHabit.getId());
+            List<Habit> mainHabits = habitRepository.findAllById(mainIds);
+            for (Habit mainHabit : mainHabits) {
+                if (mainHabit.getStreak() != null && mainHabit.getStreak() > maxStreak) {
+                    maxStreak = mainHabit.getStreak();
+                }
+            }
+            boolean exists = habitStructureRepository.existsByHabitIdAndStructureDate(
+                existingHabit.getId(), LocalDate.now());
+            if (!exists) {
+                habitStructureRepository.save(HabitStructure.builder()
+                    .habitId(existingHabit.getId())
+                    .structureDate(LocalDate.now())
+                    .completed(false)
+                    .build());
+            }
+            ruleService.deleteBySubId(existingHabit.getId());
         }
         existingHabit.setActive(isActive); // Update active status
+        existingHabit.setStreak(maxStreak);
 
         // Save the updated habit
         habitRepository.save(existingHabit);
@@ -140,5 +159,53 @@ public class HabitService {
             .map(habit -> ( new Pair<Integer,Integer>(habit.getId(), habit.getStreak())))
             .collect(Collectors.toList());
         return streaks;
+    }
+
+    public void updateHabitFrequency(List<Integer> ids, Integer frequency) {
+        List<Habit> habits = habitRepository.findAllById(ids);
+        for (Habit habit : habits) {
+            habit.setFrequency(frequency);
+            habitRepository.save(habit);
+        }
+    }
+
+    public void updateActiveStatus(List<Integer> ids, Boolean active) {
+        List<Habit> habits = habitRepository.findAllById(ids);
+        for (Habit habit : habits) {
+            habit.setActive(active);
+            habitRepository.save(habit);
+        }
+    }
+    public void updateHabitStreak(List<Integer> ids, Integer streak) {
+        List<Habit> habits = habitRepository.findAllById(ids);
+        for (Habit habit : habits) {
+            habit.setStreak(streak);
+            habitRepository.save(habit);
+        }
+    }
+
+    public void updateRule(UpdateDTO updateDTO){
+        List<Habit> subHabits = habitRepository.findAllById(updateDTO.getSubIds());
+        Habit mainHabit = habitRepository.findById(updateDTO.getMainId())
+            .orElseThrow(() -> new IllegalArgumentException("Main habit not found with ID: " + updateDTO.getMainId()));
+        for(Habit subHabit : subHabits) {
+            subHabit.setActive(false);
+            subHabit.setFrequency(updateDTO.getFrequency());
+            subHabit.setStreak(updateDTO.getStreak());
+            habitRepository.save(subHabit);
+            habitStructureRepository.deleteByHabitIdAndStructureDate(
+                subHabit.getId(), LocalDate.now());
+        }
+        mainHabit.setActive(true);
+        mainHabit.setFrequency(updateDTO.getFrequency());
+        mainHabit.setStreak(updateDTO.getStreak());
+
+        habitRepository.save(mainHabit);
+        habitStructureRepository.save(HabitStructure.builder()
+            .habitId(mainHabit.getId())
+            .structureDate(LocalDate.now())
+            .completed(false)
+            .build());
+        
     }
 }

@@ -21,13 +21,7 @@ import org.bson.types.ObjectId;
 @Document(collection = "rules")
 public class Rule { // this will store one to many relationship with habit - meaning that we represet here what habits are grouped, and by which habit
     @Id
-    private Integer id = new ObjectId().hashCode();
-
-    private String name;
-    private String description;
-    private LocalDate startDate;
-    private LocalDate endDate;
-    private Integer frequency;
-    private Boolean active;
-    private Integer habitId; // id of the habit to which this rule belongs
+    private String id;
+    private Integer habitOwnerId; // id of the habit to which this rule belongs
+    private Integer habitSubId;
 }

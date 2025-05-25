@@ -128,22 +128,16 @@ public List<StructureDTO> getHabitTableData(
 
         List<RuleDTO> leftHabits = activeHabits.stream()
             .map(habit -> RuleDTO.builder()
-                .id(habit.getId())
-                .name(habit.getName())
-                .frequency(habit.getFrequency())
-                .build())
-            .collect(Collectors.toList());
-
-        List<RuleDTO> rightHabits = allHabits.stream()
-            .map(habit -> RuleDTO.builder()
-                .id(habit.getId())
-                .name(habit.getName())
-                .frequency(habit.getFrequency())
-                .build())
+            .id(habit.getId())
+            .name(habit.getName())
+            .frequency(habit.getFrequency())
+            .streak(habit.getStreak())
+            .build())
+            .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
             .collect(Collectors.toList());
 
         model.addAttribute("leftHabits", leftHabits);
-        model.addAttribute("rightHabits", rightHabits);
+        model.addAttribute("rightHabits", leftHabits);
         return "rule-setting";
     }
     @PostMapping("/habits/streaks")

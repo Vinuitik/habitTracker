@@ -9,11 +9,8 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 
 
 @Repository
-public interface RuleRepository extends MongoRepository<Rule, Integer> {
-    List<Rule> findByStartDateBetween(LocalDate startDate, LocalDate endDate);
-    List<Rule> findByEndDateBetween(LocalDate startDate, LocalDate endDate);
-    List<Rule> findByStartDateLessThanEqualAndEndDateGreaterThanEqual(LocalDate startDate, LocalDate endDate);
-    List<Rule> findByStartDateLessThanEqualAndEndDateGreaterThanEqualAndFrequency(LocalDate startDate, LocalDate endDate, Integer frequency);
-    List<Rule> findByName(String name);
-
+public interface RuleRepository extends MongoRepository<Rule, String> {
+    void deleteByHabitSubId(Integer subId);
+    List<Rule> findByHabitOwnerId(Integer mainId);
+    List<Rule> findByHabitSubId(Integer subId);
 }

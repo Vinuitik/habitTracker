@@ -30,6 +30,7 @@
                     <li th:each="habit : ${leftHabits}"
                         th:data-id="${habit.id}"
                         th:data-frequency="${habit.frequency}"
+                        th:data-streak="${habit.streak}"
                         class="habit-item left-habit">
                         <span class="habit-name" th:text="${habit.name}">Habit Name</span>
                     </li>
@@ -42,6 +43,7 @@
                     <li th:each="habit : ${rightHabits}"
                         th:data-id="${habit.id}"
                         th:data-frequency="${habit.frequency}"
+                        th:data-streak="${habit.streak}"
                         class="habit-item right-habit">
                         <span class="habit-name" th:text="${habit.name}">Habit Name</span>
                     </li>

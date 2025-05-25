@@ -14,4 +14,5 @@ public interface HabitStructureRepository extends MongoRepository<HabitStructure
     List<HabitStructure> findByHabitId(Integer habitName);
     Optional<HabitStructure> findByHabitIdAndStructureDate(Integer habitName, LocalDate date);
     void deleteByHabitIdAndStructureDate(Integer habitName, LocalDate date);
+    boolean existsByHabitIdAndStructureDate(Integer habitName, LocalDate date);
 }

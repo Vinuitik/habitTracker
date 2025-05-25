@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitService;
+import habitTracker.Rules.Rule;
+import habitTracker.Rules.RuleService;
 import habitTracker.util.Pair;
 import lombok.RequiredArgsConstructor;
 
@@ -21,6 +23,7 @@ public class StructureService {
 
     private final HabitStructureRepository habitStructureRepository;
     private final HabitService habitService;
+    private final RuleService ruleService;
 
     @Transactional(readOnly = true)
     public StructureDTO getTodayStructure() {
@@ -30,6 +33,17 @@ public class StructureService {
 
     private StructureDTO getStructureForDate(LocalDate date) {
         List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDate(date);
+        List<Integer> habitIds = habitStructures.stream()
+            .map(HabitStructure::getHabitId)
+            .distinct()
+            .collect(Collectors.toList());
+        List<Habit> habits = habitService.getHabitsByIds(habitIds);
+        Map<Integer, Boolean> habitIdToActive = habits.stream()
+            .collect(Collectors.toMap(Habit::getId, Habit::getActive));
+
+        habitStructures = habitStructures.stream()
+            .filter(habitStructure -> habitIdToActive.getOrDefault(habitStructure.getHabitId(), false))
+            .collect(Collectors.toList());
         Map<Integer, String> habitIdToNameMap = getHabitIdToNameMap(habitStructures);
         return populateStructureDTO(date, habitStructures, habitIdToNameMap);
     }
@@ -149,5 +163,18 @@ public class StructureService {
         }
         habitStructure.setCompleted(completed);
         habitStructureRepository.save(habitStructure);
+
+        List<Rule> rules = ruleService.getRulesByMainId(habitId);
+        List<Integer> subIds = rules.stream()
+            .map(Rule::getHabitSubId)
+            .collect(Collectors.toList());
+        System.out.println(habitId);
+        System.out.println("Sub IDs: " + subIds);
+        for(Integer subId : subIds) {
+            if(subId == null || subId.equals(habitId)) {
+                continue; // Skip if subId is null, or if it is the same as habitId in order to prevent infinite iteration
+            }
+            updateHabitCompletion(subId, completed, date);
+        }
     }
 }

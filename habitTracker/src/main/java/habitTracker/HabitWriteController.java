@@ -15,12 +15,15 @@ import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.http.HttpStatus;
 
 import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitDTO;
 import habitTracker.Habit.HabitService;
+import habitTracker.Rules.RuleService;
+import habitTracker.Rules.UpdateDTO;
 import habitTracker.Structure.StructureService;
 import lombok.RequiredArgsConstructor;
 
@@ -30,6 +33,7 @@ public class HabitWriteController {
     
     private final HabitService habitService;
     private final StructureService structureService;
+    private final RuleService ruleService;
 
     @DeleteMapping("/habits/delete/{id}")
     @ResponseBody
@@ -123,6 +127,20 @@ public class HabitWriteController {
             }
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error saving habit");
+        }
+    }
+
+    @PostMapping("/habits/addRule")
+    @ResponseBody
+    public ResponseEntity<String> addRule(@RequestBody UpdateDTO updateDTO) {
+        try {
+            ruleService.addRule(updateDTO.getMainId(), updateDTO.getSubIds());
+            habitService.updateRule(updateDTO);
+            return ResponseEntity.ok("Rule added successfully");
+        } catch (Exception e) {
+            System.err.println("Error adding rule: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error adding rule");
         }
     }
 
