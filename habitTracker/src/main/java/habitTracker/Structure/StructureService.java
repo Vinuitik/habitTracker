@@ -106,6 +106,9 @@ public class StructureService {
 
     private void populateStructureMap(Map<LocalDate, StructureDTO> structureMap, List<HabitStructure> habitStructures, Map<Integer, String> habitIdToNameMap) {
         for (HabitStructure habitStructure : habitStructures) {
+            if(habitStructure.getStructureDate() == null) {
+                continue; // Skip if structure date is null
+            }
             LocalDate storedDate = habitStructure.getStructureDate();
             StructureDTO structure = structureMap.get(storedDate);
 

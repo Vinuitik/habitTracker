@@ -4,6 +4,7 @@ package habitTracker;
 import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -38,6 +39,8 @@ public class HabitReadController {
     @GetMapping({"/","/habit"})
     public String getMethodName(Model model) {
         StructureDTO structure = structureService.getTodayStructure();
+        System.out.println("Structure: " + structure);
+        System.out.println("Today" + LocalDateTime.now());
         model.addAttribute("structure", structure); 
         return "index";
     }

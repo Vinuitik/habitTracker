@@ -25,6 +25,7 @@ services:
       - mongodbHabit
     environment:
       MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
+      TZ: ${HOST_TIMEZONE:-UTC}   # <-- Add this line
     restart: unless-stopped
 
   updater:
@@ -38,6 +39,7 @@ services:
       - mongodbHabit
     environment:
       TZ: ${HOST_TIMEZONE:-UTC}
+      JAVA_TOOL_OPTIONS: -Duser.timezone=${HOST_TIMEZONE:-UTC}
       MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
     restart: unless-stopped
 
