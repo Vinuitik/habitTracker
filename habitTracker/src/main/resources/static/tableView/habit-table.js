@@ -80,10 +80,21 @@ function updateTable(data) {
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.checked = value; // The value is the boolean indicating completion
+            checkbox.checked = value;
             checkbox.setAttribute('data-date', entry.date);
-            checkbox.setAttribute('data-habit-name', key.match(/key=(.*?),/)[1]); // Extract habit name from Pair
-            checkbox.setAttribute('data-habit-id', key.match(/value=(\d+)/)[1]); // Extract habit ID from Pair
+
+            // Improved regex: allow negative numbers for value
+            const match = key.match(/Pair\(key=(.*), value=(-?\d+)\)/);
+            if (match) {
+                checkbox.setAttribute('data-habit-name', match[1]);
+                checkbox.setAttribute('data-habit-id', match[2]);
+            } else {
+                // fallback if format is unexpected
+                checkbox.setAttribute('data-habit-name', key);
+                checkbox.setAttribute('data-habit-id', '');
+                console.warn('Unexpected key format:', key);
+            }
+
             checkbox.onchange = () => updateHabitStatus(checkbox);
 
             habitCell.appendChild(checkbox);

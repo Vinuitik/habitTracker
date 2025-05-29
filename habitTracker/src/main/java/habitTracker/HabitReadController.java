@@ -95,10 +95,10 @@ public class HabitReadController {
     }
 
     @GetMapping(value = "/habits/tableAsync", produces = "application/json")
-@ResponseBody
-public List<StructureDTO> getHabitTableData(
-        @RequestParam(required = false) LocalDate startDate,
-        @RequestParam(required = false) LocalDate endDate) {
+    @ResponseBody
+    public List<StructureDTO> getHabitTableData(
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate) {
     if (startDate == null) {
         startDate = LocalDate.now().minusDays(7);
     }
@@ -106,11 +106,11 @@ public List<StructureDTO> getHabitTableData(
         endDate = LocalDate.now();
     }
 
-    List<Pair<String, Integer>> habitNames = habitService.getAllUniqueHabitNamesIds();
-    habitNames.sort((a, b) -> Integer.compare(a.getValue(), b.getValue()));
-    List<StructureDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate, habitNames);
-    return tableData;
-}
+        List<Pair<String, Integer>> habitNames = habitService.getAllUniqueHabitNamesIds();
+        habitNames.sort((a, b) -> Integer.compare(a.getValue(), b.getValue()));
+        List<StructureDTO> tableData = structureService.getStructuresForDateRange(startDate, endDate, habitNames);
+        return tableData;
+    }
     
     @GetMapping("/habits/info/{id}")
     public String getHabitInfo(@PathVariable Integer id, Model model) {

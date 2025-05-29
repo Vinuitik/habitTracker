@@ -59,6 +59,17 @@ public class StructureService {
             .collect(Collectors.toMap(Habit::getId, Habit::getName));
     }
 
+    private Map<Integer, String> getHabitIdToNameMapFromIds(List<Pair<String, Integer>> habitNames) {
+        List<Integer> habitIds = habitNames.stream()
+            .map(Pair::getValue)
+            .distinct()
+            .collect(Collectors.toList());
+
+        List<Habit> habits = habitService.getHabitsByIds(habitIds);
+        return habits.stream()
+            .collect(Collectors.toMap(Habit::getId, Habit::getName));
+    }
+
     private StructureDTO populateStructureDTO(LocalDate date, List<HabitStructure> habitStructures, Map<Integer, String> habitIdToNameMap) {
         StructureDTO structure = new StructureDTO();
         structure.setDate(date);
@@ -79,7 +90,7 @@ public class StructureService {
     public List<StructureDTO> getStructuresForDateRange(LocalDate startDate, LocalDate endDate, List<Pair<String, Integer>> habitNames) {
         Map<LocalDate, StructureDTO> structureMap = initializeStructureMap(startDate, endDate);
         List<HabitStructure> habitStructures = fetchHabitStructures(startDate, endDate);
-        Map<Integer, String> habitIdToNameMap = getHabitIdToNameMap(habitStructures);
+        Map<Integer, String> habitIdToNameMap = getHabitIdToNameMapFromIds(habitNames);
         populateStructureMap(structureMap, habitStructures, habitIdToNameMap);
         fillMissingHabits(structureMap, habitNames);
 
