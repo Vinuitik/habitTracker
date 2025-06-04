@@ -6,6 +6,10 @@
     <title>Edit Habit</title>
     <link rel="stylesheet" th:href="@{/editView/edit-habit.css}"/>
     <link rel="stylesheet" th:href="@{/css/navigation.css}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
     <nav th:fragment="navigation" class="nav-bar">
@@ -38,16 +42,17 @@
             <label for="frequency">Frequency</label>
             <select id="frequency" name="frequency" class="habit-input" required>
                 <option value="">Select frequency</option>
-                <option value="1" th:selected="${habit.frequency == 1}">Daily</option>
-                <option value="7" th:selected="${habit.frequency == 7}">Weekly</option>
-                <option value="30" th:selected="${habit.frequency == 30}">Monthly</option>
-                <option value="CUSTOM">Custom</option>
+                <option value="1" th:selected="${habit.frequency == '1'}">Daily</option>
+                <option value="7" th:selected="${habit.frequency == '7'}">Weekly</option>
+                <option value="30" th:selected="${habit.frequency == '30'}">Monthly</option>
+                <option value="CUSTOM" th:selected="${!habit.frequency.matches('[0-9]+')">Custom</option>
             </select>
         </div>
-        
-        <div id="custom-frequency-container" class="form-group" style="display: none;">
+
+        <div id="custom-frequency-container" class="form-group" th:style="${!habit.frequency.matches('[0-9]+') ? 'display: block' : 'display: none'}">
             <label for="customFrequency">Custom Frequency</label>
-            <input type="text" id="customFrequency" class="habit-input" 
+            <input type="text" id="customFrequency" name="frequency" class="habit-input" 
+                   th:value="${!habit.frequency.matches('[0-9]+') ? habit.frequency : ''}"
                    placeholder="E.g. Every 3 days, Twice a week" />
             <small class="form-text">This will be added to your frequency field</small>
         </div>

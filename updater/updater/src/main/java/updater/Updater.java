@@ -88,6 +88,9 @@ class HabitUpdater {
             return;
         }
 
+        // Update the last run date
+        mongoTemplate.save(new LastRunDate(today));
+
         // Fetch all habits
         List<Habit> habits = mongoTemplate.findAll(Habit.class);
 
@@ -158,8 +161,7 @@ class HabitUpdater {
         // Update streaks for all habits
         updateStreaks(lastRunDate, today);
 
-        // Update the last run date
-        mongoTemplate.save(new LastRunDate(today));
+        
         System.out.println("Updater ran successfully for " + today);
     }
 

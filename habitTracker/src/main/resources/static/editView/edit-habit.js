@@ -7,10 +7,12 @@ document.addEventListener('DOMContentLoaded', function() {
     frequencySelect.addEventListener('change', function() {
         if (this.value === 'CUSTOM') {
             customContainer.style.display = 'block';
-            customInput.required = true;
+            frequencySelect.removeAttribute('name');
+            customInput.setAttribute('name', 'frequency');
         } else {
             customContainer.style.display = 'none';
-            customInput.required = false;
+            frequencySelect.setAttribute('name', 'frequency');
+            customInput.removeAttribute('name');
         }
     });
 
@@ -18,8 +20,20 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('.habit-form').addEventListener('submit', function(e) {
         e.preventDefault();
         
-        const formData = new FormData(this);
+        // Ensure correct frequency field is being sent
+        if (frequencySelect.value === 'CUSTOM') {
+            if (!customInput.value.trim()) {
+                alert('Please enter a custom frequency');
+                return;
+            }
+            frequencySelect.removeAttribute('name');
+            customInput.setAttribute('name', 'frequency');
+        } else {
+            customInput.removeAttribute('name');
+            frequencySelect.setAttribute('name', 'frequency');
+        }
 
+        const formData = new FormData(this);
         
         fetch(this.action, {
             method: 'POST',
@@ -29,7 +43,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) {
                 throw new Error('Network response was not ok');
             }
-            window.location.href = '/habits/list'; // Redirect on success
+            window.location.href = '/habits/list';
         })
         .catch(error => {
             console.error('Error:', error);
@@ -40,6 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize custom frequency container if CUSTOM is selected
     if (frequencySelect.value === 'CUSTOM') {
         customContainer.style.display = 'block';
-        customInput.required = true;
+        frequencySelect.removeAttribute('name');
+        customInput.setAttribute('name', 'frequency');
     }
 });
