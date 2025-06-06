@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import jakarta.servlet.http.HttpServletResponse;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -37,7 +39,12 @@ public class HabitReadController {
     private final StructureService structureService;
 
     @GetMapping({"/","/habit"})
-    public String getMethodName(Model model) {
+    public String getMethodName(Model model, HttpServletResponse response) {
+        // Prevent caching
+        response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        response.setHeader("Pragma", "no-cache");
+        response.setDateHeader("Expires", 0);
+        
         StructureDTO structure = structureService.getTodayStructure();
         System.out.println("Structure: " + structure);
         System.out.println("Today" + LocalDateTime.now());
