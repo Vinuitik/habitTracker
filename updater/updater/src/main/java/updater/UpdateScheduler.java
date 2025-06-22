@@ -1,6 +1,11 @@
 package updater;
 
 import org.springframework.stereotype.Component;
+
+import updater.services.LastRunDateService;
+import updater.services.HabitUpdateService;
+import updater.services.StreakCalculationService;
+
 import org.springframework.scheduling.annotation.Scheduled;
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
