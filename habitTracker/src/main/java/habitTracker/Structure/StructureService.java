@@ -28,7 +28,8 @@ public class StructureService {
     @Transactional(readOnly = true)
     public StructureDTO getTodayStructure() {
         LocalDate today = LocalDate.now();
-        return getStructureForDate(today);
+        StructureDTO structure = getStructureForDate(today);
+        return structure;
     }
 
     private StructureDTO getStructureForDate(LocalDate date) {

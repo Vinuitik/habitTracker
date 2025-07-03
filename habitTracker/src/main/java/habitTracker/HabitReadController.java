@@ -46,8 +46,7 @@ public class HabitReadController {
         response.setDateHeader("Expires", 0);
         
         StructureDTO structure = structureService.getTodayStructure();
-        System.out.println("Structure: " + structure);
-        System.out.println("Today" + LocalDateTime.now());
+        
         model.addAttribute("structure", structure); 
         return "index";
     }
