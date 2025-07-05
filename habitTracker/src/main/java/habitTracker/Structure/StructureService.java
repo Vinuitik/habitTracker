@@ -84,6 +84,16 @@ public class StructureService {
             }
         }
 
+        // Sort the habits by habit name to maintain consistent order
+        structure.setHabits(structure.getHabits().entrySet().stream()
+            .sorted((entry1, entry2) -> entry1.getKey().getKey().compareTo(entry2.getKey().getKey())) // Sort by habit name
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                Map.Entry::getValue,
+                (e1, e2) -> e1,
+                LinkedHashMap::new // Maintain sorted order
+            )));
+
         return structure;
     }
 
@@ -131,10 +141,10 @@ public class StructureService {
             }
         }
 
-        // Sort the habits in each StructureDTO by habit ID
+        // Sort the habits in each StructureDTO by habit name
         for (StructureDTO structure : structureMap.values()) {
             structure.setHabits(structure.getHabits().entrySet().stream()
-                .sorted((entry1, entry2) -> Integer.compare(entry1.getKey().getValue(), entry2.getKey().getValue())) // Sort by habit ID
+                .sorted((entry1, entry2) -> entry1.getKey().getKey().compareTo(entry2.getKey().getKey())) // Sort by habit name
                 .collect(Collectors.toMap(
                     Map.Entry::getKey,
                     Map.Entry::getValue,
@@ -152,9 +162,9 @@ public class StructureService {
                 }
             }
 
-            // Sort the habits after adding missing ones
+            // Sort the habits after adding missing ones by habit name
             dto.setHabits(dto.getHabits().entrySet().stream()
-                .sorted((entry1, entry2) -> Integer.compare(entry1.getKey().getValue(), entry2.getKey().getValue())) // Sort by habit ID
+                .sorted((entry1, entry2) -> entry1.getKey().getKey().compareTo(entry2.getKey().getKey())) // Sort by habit name
                 .collect(Collectors.toMap(
                     Map.Entry::getKey,
                     Map.Entry::getValue,

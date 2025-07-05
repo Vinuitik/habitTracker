@@ -92,7 +92,7 @@ public class HabitService {
         if(isActive == null){
             isActive = false;
         }
-        Integer maxStreak = 0;
+        Integer maxStreak = existingHabit.getStreak() != null ? existingHabit.getStreak() : 0;
         if(!isActive) {
             habitStructureRepository.deleteByHabitIdAndStructureDate(
                 existingHabit.getId(), LocalDate.now());
