@@ -58,6 +58,9 @@
                                    th:data-date="${entry.date}"
                                    th:data-habit-name="${habit.getKey()}"
                                    th:data-habit-id="${habit.getValue()}"
+                                   th:data-habit-status="${entry.habitStatuses != null ? entry.habitStatuses.get(habit) : 'ACTIVE_INCOMPLETE'}"
+                                   th:class="${entry.habitStatuses != null && entry.habitStatuses.get(habit) == T(habitTracker.Structure.StructureDTO.HabitStatus).INACTIVE ? 'inactive-habit' : ''}"
+                                   th:disabled="${entry.habitStatuses != null && entry.habitStatuses.get(habit) == T(habitTracker.Structure.StructureDTO.HabitStatus).INACTIVE}"
                                    onchange="updateHabitStatus(this)">
                         </td>
                     </tr>

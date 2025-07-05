@@ -1,4 +1,11 @@
 function updateHabitStatus(checkbox) {
+    // Don't allow updates for inactive habits
+    const habitStatus = checkbox.getAttribute('data-habit-status');
+    if (habitStatus === 'INACTIVE') {
+        checkbox.checked = false; // Force uncheck
+        return;
+    }
+
     const habitId = checkbox.getAttribute('data-habit-id');
     const date = checkbox.getAttribute('data-date');
     const completed = checkbox.checked;
@@ -88,6 +95,18 @@ function updateTable(data) {
             if (match) {
                 checkbox.setAttribute('data-habit-name', match[1]);
                 checkbox.setAttribute('data-habit-id', match[2]);
+                
+                // Check habit status and apply styling
+                const habitKey = key;
+                const habitStatus = entry.habitStatuses && entry.habitStatuses[habitKey];
+                
+                if (habitStatus === 'INACTIVE') {
+                    checkbox.classList.add('inactive-habit');
+                    checkbox.disabled = true;
+                    checkbox.setAttribute('data-habit-status', 'INACTIVE');
+                } else {
+                    checkbox.setAttribute('data-habit-status', habitStatus || 'ACTIVE_INCOMPLETE');
+                }
             } else {
                 // fallback if format is unexpected
                 checkbox.setAttribute('data-habit-name', key);

@@ -1,6 +1,7 @@
 package habitTracker.Structure;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +15,7 @@ import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitService;
 import habitTracker.Rules.Rule;
 import habitTracker.Rules.RuleService;
+import habitTracker.Structure.StructureDTO.HabitStatus;
 import habitTracker.util.Pair;
 import lombok.RequiredArgsConstructor;
 
@@ -47,6 +49,40 @@ public class StructureService {
             .collect(Collectors.toList());
         Map<Integer, String> habitIdToNameMap = getHabitIdToNameMap(habitStructures);
         return populateStructureDTO(date, habitStructures, habitIdToNameMap);
+    }
+    
+    /**
+     * Determines if a habit should be active/tracked on a specific date
+     * Based on habit's startDate, endDate, frequency, and active status
+     */
+    private boolean isHabitActiveOnDate(Habit habit, LocalDate date) {
+        // Check if habit is globally active
+        if (habit.getActive() == null || !habit.getActive()) {
+            return false;
+        }
+        
+        // Check if date is before habit start date
+        if (habit.getStartDate() != null && date.isBefore(habit.getStartDate())) {
+            return false;
+        }
+        
+        // Check if date is after habit end date
+        if (habit.getEndDate() != null && date.isAfter(habit.getEndDate())) {
+            return false;
+        }
+        
+        // For daily habits (frequency=1), always active if within date range
+        if (habit.getFrequency() == null || habit.getFrequency() == 1) {
+            return true;
+        }
+        
+        // For other frequencies, check if this is a scheduled day
+        if (habit.getStartDate() != null) {
+            long daysSinceStart = ChronoUnit.DAYS.between(habit.getStartDate(), date);
+            return daysSinceStart >= 0 && daysSinceStart % habit.getFrequency() == 0;
+        }
+        
+        return true; // Default to active if no specific frequency logic applies
     }
 
     private Map<Integer, String> getHabitIdToNameMap(List<HabitStructure> habitStructures) {
@@ -104,6 +140,9 @@ public class StructureService {
         Map<Integer, String> habitIdToNameMap = getHabitIdToNameMapFromIds(habitNames);
         populateStructureMap(structureMap, habitStructures, habitIdToNameMap);
         fillMissingHabits(structureMap, habitNames);
+        
+        // Enhanced: Populate habit activity statuses
+        populateHabitStatuses(structureMap, habitNames, startDate, endDate);
 
         return structureMap.values().stream()
             .sorted((s1, s2) -> s1.getDate().compareTo(s2.getDate()))
@@ -116,6 +155,7 @@ public class StructureService {
             StructureDTO structure = new StructureDTO();
             structure.setDate(date);
             structure.setHabits(new HashMap<>());
+            structure.setHabitStatuses(new HashMap<>()); // Initialize habit statuses map
             structureMap.put(date, structure);
         }
         return structureMap;
@@ -170,6 +210,61 @@ public class StructureService {
                     Map.Entry::getValue,
                     (e1, e2) -> e1,
                     LinkedHashMap::new // Maintain sorted order
+                )));
+        }
+    }
+
+    /**
+     * Populates habit statuses for each date based on habit activity and completion
+     */
+    private void populateHabitStatuses(Map<LocalDate, StructureDTO> structureMap, 
+                                     List<Pair<String, Integer>> habitNames, 
+                                     LocalDate startDate, LocalDate endDate) {
+        // Get all habits
+        List<Integer> habitIds = habitNames.stream()
+            .map(Pair::getValue)
+            .collect(Collectors.toList());
+        List<Habit> habits = habitService.getHabitsByIds(habitIds);
+        Map<Integer, Habit> habitMap = habits.stream()
+            .collect(Collectors.toMap(Habit::getId, habit -> habit));
+        
+        // For each date and habit, determine the status
+        for (StructureDTO structure : structureMap.values()) {
+            LocalDate date = structure.getDate();
+            
+            for (Pair<String, Integer> habitPair : habitNames) {
+                Integer habitId = habitPair.getValue();
+                Habit habit = habitMap.get(habitId);
+                
+                if (habit == null) {
+                    continue; // Skip if habit not found
+                }
+                
+                HabitStatus status;
+                if (isHabitActiveOnDate(habit, date)) {
+                    // Habit is active on this date
+                    Boolean completed = structure.getHabits().get(habitPair);
+                    if (completed != null && completed) {
+                        status = HabitStatus.ACTIVE_COMPLETED;
+                    } else {
+                        status = HabitStatus.ACTIVE_INCOMPLETE;
+                    }
+                } else {
+                    // Habit is not active on this date
+                    status = HabitStatus.INACTIVE;
+                }
+                
+                structure.getHabitStatuses().put(habitPair, status);
+            }
+            
+            // Sort habit statuses by habit name for consistency
+            structure.setHabitStatuses(structure.getHabitStatuses().entrySet().stream()
+                .sorted((entry1, entry2) -> entry1.getKey().getKey().compareTo(entry2.getKey().getKey()))
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    Map.Entry::getValue,
+                    (e1, e2) -> e1,
+                    LinkedHashMap::new
                 )));
         }
     }

@@ -93,6 +93,25 @@ body {
     transform: translate(-50%, -50%);
 }
 
+/* Enhanced styling for inactive habits */
+.habit-cell input[type="checkbox"].inactive-habit {
+    background-color: #e0e0e0;
+    border-color: #bbb;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+/* Inactive habits should always appear filled/grayed out, regardless of checked state */
+.habit-cell input[type="checkbox"].inactive-habit:checked {
+    background-color: #e0e0e0;
+    border-color: #bbb;
+}
+
+/* Remove any content for inactive habits to avoid confusion */
+.habit-cell input[type="checkbox"].inactive-habit:checked::after {
+    content: '';
+}
+
 tr:hover {
     background-color: #f9f9f9;
 }

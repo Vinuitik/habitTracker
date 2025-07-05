@@ -19,4 +19,14 @@ public class StructureDTO {
     private LocalDate date;
 
     private Map<Pair<String, Integer>, Boolean> habits; // Use custom Pair
+    
+    // Enhanced structure to track habit activity status
+    private Map<Pair<String, Integer>, HabitStatus> habitStatuses;
+    
+    // Enum to represent different habit states
+    public enum HabitStatus {
+        ACTIVE_COMPLETED,    // Habit was active and completed
+        ACTIVE_INCOMPLETE,   // Habit was active but not completed
+        INACTIVE             // Habit was not active on this date
+    }
 }
