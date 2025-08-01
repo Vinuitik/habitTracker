@@ -51,6 +51,20 @@ body {
     align-items: center;
     padding: 12px 0;
     border-bottom: 1px solid #f1f1f1;
+    transition: all 0.3s ease;
+}
+
+/* Animation classes for habit reordering */
+.habit-moving-down {
+    background-color: #f0f9ff;
+    transform: translateX(10px);
+    box-shadow: 0 2px 8px rgba(46, 170, 220, 0.2);
+}
+
+.habit-moving-up {
+    background-color: #fff7ed;
+    transform: translateX(-10px);
+    box-shadow: 0 2px 8px rgba(251, 146, 60, 0.2);
 }
 
 .habit-item-content {
