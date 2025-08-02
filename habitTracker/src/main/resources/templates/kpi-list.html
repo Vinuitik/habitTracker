@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPIs - HabitTracker</title>
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="stylesheet" href="/css/kpi-list.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/" class="nav-logo">HabitTracker</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+                <li><a href="/kpis" class="nav-item active">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="main-content">
+        <h1 class="page-header">
+            Key Performance Indicators
+            <span class="page-subtitle">Track and analyze your metrics</span>
+        </h1>
+
+        <div class="actions-bar">
+            <a href="/kpis/create" class="btn btn-primary">Create New KPI</a>
+            <a href="/kpis/dashboard" class="btn btn-secondary">View Dashboard</a>
+        </div>
+
+        <!-- Flash Messages -->
+        <div th:if="${successMessage}" class="alert alert-success">
+            <span th:text="${successMessage}"></span>
+        </div>
+        <div th:if="${errorMessage}" class="alert alert-error">
+            <span th:text="${errorMessage}"></span>
+        </div>
+
+        <div class="kpi-container">
+            <div th:if="${#lists.isEmpty(kpis)}" class="empty-state">
+                <h2>No KPIs Found</h2>
+                <p>Start tracking your performance by creating your first KPI.</p>
+                <a href="/kpis/create" class="btn btn-primary">Create Your First KPI</a>
+            </div>
+
+            <div th:if="${!#lists.isEmpty(kpis)}" class="kpi-grid">
+                <div th:each="kpi : ${kpis}" class="kpi-card">
+                    <div class="kpi-header">
+                        <h3 th:text="${kpi.name}" class="kpi-name"></h3>
+                        <div class="kpi-indicator">
+                            <span th:if="${kpi.higherIsBetter}" class="indicator indicator-up">↑ Higher is Better</span>
+                            <span th:if="${!kpi.higherIsBetter}" class="indicator indicator-down">↓ Lower is Better</span>
+                        </div>
+                    </div>
+                    
+                    <div class="kpi-description">
+                        <p th:text="${kpi.description}"></p>
+                    </div>
+                    
+                    <div class="kpi-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Created:</span>
+                            <span th:text="${#temporals.format(kpi.createdAt, 'MMM dd, yyyy')}" class="meta-value"></span>
+                        </div>
+                        <div class="meta-item" th:if="${!#lists.isEmpty(kpi.linkedHabitIds)}">
+                            <span class="meta-label">Linked Habits:</span>
+                            <span th:text="${#lists.size(kpi.linkedHabitIds)} + ' habits'" class="meta-value"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="kpi-actions">
+                        <button class="btn btn-small btn-primary" th:onclick="|addData('${kpi.name}')|">Add Data</button>
+                        <button class="btn btn-small btn-secondary" th:onclick="|viewData('${kpi.name}')|">View Charts</button>
+                        <button class="btn btn-small btn-danger" th:onclick="|deleteKPI('${kpi.name}')|">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Data Modal -->
+    <div id="addDataModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add KPI Data</h2>
+            <form id="addDataForm">
+                <input type="hidden" id="kpiName" name="kpiName">
+                <div class="form-group">
+                    <label for="dataDate">Date:</label>
+                    <input type="date" id="dataDate" name="date" required>
+                </div>
+                <div class="form-group">
+                    <label for="dataValue">Value:</label>
+                    <input type="number" step="0.01" id="dataValue" name="value" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add Data</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/js/kpi-list.js"></script>
+</body>
+</html>

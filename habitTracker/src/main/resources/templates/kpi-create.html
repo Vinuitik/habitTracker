@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create KPI - HabitTracker</title>
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="stylesheet" href="/css/kpi-create.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/" class="nav-logo">HabitTracker</a>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+                <li><a href="/kpis" class="nav-item active">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="main-content">
+        <h1 class="page-header">
+            Create New KPI
+            <span class="page-subtitle">Define a new key performance indicator</span>
+        </h1>
+
+        <!-- Flash Messages -->
+        <div th:if="${errorMessage}" class="alert alert-error">
+            <span th:text="${errorMessage}"></span>
+        </div>
+
+        <form action="/kpis/create" method="post" class="kpi-form">
+            <div class="form-section">
+                <h2>Basic Information</h2>
+                
+                <div class="form-group">
+                    <label for="name">KPI Name *</label>
+                    <input type="text" id="name" name="name" class="form-input" 
+                           placeholder="e.g., Daily Steps, Reading Pages, Weight" required>
+                    <small class="form-help">Must be unique - this will be used as the identifier</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" class="form-textarea" 
+                              placeholder="Describe what this KPI measures..." rows="3"></textarea>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>KPI Configuration</h2>
+                
+                <div class="form-group">
+                    <label>Direction Preference *</label>
+                    <div class="radio-group">
+                        <div class="radio-option">
+                            <input type="radio" id="higherBetter" name="higherIsBetter" value="true" required>
+                            <label for="higherBetter">
+                                <span class="radio-icon">↑</span>
+                                Higher is Better
+                                <small>More is good (e.g., steps taken, books read)</small>
+                            </label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" id="lowerBetter" name="higherIsBetter" value="false" required>
+                            <label for="lowerBetter">
+                                <span class="radio-icon">↓</span>
+                                Lower is Better
+                                <small>Less is good (e.g., weight, time spent on phone)</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Habit Connections</h2>
+                <p class="section-description">Link this KPI to specific habits for better tracking and analysis.</p>
+                
+                <div class="form-group">
+                    <label>Related Habits (Optional)</label>
+                    <div class="checkbox-group">
+                        <div th:if="${#lists.isEmpty(availableHabits)}" class="empty-habits">
+                            <p>No active habits available. <a href="/habits/add">Create a habit first</a>.</p>
+                        </div>
+                        <div th:if="${!#lists.isEmpty(availableHabits)}" class="habit-list">
+                            <div th:each="habit : ${availableHabits}" class="checkbox-option">
+                                <input type="checkbox" th:id="|habit${habit.id}|" 
+                                       name="habitIds" th:value="${habit.id}">
+                                <label th:for="|habit${habit.id}|" th:text="${habit.name}"></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Create KPI</button>
+                <a href="/kpis" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+
+    <script src="/js/kpi-create.js"></script>
+</body>
+</html>
