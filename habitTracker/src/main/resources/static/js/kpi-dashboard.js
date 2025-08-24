@@ -4,8 +4,9 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeModal();
 });
 
-let currentPeriod = 'weekly';
-let charts = {};
+// Use guarded globals so reloading the script doesn't throw when variables are already declared
+var currentPeriod = (typeof currentPeriod !== 'undefined') ? currentPeriod : 'weekly';
+var charts = (typeof charts !== 'undefined') ? charts : {};
 
 function initializeDashboard() {
     loadAllCharts();

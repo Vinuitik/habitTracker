@@ -115,8 +115,8 @@
 
     <script>
         const kpis = /*[[${kpis}]]*/ [];
-        let currentPeriod = 'weekly';
-        let charts = {};
+        // `currentPeriod` and `charts` are declared in /js/kpi-dashboard.js
+        // Avoid declaring them here to prevent duplicate-declaration errors when the script reloads
     </script>
     <script src="/js/kpi-dashboard.js"></script>
 </body>
