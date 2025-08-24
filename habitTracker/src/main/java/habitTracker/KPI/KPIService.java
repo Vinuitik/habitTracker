@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -16,8 +18,9 @@ import java.util.stream.Collectors;
 public class KPIService {
     
     private final KPIRepository kpiRepository;
-    private final KPIDataRepository kpiDataRepository;
+    private final DynamicKPIDataRepository dynamicKPIDataRepository;
     private final KPIHabitMappingRepository kpiHabitMappingRepository;
+    private final KPICollectionNameUtil collectionNameUtil;
     
     @Transactional
     public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds) {
@@ -35,6 +38,10 @@ public class KPIService {
                 .build();
         
         KPI savedKPI = kpiRepository.save(kpi);
+        
+        // Create collection for this KPI's data
+        String collectionName = collectionNameUtil.toCollectionName(name);
+        dynamicKPIDataRepository.createCollection(collectionName);
         
         // Create habit mappings
         if (habitIds != null && !habitIds.isEmpty()) {
@@ -69,8 +76,10 @@ public class KPIService {
             throw new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist");
         }
         
+        String collectionName = collectionNameUtil.toCollectionName(kpiName);
+        
         // Check if data for this date already exists
-        Optional<KPIData> existingData = kpiDataRepository.findByKpiNameAndDate(kpiName, date);
+        Optional<KPIData> existingData = dynamicKPIDataRepository.findByDate(date, collectionName);
         
         KPIData kpiData;
         if (existingData.isPresent()) {
@@ -78,7 +87,6 @@ public class KPIService {
             kpiData.setValue(value);
         } else {
             kpiData = KPIData.builder()
-                    .kpiName(kpiName)
                     .date(date)
                     .value(value)
                     .build();
@@ -88,11 +96,12 @@ public class KPIService {
         Double ema = calculateEMA(kpiName, value, date);
         kpiData.setExponentialMovingAverage(ema);
         
-        kpiDataRepository.save(kpiData);
+        dynamicKPIDataRepository.save(kpiData, collectionName);
     }
     
     public List<KPIDataDTO> getKPIDataForDateRange(String kpiName, LocalDate startDate, LocalDate endDate) {
-        List<KPIData> data = kpiDataRepository.findByKpiNameAndDateBetweenOrderByDateAsc(kpiName, startDate, endDate);
+        String collectionName = collectionNameUtil.toCollectionName(kpiName);
+        List<KPIData> data = dynamicKPIDataRepository.findByDateBetweenOrderByDateAsc(startDate, endDate, collectionName);
         Optional<KPI> kpi = kpiRepository.findByName(kpiName);
         
         if (kpi.isEmpty()) {
@@ -102,7 +111,7 @@ public class KPIService {
         boolean higherIsBetter = kpi.get().getHigherIsBetter();
         
         return data.stream()
-                .map(d -> convertToDataDTO(d, higherIsBetter))
+                .map(d -> convertToDataDTO(d, kpiName, higherIsBetter))
                 .collect(Collectors.toList());
     }
     
@@ -120,21 +129,31 @@ public class KPIService {
     
     public List<KPIDTO> getKPIsByHabitId(Integer habitId) {
         List<KPIHabitMapping> mappings = kpiHabitMappingRepository.findByHabitId(habitId);
+        if (mappings == null || mappings.isEmpty()) {
+            return new ArrayList<>();
+        }
+
         List<String> kpiNames = mappings.stream()
                 .map(KPIHabitMapping::getKpiName)
                 .collect(Collectors.toList());
-        
+
+        // Fetch all KPIs in a single call
+        List<KPI> kpis = kpiRepository.findByNameIn(kpiNames);
+        Map<String, KPI> kpiByName = kpis.stream()
+                .collect(Collectors.toMap(KPI::getName, k -> k));
+
+        // Preserve original order from kpiNames, filter out missing KPIs
         return kpiNames.stream()
-                .map(name -> kpiRepository.findByName(name))
-                .filter(Optional::isPresent)
-                .map(Optional::get)
+                .map(kpiByName::get)
+                .filter(Objects::nonNull)
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
     
     @Transactional
     public void deleteKPI(String name) {
-        kpiDataRepository.deleteByKpiName(name);
+        String collectionName = collectionNameUtil.toCollectionName(name);
+        dynamicKPIDataRepository.dropCollection(collectionName);
         kpiHabitMappingRepository.deleteByKpiName(name);
         kpiRepository.findByName(name).ifPresent(kpiRepository::delete);
     }
@@ -157,7 +176,8 @@ public class KPIService {
     }
     
     private Double calculateEMA(String kpiName, Double currentValue, LocalDate currentDate) {
-        List<KPIData> historicalData = kpiDataRepository.findTop30ByKpiNameOrderByDateDesc(kpiName);
+        String collectionName = collectionNameUtil.toCollectionName(kpiName);
+        List<KPIData> historicalData = dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName);
         
         if (historicalData.isEmpty()) {
             return currentValue; // First data point
@@ -198,7 +218,7 @@ public class KPIService {
                 .build();
     }
     
-    private KPIDataDTO convertToDataDTO(KPIData data, boolean higherIsBetter) {
+    private KPIDataDTO convertToDataDTO(KPIData data, String kpiName, boolean higherIsBetter) {
         String trendDirection = "stable";
         String colorIntensity = "low";
         
@@ -223,7 +243,7 @@ public class KPIService {
         
         return KPIDataDTO.builder()
                 .id(data.getId())
-                .kpiName(data.getKpiName())
+                .kpiName(kpiName)
                 .date(data.getDate())
                 .value(data.getValue())
                 .exponentialMovingAverage(data.getExponentialMovingAverage())

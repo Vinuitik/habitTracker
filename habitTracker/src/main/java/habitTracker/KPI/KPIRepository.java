@@ -9,6 +9,7 @@ import java.util.Optional;
 @Repository
 public interface KPIRepository extends MongoRepository<KPI, String> {
     Optional<KPI> findByName(String name);
+    List<KPI> findByNameIn(List<String> names);
     List<KPI> findByActive(Boolean active);
     boolean existsByName(String name);
 }

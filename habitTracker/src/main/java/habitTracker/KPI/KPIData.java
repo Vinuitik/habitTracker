@@ -5,12 +5,11 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.Indexed;
 
 import java.time.LocalDate;
 
-@Document(collection = "kpi_data")
+// No @Document annotation since collection name is dynamic
 @AllArgsConstructor
 @NoArgsConstructor
 @Data
@@ -18,9 +17,6 @@ import java.time.LocalDate;
 public class KPIData {
     @Id
     private String id;
-    
-    @Indexed
-    private String kpiName; // reference to KPI by name
     
     @Indexed
     private LocalDate date;
