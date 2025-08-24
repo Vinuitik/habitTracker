@@ -70,6 +70,8 @@ public class HabitWriteController {
     public String addHabitCustom(@RequestBody Habit habit) {
         habit.setCurDate(habit.getStartDate());
         habit.setActive(true);
+        habit.setStreak(0);
+        habit.setLongestStreak(0);
         habitService.saveHabit(habit);
         return "Habit added successfully";
     }

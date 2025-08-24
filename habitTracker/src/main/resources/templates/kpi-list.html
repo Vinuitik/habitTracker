@@ -80,9 +80,15 @@
                     </div>
                     
                     <div class="kpi-actions">
-                        <button class="btn btn-small btn-primary" th:onclick="|addData('${kpi.name}')|">Add Data</button>
-                        <button class="btn btn-small btn-secondary" th:onclick="|viewData('${kpi.name}')|">View Charts</button>
-                        <button class="btn btn-small btn-danger" th:onclick="|deleteKPI('${kpi.name}')|">Delete</button>
+                        <button class="btn btn-small btn-primary" 
+                                th:data-kpi-name="${kpi.name}" 
+                                onclick="addData(this.dataset.kpiName)">Add Data</button>
+                        <button class="btn btn-small btn-secondary" 
+                                th:data-kpi-name="${kpi.name}" 
+                                onclick="viewData(this.dataset.kpiName)">View Charts</button>
+                        <button class="btn btn-small btn-danger" 
+                                th:data-kpi-name="${kpi.name}" 
+                                onclick="deleteKPI(this.dataset.kpiName)">Delete</button>
                     </div>
                 </div>
             </div>

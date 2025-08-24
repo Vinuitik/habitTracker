@@ -62,6 +62,8 @@ public class HabitUpdateService {
             return;
         }
 
+        System.out.println(habit.getName());
+
         LocalDate curDate = habit.getCurDate();
 
         // Handle habits already scheduled for today

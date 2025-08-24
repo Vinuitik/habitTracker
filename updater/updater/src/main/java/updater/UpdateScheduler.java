@@ -34,6 +34,7 @@ public class UpdateScheduler {
 
     @Scheduled(cron = "0 5 0 * * ?") // 12:05 AM daily
     public void scheduledUpdate() {
+        System.out.println("Scheduled update triggered at: " + LocalDateTime.now());
         performDailyUpdate();
     }
 

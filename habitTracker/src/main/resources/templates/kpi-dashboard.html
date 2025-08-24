@@ -79,7 +79,9 @@
                                 <span th:id="|ema-${kpi.name}|" class="stat-value">-</span>
                             </div>
                         </div>
-                        <button class="btn btn-small btn-primary" th:onclick="|addDataToKPI('${kpi.name}')|">
+                        <button class="btn btn-small btn-primary" 
+                                th:data-kpi-name="${kpi.name}" 
+                                onclick="addDataToKPI(this.dataset.kpiName)">
                             Add Data
                         </button>
                     </div>
