@@ -31,6 +31,7 @@ public class StructureService {
     public StructureDTO getTodayStructure() {
         LocalDate today = LocalDate.now();
         StructureDTO structure = getStructureForDate(today);
+        structure = filterFailedNegativeHabits(structure, today);
         return structure;
     }
 
@@ -111,12 +112,28 @@ public class StructureService {
         StructureDTO structure = new StructureDTO();
         structure.setDate(date);
         structure.setHabits(new HashMap<>());
+        structure.setHabitDetails(new HashMap<>());
+
+        // Get habit IDs and fetch full habit objects
+        List<Integer> habitIds = habitStructures.stream()
+            .map(HabitStructure::getHabitId)
+            .distinct()
+            .collect(Collectors.toList());
+        List<Habit> habits = habitService.getHabitsByIds(habitIds);
+        Map<Integer, Habit> habitMap = habits.stream()
+            .collect(Collectors.toMap(Habit::getId, habit -> habit));
 
         for (HabitStructure habitStructure : habitStructures) {
             String habitName = habitIdToNameMap.get(habitStructure.getHabitId());
             if (habitName != null) {
                 Pair<String, Integer> habitKey = new Pair<>(habitName, habitStructure.getHabitId());
                 structure.getHabits().put(habitKey, habitStructure.getCompleted());
+                
+                // Add habit details for template access
+                Habit habit = habitMap.get(habitStructure.getHabitId());
+                if (habit != null) {
+                    structure.getHabitDetails().put(habitKey, habit);
+                }
             }
         }
 
@@ -296,5 +313,63 @@ public class StructureService {
             }
             updateHabitCompletion(subId, completed, date);
         }
+    }
+
+    /**
+     * Filters out negative habits (defaultMade=true) that have been failed (completed=false) today
+     * This prevents them from reappearing on refresh after being shamefully removed
+     */
+    private StructureDTO filterFailedNegativeHabits(StructureDTO structure, LocalDate date) {
+        if (structure == null || structure.getHabits() == null || structure.getHabits().isEmpty()) {
+            return structure;
+        }
+
+        // Get all habit IDs from the current structure
+        List<Integer> habitIds = structure.getHabits().keySet().stream()
+            .map(Pair::getValue)
+            .collect(Collectors.toList());
+
+        // Fetch full habit objects to check defaultMade property
+        List<Habit> habits = habitService.getHabitsByIds(habitIds);
+        Map<Integer, Habit> habitMap = habits.stream()
+            .collect(Collectors.toMap(Habit::getId, habit -> habit));
+
+        // Filter out failed negative habits
+        Map<Pair<String, Integer>, Boolean> filteredHabits = structure.getHabits().entrySet().stream()
+            .filter(entry -> {
+                Integer habitId = entry.getKey().getValue();
+                Boolean completed = entry.getValue();
+                Habit habit = habitMap.get(habitId);
+                
+                // Keep habit if it's not a negative habit, or if it's completed, or if habit data is missing
+                if (habit == null || habit.getDefaultMade() == null || !habit.getDefaultMade()) {
+                    return true; // Keep non-negative habits
+                }
+                
+                // For negative habits (defaultMade=true), only keep them if they're completed (not failed)
+                return completed != null && completed;
+            })
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                Map.Entry::getValue,
+                (e1, e2) -> e1,
+                LinkedHashMap::new // Maintain order
+            ));
+
+        // Also filter habitDetails to match
+        if (structure.getHabitDetails() != null) {
+            Map<Pair<String, Integer>, Habit> filteredHabitDetails = structure.getHabitDetails().entrySet().stream()
+                .filter(entry -> filteredHabits.containsKey(entry.getKey()))
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    Map.Entry::getValue,
+                    (e1, e2) -> e1,
+                    LinkedHashMap::new
+                ));
+            structure.setHabitDetails(filteredHabitDetails);
+        }
+
+        structure.setHabits(filteredHabits);
+        return structure;
     }
 }

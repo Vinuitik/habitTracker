@@ -46,6 +46,17 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateHabitStatus(checkbox) {
     const habitId = checkbox.getAttribute('data-habit-id');
     const completed = checkbox.checked;
+    const isDefaultMade = checkbox.getAttribute('data-default-made') === 'true';
+
+    // Check if this is an unchecked negative habit (shame case)
+    if (!completed && isDefaultMade) {
+        // Find the habit item and apply shame animation
+        const habitItem = checkbox.closest('.habit-item');
+        if (habitItem) {
+            removeHabitWithShameAnimation(habitItem, habitId, completed);
+            return; // Don't proceed with normal flow
+        }
+    }
 
     // Create FormData or URLSearchParams object
     const formData = new URLSearchParams();
@@ -164,5 +175,69 @@ function organizeHabitsOnLoad() {
     // Add checked habits at the bottom
     checkedHabits.forEach(habitItem => {
         habitList.appendChild(habitItem);
+    });
+}
+
+/**
+ * Handles the shameful removal of negative habits that have been failed
+ * @param {HTMLElement} habitItem - The habit item to remove
+ * @param {string} habitId - The ID of the habit
+ * @param {boolean} completed - The completion status (should be false for shame removal)
+ */
+function removeHabitWithShameAnimation(habitItem, habitId, completed) {
+    // Disable the checkbox to prevent further interaction
+    const checkbox = habitItem.querySelector('.habit-checkbox');
+    if (checkbox) {
+        checkbox.disabled = true;
+    }
+
+    // Apply shame styling first
+    habitItem.classList.add('habit-shame-removal');
+
+    // Update the database first
+    const formData = new URLSearchParams();
+    formData.append('completed', completed);
+
+    fetch(`/habits/update/${habitId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            // If update fails, restore the checkbox and remove shame styling
+            if (checkbox) {
+                checkbox.disabled = false;
+                checkbox.checked = true; // Restore checked state
+            }
+            habitItem.classList.remove('habit-shame-removal');
+            throw new Error('Failed to update habit status');
+        }
+        return response.text();
+    })
+    .then(data => {
+        console.log('Negative habit marked as failed:', data);
+        
+        // After shake animation, start slide out
+        setTimeout(() => {
+            habitItem.classList.add('habit-slide-out');
+            
+            // Remove from DOM after slide out animation completes
+            setTimeout(() => {
+                if (habitItem.parentNode) {
+                    habitItem.parentNode.removeChild(habitItem);
+                    // Update counters
+                    totalHabits--;
+                    console.log('Negative habit removed from view due to failure');
+                }
+            }, 1200); // Match the slide-out animation duration
+            
+        }, 400); // Wait for shake animation to complete
+    })
+    .catch(error => {
+        console.error('Error updating negative habit:', error);
+        alert('Failed to update habit status. Please try again.');
     });
 }

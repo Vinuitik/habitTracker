@@ -44,6 +44,7 @@
                             th:checked="${habit.value}"
                             th:data-habit-name="${habit.key.key}"
                             th:data-habit-id="${habit.key.value}"
+                            th:data-default-made="${structure.habitDetails.get(habit.key)?.defaultMade ?: false}"
                             onchange="updateHabitStatus(this)">
                         <span class="habit-name" th:text="${habit.key.key}">Habit Name</span>
                     </div>

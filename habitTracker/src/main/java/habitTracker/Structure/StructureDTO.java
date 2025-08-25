@@ -3,6 +3,7 @@ package habitTracker.Structure;
 import java.time.LocalDate;
 import java.util.Map;
 
+import habitTracker.Habit.Habit;
 import habitTracker.util.Pair;
 import lombok.Data;
 
@@ -22,6 +23,9 @@ public class StructureDTO {
     
     // Enhanced structure to track habit activity status
     private Map<Pair<String, Integer>, HabitStatus> habitStatuses;
+    
+    // Map to store full habit details for template access
+    private Map<Pair<String, Integer>, Habit> habitDetails;
     
     // Enum to represent different habit states
     public enum HabitStatus {
