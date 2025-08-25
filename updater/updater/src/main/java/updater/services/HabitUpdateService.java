@@ -65,10 +65,11 @@ public class HabitUpdateService {
         System.out.println(habit.getName());
 
         LocalDate curDate = habit.getCurDate();
+        boolean isDefaultMade = habit.getDefaultMade() != null && habit.getDefaultMade();
 
         // Handle habits already scheduled for today
         if (curDate != null && curDate.isEqual(today)) {
-            habitStructureManager.createHabitStructure(habit.getId(), today);
+            habitStructureManager.createHabitStructure(habit.getId(), today, isDefaultMade);
             return;
         }
 
@@ -87,7 +88,7 @@ public class HabitUpdateService {
 
             // Create structure if scheduled for today
             if (newCurDate.equals(today)) {
-                habitStructureManager.createHabitStructure(habit.getId(), today);
+                habitStructureManager.createHabitStructure(habit.getId(), today, isDefaultMade);
             }
         }
     }

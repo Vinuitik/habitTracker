@@ -18,6 +18,7 @@ public class HabitDTO {
     private LocalDate startDate;
     private LocalDate curDate;
     private LocalDate endDate;
+    private Boolean defaultMade;
 
     // Static method to convert Habit to HabitDTO
     public static HabitDTO fromHabit(Habit habit) {
@@ -27,7 +28,8 @@ public class HabitDTO {
             habit.getFrequency(),
             habit.getStartDate(),
             habit.getCurDate(),
-            habit.getEndDate()
+            habit.getEndDate(),
+            habit.getDefaultMade()
         );
     }
 
@@ -40,6 +42,7 @@ public class HabitDTO {
             .startDate(habitDTO.getStartDate())
             .curDate(habitDTO.getCurDate())
             .endDate(habitDTO.getEndDate())
+            .defaultMade(habitDTO.getDefaultMade())
             .build();
     }
 }

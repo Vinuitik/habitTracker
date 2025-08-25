@@ -79,6 +79,15 @@
             <input type="date" id="endDate" name="endDate" class="habit-input" 
                    th:value="${habit.endDate}" />
         </div>
+
+        <div class="form-group">
+            <label for="defaultMade">Mark as successful by default</label>
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="defaultMade" name="defaultMade" 
+                       th:checked="${habit.defaultMade}" />
+                <span class="checkbox-label">Check if this habit is successful unless you fail (e.g. sleeping late).</span>
+            </div>
+        </div>
         
         <button type="submit" class="habit-button">Update Habit</button>
     </form>

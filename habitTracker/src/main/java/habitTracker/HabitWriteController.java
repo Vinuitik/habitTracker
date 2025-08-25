@@ -121,6 +121,9 @@ public class HabitWriteController {
                 if (habit.getStreak() != null) {
                     existingHabit.setStreak(habit.getStreak());
                 }
+                if (habit.getDefaultMade() != null) {
+                    existingHabit.setDefaultMade(habit.getDefaultMade());
+                }
                 
                 habitService.saveHabit(existingHabit);
                 return ResponseEntity.ok("Habit saved successfully");

@@ -30,6 +30,9 @@ public class HabitService {
     }
 
     public void saveHabit(Habit habit) {
+        if (habit.getDefaultMade() == null) {
+            habit.setDefaultMade(false);
+        }
         habitRepository.save(habit);
         habitStructureRepository.save(HabitStructure.builder()
             .habitId(habit.getId())
@@ -86,6 +89,9 @@ public class HabitService {
         }
         if(updatedHabit.getStartDate() != null) {
             existingHabit.setStartDate(updatedHabit.getStartDate()); // Update start date if needed
+        }
+        if (updatedHabit.getDefaultMade() != null) {
+            existingHabit.setDefaultMade(updatedHabit.getDefaultMade());
         }
     
         Boolean isActive = updatedHabit.getActive();
