@@ -3,6 +3,7 @@ package updater.services;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import updater.models.Habit;
 import updater.models.HabitStructure;
@@ -91,6 +92,7 @@ public class StreakCalculationService {
         
         Integer habitId = habit.getId();
         Integer currentStreak = habit.getStreak() != null ? habit.getStreak() : 0;
+        Integer longestStreak = habit.getLongestStreak() != null ? habit.getLongestStreak() : 0;
         LocalDate habitStartDate = habit.getStartDate();
         
         // Skip if habit isn't due to be tracked in this period
@@ -112,6 +114,10 @@ public class StreakCalculationService {
                 if (structure != null && Boolean.TRUE.equals(structure.getCompleted())) {
                     // Habit was completed - increase streak
                     currentStreak++;
+                    // Update longest streak if current streak exceeds it
+                    if (currentStreak > longestStreak) {
+                        longestStreak = currentStreak;
+                    }
                     System.out.println("Habit #" + habitId + " completed on " + currentDate + 
                                       ". Streak increased to " + currentStreak);
                 } else {
@@ -129,9 +135,14 @@ public class StreakCalculationService {
             currentDate = currentDate.plusDays(1);
         }
         
-        // Update the habit's streak in the database
-        habit.setStreak(currentStreak);
-        mongoTemplate.save(habit);
-        System.out.println("Updated streak for habit #" + habitId + " to " + currentStreak);
+        // Use selective update instead of saving entire object to preserve other fields
+        Query updateQuery = new Query(Criteria.where("id").is(habitId));
+        Update update = new Update()
+            .set("streak", currentStreak)
+            .set("longestStreak", longestStreak);
+        mongoTemplate.updateFirst(updateQuery, update, Habit.class);
+        
+        System.out.println("Updated streak for habit #" + habitId + " to " + currentStreak + 
+                          " (longest: " + longestStreak + ")");
     }
 }

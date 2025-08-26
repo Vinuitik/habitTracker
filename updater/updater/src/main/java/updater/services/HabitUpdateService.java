@@ -3,6 +3,7 @@ package updater.services;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import updater.models.Habit;
 import updater.models.HabitStructure;
@@ -82,9 +83,12 @@ public class HabitUpdateService {
         if (curDate != null && curDate.isBefore(today)) {
             LocalDate newCurDate = habitDateCalculator.calculateNextOccurrence(habit, today);
             
-            habit.setCurDate(newCurDate);
-            System.out.println(habit);
-            mongoTemplate.save(habit);
+            // Use selective update instead of saving entire object to preserve other fields
+            Query updateQuery = new Query(Criteria.where("id").is(habit.getId()));
+            Update update = new Update().set("curDate", newCurDate);
+            mongoTemplate.updateFirst(updateQuery, update, Habit.class);
+            
+            System.out.println("Updated curDate for habit " + habit.getName() + " to " + newCurDate);
 
             // Create structure if scheduled for today
             if (newCurDate.equals(today)) {
