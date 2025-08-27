@@ -1,4 +1,10 @@
 C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\models\Habit.java
 C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\models\HabitStructure.java
 C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\models\LastRunDate.java
+C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\services\HabitDateCalculator.java
+C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\services\HabitStructureManager.java
+C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\services\HabitUpdateService.java
+C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\services\LastRunDateService.java
+C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\services\StreakCalculationService.java
 C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\Updater.java
+C:\Users\ACER\Documents\HabitTracker\updater\updater\src\main\java\updater\UpdateScheduler.java

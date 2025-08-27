@@ -1,7 +1,12 @@
+updater\services\StreakCalculationService.class
 updater\Updater.class
 updater\models\HabitStructure$HabitStructureBuilder.class
 updater\models\Habit$HabitBuilder.class
 updater\models\Habit.class
+updater\services\HabitDateCalculator.class
+updater\services\HabitUpdateService.class
+updater\services\LastRunDateService.class
+updater\services\HabitStructureManager.class
 updater\models\HabitStructure.class
-updater\HabitUpdater.class
+updater\UpdateScheduler.class
 updater\models\LastRunDate.class
