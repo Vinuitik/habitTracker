@@ -57,7 +57,7 @@ public class StreakCalculationService {
         
         // Process each habit
         for (Habit habit : activeHabits) {
-            updateHabitStreak(habit, lastRunDate, today, structuresByHabitAndDate);
+            updateHabitStreak(habit, startDate, today, structuresByHabitAndDate);// change from lastRunDate(today) to startDate
         }
         
         System.out.println("Streak update completed for all habits");
