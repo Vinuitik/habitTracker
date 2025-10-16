@@ -249,6 +249,7 @@ public class KPIService {
                 .exponentialMovingAverage(data.getExponentialMovingAverage())
                 .trendDirection(trendDirection)
                 .colorIntensity(colorIntensity)
+                .higherIsBetter(higherIsBetter)
                 .build();
     }
 }

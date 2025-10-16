@@ -19,4 +19,5 @@ public class KPIDataDTO {
     private Double exponentialMovingAverage;
     private String trendDirection; // "up", "down", "stable"
     private String colorIntensity; // "low", "medium", "high" for color strength
+    private Boolean higherIsBetter; // true if higher values are better, false otherwise
 }

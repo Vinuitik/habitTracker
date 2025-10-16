@@ -51,6 +51,9 @@ async function loadKPIChart(kpiName) {
     try {
         const response = await fetch(`/kpis/${encodeURIComponent(kpiName)}/data?period=${currentPeriod}`);
         const data = await response.json();
+
+        console.log('=== LOADING CHART ===');
+        console.log(data);
         
         if (response.ok) {
             renderChart(kpiName, data);
@@ -75,14 +78,47 @@ function renderChart(kpiName, data) {
     
     const ctx = canvas.getContext('2d');
     
+    // DEBUG: Log KPI name and data structure
+    console.log('=== RENDERING CHART ===');
+    console.log('KPI Name:', kpiName);
+    console.log('Total data points:', data.length);
+    console.log('Raw data:', data);
+    
     // Prepare data
     const labels = data.map(d => formatDate(d.date));
     const values = data.map(d => d.value);
     const emaValues = data.map(d => d.exponentialMovingAverage);
     
+    // DEBUG: Log extracted values
+    console.log('Dates:', labels);
+    console.log('Values:', values);
+    console.log('EMA Values:', emaValues);
+    
+    // DEBUG: Log KPI properties (from first data point if available)
+    if (data.length > 0 && data[0]) {
+        console.log('KPI Properties from data[0]:', {
+            name: data[0].name,
+            higherIsBetter: data[0].higherIsBetter,
+            description: data[0].description,
+            active: data[0].active
+        });
+    }
+    
     // Determine colors based on trend
     const borderColors = data.map(d => getTrendColor(d, data[0]));
-    const backgroundColors = borderColors.map(color => color + '20'); // Add transparency
+    
+    // Shift colors so that each segment uses the destination point's color
+    // This means the line from point[i] to point[i+1] will have the color of point[i+1]
+    const shiftedBorderColors = borderColors.length > 0 
+        ? [...borderColors.slice(1), borderColors[borderColors.length - 1]]
+        : borderColors;
+    
+    const backgroundColors = shiftedBorderColors.map(color => color + '20'); // Add transparency
+    
+    // DEBUG: Log color assignments
+    console.log('Border colors (original):', borderColors);
+    console.log('Border colors (shifted for segments):', shiftedBorderColors);
+    console.log('===========================');
     
     const config = {
         type: 'line',
@@ -92,13 +128,19 @@ function renderChart(kpiName, data) {
                 {
                     label: 'Actual Value',
                     data: values,
-                    borderColor: borderColors,
+                    borderColor: shiftedBorderColors,
                     backgroundColor: backgroundColors,
                     borderWidth: 3,
                     fill: true,
                     tension: 0.2,
                     pointRadius: 4,
-                    pointHoverRadius: 6
+                    pointHoverRadius: 6,
+                    segment: {
+                        borderColor: function(ctx) {
+                            // Use the color of the destination point for each segment
+                            return shiftedBorderColors[ctx.p1DataIndex] || shiftedBorderColors[0];
+                        }
+                    }
                 },
                 {
                     label: 'Trend (EMA)',
@@ -188,41 +230,68 @@ function updateKPIStats(kpiName, data) {
     if (trendElement) {
         const trendText = getTrendText(latest);
         trendElement.textContent = trendText;
-        trendElement.className = `trend-badge ${getTrendClass(latest)}`;
+        // Pass the KPI info (from data[0]) to getTrendClass
+        trendElement.className = `trend-badge ${getTrendClass(latest, data[0])}`;
     }
 }
 
 function getTrendColor(dataPoint, kpi) {
+    // DEBUG: Log color decision for this data point
+    console.log('--- getTrendColor ---');
+    console.log('Data point:', {
+        date: dataPoint.date,
+        value: dataPoint.value,
+        exponentialMovingAverage: dataPoint.exponentialMovingAverage,
+        colorIntensity: dataPoint.colorIntensity
+    });
+    console.log('KPI:', {
+        name: kpi.name,
+        higherIsBetter: kpi.higherIsBetter
+    });
+    
     if (!dataPoint.value || !dataPoint.exponentialMovingAverage) {
+        console.log('-> Returning gray (no data)');
         return '#6c757d'; // Gray for no data
     }
     
     const diff = dataPoint.value - dataPoint.exponentialMovingAverage;
     const isPositiveTrend = diff > 0;
     
+    console.log('Difference (value - EMA):', diff.toFixed(2));
+    console.log('Is positive trend:', isPositiveTrend);
+    console.log('KPI higherIsBetter:', kpi.higherIsBetter);
+    
     // Determine if positive trend is good or bad based on KPI direction
     const isGoodTrend = (kpi.higherIsBetter && isPositiveTrend) || (!kpi.higherIsBetter && !isPositiveTrend);
+    
+    console.log('Is good trend:', isGoodTrend);
     
     // Color intensity based on change magnitude
     const intensity = getColorIntensity(dataPoint.colorIntensity);
     
+    console.log('Color intensity:', intensity);
+    
+    let color;
     if (isGoodTrend) {
         // Green shades for good trends
         switch (intensity) {
-            case 'high': return '#28a745';
-            case 'medium': return '#40c057';
-            case 'low': return '#69db7c';
-            default: return '#6c757d';
+            case 'high': color = '#28a745'; break;
+            case 'medium': color = '#40c057'; break;
+            case 'low': color = '#69db7c'; break;
+            default: color = '#6c757d';
         }
     } else {
         // Red shades for bad trends
         switch (intensity) {
-            case 'high': return '#dc3545';
-            case 'medium': return '#e74c3c';
-            case 'low': return '#f8d7da';
-            default: return '#6c757d';
+            case 'high': color = '#dc3545'; break;
+            case 'medium': color = '#e74c3c'; break;
+            case 'low': color = '#f8d7da'; break;
+            default: color = '#6c757d';
         }
     }
+    
+    console.log('-> Returning color:', color);
+    return color;
 }
 
 function getColorIntensity(intensity) {
@@ -245,7 +314,7 @@ function getTrendText(dataPoint) {
     return `${direction} ${percentChange.toFixed(1)}%`;
 }
 
-function getTrendClass(dataPoint) {
+function getTrendClass(dataPoint, kpi) {
     if (!dataPoint.value || !dataPoint.exponentialMovingAverage) {
         return 'neutral';
     }
@@ -257,8 +326,13 @@ function getTrendClass(dataPoint) {
         return 'neutral';
     }
     
-    // This would need KPI direction info to determine if positive/negative
-    return diff > 0 ? 'positive' : 'negative';
+    const isPositiveTrend = diff > 0; // Value went up
+    
+    // Determine if this trend is good or bad based on KPI direction
+    // Same logic as getTrendColor
+    const isGoodTrend = (kpi.higherIsBetter && isPositiveTrend) || (!kpi.higherIsBetter && !isPositiveTrend);
+    
+    return isGoodTrend ? 'positive' : 'negative';
 }
 
 function formatDate(dateString) {
