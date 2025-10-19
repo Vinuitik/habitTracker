@@ -47,6 +47,14 @@ public class HabitReadController {
         
         StructureDTO structure = structureService.getTodayStructure();
         
+        // Debug logging
+        System.out.println("=== Structure Debug Info ===");
+        System.out.println("Date: " + structure.getDate());
+        System.out.println("Habits: " + structure.getHabits());
+        System.out.println("Habit Statuses: " + structure.getHabitStatuses());
+        System.out.println("Habit Details: " + structure.getHabitDetails());
+        System.out.println("===========================");
+        
         model.addAttribute("structure", structure); 
         return "index";
     }
