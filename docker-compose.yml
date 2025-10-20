@@ -25,7 +25,7 @@ services:
       - mongodbHabit
     environment:
       MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
-      TZ: ${HOST_TIMEZONE:-UTC}   # <-- Add this line
+      TZ: Europe/London   # <-- Add this line
     restart: unless-stopped
 
   updater:
@@ -38,7 +38,7 @@ services:
     depends_on:
       - mongodbHabit
     environment:
-      TZ: ${HOST_TIMEZONE:-UTC}
+      TZ: Europe/London
       JAVA_TOOL_OPTIONS: -Duser.timezone=${HOST_TIMEZONE:-UTC}
       MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
     restart: unless-stopped
@@ -56,7 +56,7 @@ services:
         MONGO_PASS: example
         MONGO_DB: habits
         MONGO_AUTH_DB: admin
-        TZ: ${HOST_TIMEZONE:-UTC}
+        TZ: Europe/London
       volumes:
         - ./backup/habitbackup.json:/app/habitbackup.json:ro
       restart: unless-stopped
