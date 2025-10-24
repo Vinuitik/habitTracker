@@ -61,5 +61,17 @@ services:
         - ./backup/habitbackup.json:/app/habitbackup.json:ro
       restart: unless-stopped
 
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - javaapp
+    restart: unless-stopped
+
 volumes:
   mongodb_data:
