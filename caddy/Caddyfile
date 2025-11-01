@@ -1,3 +1,6 @@
+# Optional: Use Let's Encrypt staging during initial setup to avoid rate limits
+# Uncomment the block below temporarily if needed, then comment it out for production.
+# {
 ## Caddyfile for HabitTracker
 
 # Optional: Use Let's Encrypt staging during initial setup to avoid rate limits
@@ -21,8 +24,8 @@ habitrackerdima.me {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
-	# Proxy to internal Nginx (which proxies to the Java app)
-	reverse_proxy nginx:80 {
+	# Proxy to Java app directly
+	reverse_proxy javaapp:8089 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
@@ -40,6 +43,7 @@ habitrackerdima.me {
 	}
 
 	handle {
-		reverse_proxy nginx:80
+		# Local/dev fallback without a domain
+		reverse_proxy javaapp:8089
 	}
 }

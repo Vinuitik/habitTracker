@@ -161,9 +161,8 @@ The updater has been broken down into focused service classes:
    - Starts the entire application stack
 
 3. **Access the application**:
-    - Default (now): via Nginx directly
-       - HTTP: http://<server-ip> (e.g., http://84.8.146.136)
-       - HTTPS (self-signed): https://<server-ip> (browser warning expected)
+    - With domain (recommended): https://habitrackerdima.me (auto HTTPS by Caddy)
+    - Local/no-domain (dev): http://localhost (Caddy proxies to javaapp)
     - Direct service ports (for debugging):
        - Main App (Java, host-mapped): http://localhost:8079
        - Updater (host-mapped): http://localhost:8087
@@ -182,22 +181,18 @@ This stack includes Caddy as an edge proxy that terminates TLS and obtains/renew
 
 2. Point your DNS A/AAAA records for the domain to this server's public IP.
 
-3. When DNS is ready and ports 80/443 are open on the server, switch to Caddy:
+3. Start the stack (Caddy is the default public entrypoint on 80/443):
    ```powershell
-   # Stop Nginx first to free ports 80/443
-   docker compose stop nginx
-
-   # Start only Caddy (exposes 80/443) using the tls profile
-   docker compose --profile tls up -d caddy
+   docker compose up -d --build
+   docker compose logs -f caddy
    ```
 
 4. Browse to:
    - https://habits.example.com (automatic redirect from HTTP)
 
 Notes:
-- By default, Nginx is the public entrypoint on ports 80/443 (self-signed cert on 443).
-- When enabling Caddy, stop Nginx first to avoid port conflicts, then start Caddy with the `tls` profile.
-- If no `CADDY_DOMAIN` is set, Caddy won’t obtain certs; keep Nginx mode until DNS resolves.
+- Caddy is now the sole edge proxy and will automatically obtain/renew certificates.
+- If DNS isn’t set yet, Caddy still serves HTTP on :80 and proxies to the app.
 - X-Forwarded-Proto is preserved end-to-end so Spring Boot generates correct HTTPS URLs behind proxies.
 
 ### Production TLS checklist (Namecheap + Oracle Cloud)
@@ -211,15 +206,8 @@ Notes:
    - Open inbound TCP ports 80 and 443 in your VCN Security List or NSG.
    - Ensure the instance OS firewall allows 80/443 (ufw/firewalld/Windows Firewall).
 
-3. Switch to Caddy (automatic certs and renewals):
+3. Watch Caddy issue certs automatically:
    ```powershell
-   # Stop Nginx to free 80/443
-   docker compose stop nginx
-
-   # Start Caddy with TLS profile
-   docker compose --profile tls up -d caddy
-
-   # Watch logs until you see certificates obtained
    docker compose logs -f caddy
    ```
 
