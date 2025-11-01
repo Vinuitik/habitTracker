@@ -1,0 +1,39 @@
+{
+	# Optional global options
+	# Use env var email if provided
+	email {$CADDY_EMAIL}
+	# Allow overriding ACME CA (e.g., Let's Encrypt staging) via env var
+	# Leave empty to use default (Let's Encrypt production)
+	acme_ca {$ACME_CA}
+}
+
+# Primary HTTPS site when a real domain is provided
+{$CADDY_DOMAIN} {
+	encode zstd gzip
+
+	# Forward original client details to downstream
+	headers {
+		X-Forwarded-Proto "https"
+	}
+
+	reverse_proxy nginx:80 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto "https"
+	}
+}
+
+# HTTP listener
+# - If the request Host matches the configured domain, redirect to HTTPS
+# - Otherwise (e.g., local dev without a domain), just proxy over HTTP
+:80 {
+	@hasDomain host {$CADDY_DOMAIN}
+	handle @hasDomain {
+		redir https://{host}{uri} permanent
+	}
+
+	handle {
+		reverse_proxy nginx:80
+	}
+}

@@ -161,8 +161,38 @@ The updater has been broken down into focused service classes:
    - Starts the entire application stack
 
 3. **Access the application**:
-   - Main App: http://localhost:8089
-   - Updater: http://localhost:8087
+   - With Caddy (recommended): https://<your-domain>
+   - Local (no domain): http://localhost
+    - Direct service ports (for debugging):
+       - Main App (Java, host-mapped): http://localhost:8079
+       - Updater (host-mapped): http://localhost:8087
+
+### TLS with Caddy (Automatic HTTPS)
+
+This stack includes Caddy as an edge proxy that terminates TLS and obtains/renews certificates automatically.
+
+1. Create a `.env` file next to `docker-compose.yml` with your domain and email:
+   ```env
+   CADDY_DOMAIN=habits.example.com
+   CADDY_EMAIL=you@example.com
+   # Optional during first tests to avoid LE rate limits:
+   # ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+   ```
+
+2. Point your DNS A/AAAA records for the domain to this server's public IP.
+
+3. Start the stack:
+   ```powershell
+   docker compose up -d --build
+   ```
+
+4. Browse to:
+   - https://habits.example.com (automatic redirect from HTTP)
+
+Notes:
+- Nginx is now internal-only; Caddy is the public entrypoint on ports 80/443.
+- If no `CADDY_DOMAIN` is set, Caddy will still serve HTTP on `http://localhost` for local dev (no cert).
+- X-Forwarded-Proto is preserved end-to-end so Spring Boot generates correct HTTPS URLs behind the proxies.
 
 ### Manual Setup
 

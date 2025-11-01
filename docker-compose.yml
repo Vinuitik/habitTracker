@@ -66,12 +66,32 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     container_name: nginx
-    ports:
-      - "80:80"
-      - "443:443"
+    # No host ports; Caddy will be the public edge proxy on 80/443
     depends_on:
       - javaapp
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    depends_on:
+      - nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Set these in a .env file or your environment
+      - CADDY_DOMAIN=${CADDY_DOMAIN:-}
+      - CADDY_EMAIL=${CADDY_EMAIL:-}
+      # Optional: use Let's Encrypt staging during first tests to avoid rate limits
+      - ACME_CA=${ACME_CA:-}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
 volumes:
   mongodb_data:
+  caddy_data:
+  caddy_config:
