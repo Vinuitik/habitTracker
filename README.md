@@ -161,8 +161,9 @@ The updater has been broken down into focused service classes:
    - Starts the entire application stack
 
 3. **Access the application**:
-   - With Caddy (recommended): https://<your-domain>
-   - Local (no domain): http://localhost
+    - Default (now): via Nginx directly
+       - HTTP: http://<server-ip> (e.g., http://84.8.146.136)
+       - HTTPS (self-signed): https://<server-ip> (browser warning expected)
     - Direct service ports (for debugging):
        - Main App (Java, host-mapped): http://localhost:8079
        - Updater (host-mapped): http://localhost:8087
@@ -181,18 +182,23 @@ This stack includes Caddy as an edge proxy that terminates TLS and obtains/renew
 
 2. Point your DNS A/AAAA records for the domain to this server's public IP.
 
-3. Start the stack:
+3. When DNS is ready and ports 80/443 are open on the server, switch to Caddy:
    ```powershell
-   docker compose up -d --build
+   # Stop Nginx first to free ports 80/443
+   docker compose stop nginx
+
+   # Start only Caddy (exposes 80/443) using the tls profile
+   docker compose --profile tls up -d caddy
    ```
 
 4. Browse to:
    - https://habits.example.com (automatic redirect from HTTP)
 
 Notes:
-- Nginx is now internal-only; Caddy is the public entrypoint on ports 80/443.
-- If no `CADDY_DOMAIN` is set, Caddy will still serve HTTP on `http://localhost` for local dev (no cert).
-- X-Forwarded-Proto is preserved end-to-end so Spring Boot generates correct HTTPS URLs behind the proxies.
+- By default, Nginx is the public entrypoint on ports 80/443 (self-signed cert on 443).
+- When enabling Caddy, stop Nginx first to avoid port conflicts, then start Caddy with the `tls` profile.
+- If no `CADDY_DOMAIN` is set, Caddy won’t obtain certs; keep Nginx mode until DNS resolves.
+- X-Forwarded-Proto is preserved end-to-end so Spring Boot generates correct HTTPS URLs behind proxies.
 
 ### Manual Setup
 

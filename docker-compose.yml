@@ -66,7 +66,9 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     container_name: nginx
-    # No host ports; Caddy will be the public edge proxy on 80/443
+    ports:
+      - "80:80"
+      - "443:443"
     depends_on:
       - javaapp
     restart: unless-stopped
@@ -76,6 +78,8 @@ services:
     container_name: caddy
     depends_on:
       - nginx
+    # Disabled by default; start with `--profile tls` once DNS is ready
+    profiles: ["tls"]
     ports:
       - "80:80"
       - "443:443"
