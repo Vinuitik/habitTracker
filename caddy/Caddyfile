@@ -6,9 +6,20 @@
 # 	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 # }
 
-# Primary HTTPS sites (automatic certificates by Caddy)
-habitrackerdima.me, www.habitrackerdima.me {
+# Canonical redirect: send www -> apex
+www.habitrackerdima.me {
 	encode zstd gzip
+	redir https://habitrackerdima.me{uri} permanent
+}
+
+# Primary HTTPS site (automatic certificates by Caddy)
+habitrackerdima.me {
+	encode zstd gzip
+
+	headers {
+		# Enable HSTS for long-term HTTPS (only after certs are valid)
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
 
 	# Proxy to internal Nginx (which proxies to the Java app)
 	reverse_proxy nginx:80 {

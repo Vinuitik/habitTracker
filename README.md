@@ -200,6 +200,33 @@ Notes:
 - If no `CADDY_DOMAIN` is set, Caddy won’t obtain certs; keep Nginx mode until DNS resolves.
 - X-Forwarded-Proto is preserved end-to-end so Spring Boot generates correct HTTPS URLs behind proxies.
 
+### Production TLS checklist (Namecheap + Oracle Cloud)
+
+1. DNS (Namecheap → Domain List → Manage → Advanced DNS):
+   - A @ → <your Oracle VM public IPv4>
+   - CNAME www → @
+   - TTL: Automatic
+
+2. Oracle Cloud networking:
+   - Open inbound TCP ports 80 and 443 in your VCN Security List or NSG.
+   - Ensure the instance OS firewall allows 80/443 (ufw/firewalld/Windows Firewall).
+
+3. Switch to Caddy (automatic certs and renewals):
+   ```powershell
+   # Stop Nginx to free 80/443
+   docker compose stop nginx
+
+   # Start Caddy with TLS profile
+   docker compose --profile tls up -d caddy
+
+   # Watch logs until you see certificates obtained
+   docker compose logs -f caddy
+   ```
+
+4. Optional (initial testing):
+   - Use Let's Encrypt staging to avoid rate limits once while validating DNS and reachability.
+   - Uncomment the `acme_ca` line in `caddy/Caddyfile`, reload Caddy, then comment it again for production.
+
 ### Manual Setup
 
 If you prefer manual setup:
