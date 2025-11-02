@@ -10,13 +10,13 @@
 # }
 
 # Canonical redirect: send www -> apex
-www.habitrackerdima.me {
+www.habittrackerdima.me {
 	encode zstd gzip
 	redir https://habitrackerdima.me{uri} permanent
 }
 
 # Primary HTTPS site (automatic certificates by Caddy)
-habitrackerdima.me {
+habittrackerdima.me {
 	encode zstd gzip
 
 	header {
@@ -37,7 +37,7 @@ habitrackerdima.me {
 # - If the host matches the real domain(s), redirect to HTTPS
 # - Otherwise (e.g., local dev without domain), just proxy over HTTP
 :80 {
-	@this host habitrackerdima.me www.habitrackerdima.me
+	@this host habittrackerdima.me www.habittrackerdima.me
 	handle @this {
 		redir https://{host}{uri} permanent
 	}
