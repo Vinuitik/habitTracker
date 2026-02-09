@@ -3,28 +3,11 @@
 # {
 ## Caddyfile for HabitTracker
 
-# Optional: Use Let's Encrypt staging during initial setup to avoid rate limits
-# Uncomment the block below temporarily if needed, then comment it out for production.
-# {
-# 	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
-# }
-
-# Canonical redirect: send www -> apex
-www.habittrackerdima.me {
-	encode zstd gzip
-	redir https://habitrackerdima.me{uri} permanent
-}
-
-# Primary HTTPS site (automatic certificates by Caddy)
-habittrackerdima.me {
+# ===== CLOUDFLARE TUNNEL SETUP (ACTIVE) =====
+# Cloudflare handles HTTPS at the edge, Caddy serves HTTP internally
+:80 {
 	encode zstd gzip
 
-	header {
-		# Enable HSTS for long-term HTTPS (only after certs are valid)
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	}
-
-	# Proxy to Java app directly
 	reverse_proxy javaapp:8089 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
@@ -33,17 +16,49 @@ habittrackerdima.me {
 	}
 }
 
-# HTTP listener
-# - If the host matches the real domain(s), redirect to HTTPS
-# - Otherwise (e.g., local dev without domain), just proxy over HTTP
-:80 {
-	@this host habittrackerdima.me www.habittrackerdima.me
-	handle @this {
-		redir https://{host}{uri} permanent
-	}
+# ===== COMMENTED OUT: Direct HTTPS (for cloud hosting) =====
+# Uncomment sections below if moving back to direct cloud hosting without tunnel
 
-	handle {
-		# Local/dev fallback without a domain
-		reverse_proxy javaapp:8089
-	}
-}
+# # Optional: Use Let's Encrypt staging during initial setup to avoid rate limits
+# # {
+# # 	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+# # }
+#
+# # Canonical redirect: send www -> apex
+# www.habittrackerdima.me {
+# 	encode zstd gzip
+# 	redir https://habittrackerdima.me{uri} permanent
+# }
+#
+# # Primary HTTPS site (automatic certificates by Caddy)
+# habittrackerdima.me {
+# 	encode zstd gzip
+#
+# 	header {
+# 		# Enable HSTS for long-term HTTPS (only after certs are valid)
+# 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+# 	}
+#
+# 	# Proxy to Java app directly
+# 	reverse_proxy javaapp:8089 {
+# 		header_up Host {host}
+# 		header_up X-Real-IP {remote_host}
+# 		header_up X-Forwarded-For {remote_host}
+# 		header_up X-Forwarded-Proto "https"
+# 	}
+# }
+#
+# # HTTP listener
+# # - If the host matches the real domain(s), redirect to HTTPS
+# # - Otherwise (e.g., local dev without domain), just proxy over HTTP
+# :80 {
+# 	@this host habittrackerdima.me www.habittrackerdima.me
+# 	handle @this {
+# 		redir https://{host}{uri} permanent
+# 	}
+#
+# 	handle {
+# 		# Local/dev fallback without a domain
+# 		reverse_proxy javaapp:8089
+# 	}
+# }
