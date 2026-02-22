@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   mongodbHabit:
-    image: mongo:latest
+    image: mongo:7
     container_name: mongodbHabit
     ports:
       - "27019:27017"
@@ -66,22 +66,12 @@ services:
     container_name: caddy
     depends_on:
       - javaapp
-    # Ports removed - cloudflared tunnel handles external access
+    ports:
+      - "8080:80"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    restart: unless-stopped
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    depends_on:
-      - caddy
-    command: tunnel --config /etc/cloudflared/config.yml run
-    volumes:
-      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
-      - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
     restart: unless-stopped
 
 volumes:
