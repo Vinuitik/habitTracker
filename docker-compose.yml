@@ -26,6 +26,11 @@ services:
     environment:
       MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
       TZ: Europe/London   # <-- Add this line
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   updater:
@@ -65,7 +70,8 @@ services:
     image: caddy:2
     container_name: caddy
     depends_on:
-      - javaapp
+      javaapp:
+        condition: service_healthy
     ports:
       - "8080:80"
     volumes:
@@ -74,7 +80,20 @@ services:
       - caddy_config:/config
     restart: unless-stopped
 
+  cloudflared:
+    build:
+      context: ./cloudflared
+      dockerfile: Dockerfile
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    container_name: cloudflared
+    depends_on:
+      - caddy
+    restart: unless-stopped
+
 volumes:
   mongodb_data:
   caddy_data:
   caddy_config:
+  cloudflared_config:

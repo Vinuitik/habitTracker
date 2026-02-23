@@ -1,5 +1,6 @@
 tunnel: 4b5bddb9-dffa-4e05-9043-cebc51d14ccf
 credentials-file: /etc/cloudflared/credentials.json
+protocol: http2
 
 ingress:
   - hostname: habittrackerdima.me
