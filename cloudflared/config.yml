@@ -2,6 +2,12 @@ tunnel: 4b5bddb9-dffa-4e05-9043-cebc51d14ccf
 credentials-file: /etc/cloudflared/credentials.json
 protocol: http2
 
+# Stability improvements
+grace-period: 30s
+retries: 5
+heartbeat-interval: 10s
+heartbeat-count: 5
+
 ingress:
   - hostname: habittrackerdima.me
     service: http://caddy:80
