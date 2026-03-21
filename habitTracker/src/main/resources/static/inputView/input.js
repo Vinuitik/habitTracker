@@ -2,6 +2,22 @@
 let totalHabits = 0;
 let checkedHabits = 0;
 
+function applyStreakColor(streakSpan, streakValue) {
+    if (!streakSpan || Number.isNaN(streakValue)) {
+        return;
+    }
+
+    if (streakValue < 0) {
+        const intensity = Math.min(Math.abs(streakValue), 24);
+        const lightness = Math.max(22, 50 - intensity);
+        streakSpan.style.color = `hsl(0, 88%, ${lightness}%)`;
+        return;
+    }
+
+    // Keep the existing positive/neutral visual color.
+    streakSpan.style.color = '#2eaadc';
+}
+
 // Fetch and display streaks on page load
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -35,9 +51,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     `.habit-checkbox[data-habit-id="${habitId}"]`
                 );
                 if (streakSpan && checkbox) {
+                    const displayStreak = checkbox.checked ? streak + 1 : streak;
                     streakSpan.textContent =
-                        (checkbox.checked ? streak + 1 : streak) + ' day streak';
+                        displayStreak + ' day streak';
                     streakSpan.dataset.baseStreak = streak;
+                    applyStreakColor(streakSpan, displayStreak);
                 }
                     });
         });
@@ -83,8 +101,10 @@ function updateHabitStatus(checkbox) {
         );
         if (streakSpan) {
             const baseStreak = parseInt(streakSpan.dataset.baseStreak || "0", 10);
+            const displayStreak = completed ? baseStreak + 1 : baseStreak;
             streakSpan.textContent = 
-                (completed ? baseStreak + 1 : baseStreak) + ' day streak';
+                displayStreak + ' day streak';
+            applyStreakColor(streakSpan, displayStreak);
         }
         
         // Move habit to appropriate position in the list

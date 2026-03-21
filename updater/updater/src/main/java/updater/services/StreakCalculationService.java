@@ -110,21 +110,53 @@ public class StreakCalculationService {
             // Check if the habit should be tracked on this day based on frequency
             if (habitDateCalculator.shouldTrackHabitOnDate(habit, currentDate)) {
                 HabitStructure structure = habitStructures.get(currentDate);
+                boolean inferredFromDefault = structure == null;
+                boolean completedForDay;
+
+                if (inferredFromDefault) {
+                    // Catch-up rule: when updater missed days, infer completion from defaultMade.
+                    completedForDay = Boolean.TRUE.equals(habit.getDefaultMade());
+                } else {
+                    completedForDay = Boolean.TRUE.equals(structure.getCompleted());
+                }
                 
-                if (structure != null && Boolean.TRUE.equals(structure.getCompleted())) {
-                    // Habit was completed - increase streak
-                    currentStreak++;
+                if (completedForDay) {
+                    if (inferredFromDefault) {
+                        // Catch-up rule: inferred completion for defaultMade=true keeps building streak.
+                        currentStreak++;
+                        System.out.println("Habit #" + habitId + " inferred completed on " + currentDate +
+                                          " from defaultMade=true. Streak increased to " + currentStreak);
+                    } else {
+                        // Explicit completion always restarts positivity at 1.
+                        currentStreak = 1;
+                        System.out.println("Habit #" + habitId + " completed on " + currentDate +
+                                          ". Streak reset to 1");
+                    }
+
                     // Update longest streak if current streak exceeds it
                     if (currentStreak > longestStreak) {
                         longestStreak = currentStreak;
                     }
-                    System.out.println("Habit #" + habitId + " completed on " + currentDate + 
-                                      ". Streak increased to " + currentStreak);
                 } else {
-                    // Habit was not completed or not found - reset streak
-                    currentStreak = 0;
-                    System.out.println("Habit #" + habitId + " not completed on " + currentDate + 
-                                      ". Streak reset to 0");
+                    if (inferredFromDefault) {
+                        // Catch-up rule: inferred missed day for defaultMade=false decreases streak.
+                        if (currentStreak > 0) {
+                            currentStreak = 0;
+                        } else {
+                            currentStreak--;
+                        }
+                        System.out.println("Habit #" + habitId + " inferred not completed on " + currentDate +
+                                          " from defaultMade=false. Streak decreased to " + currentStreak);
+                    } else {
+                        // Miss once: go to 0. Repeated misses continue into negatives.
+                        if (currentStreak > 0) {
+                            currentStreak = 0;
+                        } else {
+                            currentStreak--;
+                        }
+                        System.out.println("Habit #" + habitId + " not completed on " + currentDate +
+                                          ". Streak decreased to " + currentStreak);
+                    }
                 }
             } else {
                 System.out.println("Habit #" + habitId + " not scheduled for " + currentDate + 
