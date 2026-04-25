@@ -301,6 +301,10 @@ public class StructureService {
         habitStructure.setCompleted(completed);
         habitStructureRepository.save(habitStructure);
 
+        if (Boolean.FALSE.equals(completed) && LocalDate.now().equals(date)) {
+            habitService.restoreNegativeStreak(habitId);
+        }
+
         List<Rule> rules = ruleService.getRulesByMainId(habitId);
         List<Integer> subIds = rules.stream()
             .map(Rule::getHabitSubId)

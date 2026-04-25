@@ -32,4 +32,5 @@ public class Habit {
     private String status; // prioroty, maintaining, abandoned.
     private String twoMinuteRule; // 2 minute rule
     private Boolean defaultMade;
+    private Integer lastNegativeStreak;
 }

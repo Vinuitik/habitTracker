@@ -182,6 +182,15 @@ public class HabitService {
             habitRepository.save(habit);
         }
     }
+    public void restoreNegativeStreak(Integer habitId) {
+        Habit habit = habitRepository.findById(habitId).orElse(null);
+        if (habit != null && habit.getLastNegativeStreak() != null) {
+            habit.setStreak(habit.getLastNegativeStreak());
+            habit.setLastNegativeStreak(null);
+            habitRepository.save(habit);
+        }
+    }
+
     public void updateHabitStreak(List<Integer> ids, Integer streak) {
         List<Habit> habits = habitRepository.findAllById(ids);
         for (Habit habit : habits) {

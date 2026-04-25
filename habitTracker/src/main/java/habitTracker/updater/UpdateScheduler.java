@@ -39,9 +39,10 @@ public class UpdateScheduler {
                 System.out.println("Updater already ran today. Skipping.");
                 return;
             }
+            java.time.LocalDate previousRunDate = lastRunDateService.getLastRunDate();
             lastRunDateService.markRunToday();
             habitUpdateService.updateAllHabits();
-            streakCalculationService.updateAllStreaks();
+            streakCalculationService.updateAllStreaks(previousRunDate);
             System.out.println("Updater ran successfully for " + java.time.LocalDate.now());
         } catch (Exception e) {
             System.err.println("Error during daily update: " + e.getMessage());

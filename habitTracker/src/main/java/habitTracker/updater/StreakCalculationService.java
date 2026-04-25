@@ -18,20 +18,16 @@ import java.util.stream.Collectors;
 public class StreakCalculationService {
 
     private final MongoTemplate mongoTemplate;
-    private final LastRunDateService lastRunDateService;
     private final HabitDateCalculator habitDateCalculator;
 
     public StreakCalculationService(MongoTemplate mongoTemplate,
-                                    LastRunDateService lastRunDateService,
                                     HabitDateCalculator habitDateCalculator) {
         this.mongoTemplate = mongoTemplate;
-        this.lastRunDateService = lastRunDateService;
         this.habitDateCalculator = habitDateCalculator;
     }
 
-    public void updateAllStreaks() {
+    public void updateAllStreaks(LocalDate lastRunDate) {
         LocalDate today = LocalDate.now();
-        LocalDate lastRunDate = lastRunDateService.getLastRunDate();
 
         if (lastRunDate == null) {
             lastRunDate = today.minusDays(1);
@@ -53,7 +49,7 @@ public class StreakCalculationService {
                 fetchHabitStructures(activeHabits, startDate, today);
 
         for (Habit habit : activeHabits) {
-            updateHabitStreak(habit, startDate, today, structuresByHabitAndDate);
+            updateHabitStreak(habit, lastRunDate, today, structuresByHabitAndDate);
         }
 
         System.out.println("Streak update completed for all habits");
@@ -96,6 +92,12 @@ public class StreakCalculationService {
         Map<LocalDate, HabitStructure> habitStructures =
                 structuresByHabitAndDate.getOrDefault(habitId, new HashMap<>());
 
+        // Tracks what to write to lastNegativeStreak at the end.
+        // null = no-op, non-null = set to this value.
+        // Overriding with null (CLEAR) uses shouldClearLastNeg instead.
+        Integer pendingLastNeg = null;
+        boolean shouldClearLastNeg = false;
+
         LocalDate currentDate = lastRunDate;
         while (!currentDate.isEqual(today) && !currentDate.isAfter(today)) {
             if (habitDateCalculator.shouldTrackHabitOnDate(habit, currentDate)) {
@@ -115,6 +117,11 @@ public class StreakCalculationService {
                         System.out.println("Habit #" + habitId + " inferred completed on " + currentDate +
                                 " from defaultMade=true. Streak increased to " + currentStreak);
                     } else {
+                        if (currentStreak <= 0) {
+                            // Transitioning from negative to positive: save snapshot
+                            pendingLastNeg = currentStreak;
+                            shouldClearLastNeg = false;
+                        }
                         currentStreak = 1;
                         System.out.println("Habit #" + habitId + " completed on " + currentDate +
                                 ". Streak reset to 1");
@@ -125,6 +132,9 @@ public class StreakCalculationService {
                 } else {
                     if (currentStreak > 0) {
                         currentStreak = 0;
+                        // Left positive territory: clear the saved snapshot
+                        pendingLastNeg = null;
+                        shouldClearLastNeg = true;
                     } else {
                         currentStreak--;
                     }
@@ -142,6 +152,13 @@ public class StreakCalculationService {
         Update update = new Update()
                 .set("streak", currentStreak)
                 .set("longestStreak", longestStreak);
+
+        if (pendingLastNeg != null) {
+            update.set("lastNegativeStreak", pendingLastNeg);
+        } else if (shouldClearLastNeg) {
+            update.unset("lastNegativeStreak");
+        }
+
         mongoTemplate.updateFirst(updateQuery, update, Habit.class);
 
         System.out.println("Updated streak for habit #" + habitId + " to " + currentStreak +
