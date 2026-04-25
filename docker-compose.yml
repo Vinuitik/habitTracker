@@ -4,14 +4,14 @@ services:
   mongodbHabit:
     image: mongo:7
     container_name: mongodbHabit
-    ports:
-      - "27019:27017"
+    command: mongod --wiredTigerCacheSizeGB 0.25
     volumes:
       - mongodb_data:/data/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
       MONGO_INITDB_DATABASE: habits
+    mem_limit: 512m
     restart: unless-stopped
 
   javaapp:
@@ -19,52 +19,38 @@ services:
       context: ./habitTracker
       dockerfile: Dockerfile
     container_name: javaapp
-    ports:
-      - "8079:8089"
     depends_on:
       - mongodbHabit
     environment:
       MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
-      TZ: Europe/London   # <-- Add this line
+      TZ: Europe/London
+      JAVA_TOOL_OPTIONS: -Xmx256m -Xms64m
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089"]
       interval: 5s
       timeout: 3s
       retries: 10
-    restart: unless-stopped
-
-  updater:
-    build:
-      context: ./updater
-      dockerfile: Dockerfile
-    container_name: updater
-    ports:
-      - "8087:8087" # Map port 8087
-    depends_on:
-      - mongodbHabit
-    environment:
-      TZ: Europe/London
-      JAVA_TOOL_OPTIONS: -Duser.timezone=${HOST_TIMEZONE:-UTC}
-      MONGO_URI: mongodb://root:example@mongodbHabit:27017/habits?authSource=admin
+    mem_limit: 384m
     restart: unless-stopped
 
   mongo-backup:
-      build:
-        context: ./backup
-        dockerfile: Dockerfile
-      container_name: mongo-backup
-      depends_on:
-        - mongodbHabit
-      environment:
-        MONGO_HOST: mongodbHabit
-        MONGO_USER: root
-        MONGO_PASS: example
-        MONGO_DB: habits
-        MONGO_AUTH_DB: admin
-        TZ: Europe/London
-      volumes:
-        - ./backup/habitbackup.json:/app/habitbackup.json:ro
-      restart: unless-stopped
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    container_name: mongo-backup
+    depends_on:
+      - mongodbHabit
+    environment:
+      MONGO_HOST: mongodbHabit
+      MONGO_USER: root
+      MONGO_PASS: example
+      MONGO_DB: habits
+      MONGO_AUTH_DB: admin
+      TZ: Europe/London
+    volumes:
+      - ./backup/habitbackup.json:/app/habitbackup.json:ro
+    mem_limit: 128m
+    restart: unless-stopped
 
   caddy:
     image: caddy:2
@@ -73,11 +59,13 @@ services:
       javaapp:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "80:80"
+      - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    mem_limit: 64m
     restart: unless-stopped
 
   cloudflared:
@@ -90,6 +78,7 @@ services:
     container_name: cloudflared
     depends_on:
       - caddy
+    mem_limit: 64m
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 20241 || exit 1"]
@@ -101,4 +90,3 @@ volumes:
   mongodb_data:
   caddy_data:
   caddy_config:
-  cloudflared_config:
