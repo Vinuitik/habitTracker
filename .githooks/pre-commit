@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs on every local commit. Fast compile-only check.
+# Full test suite runs in CI (GitHub Actions) on push.
+
+cd habitTracker || exit 1
+
+echo "pre-commit: compiling..."
+./mvnw compile -q 2>&1
+
+if [ $? -ne 0 ]; then
+    echo "pre-commit: build failed — fix compilation errors before committing."
+    exit 1
+fi
+
+echo "pre-commit: OK"
