@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     `.habit-checkbox[data-habit-id="${habitId}"]`
                 );
                 if (streakSpan && checkbox) {
-                    const displayStreak = checkbox.checked ? streak + 1 : streak;
+                    const displayStreak = checkbox.checked ? (streak <= 0 ? 1 : streak + 1) : streak;
                     streakSpan.textContent =
                         displayStreak + ' day streak';
                     streakSpan.dataset.baseStreak = streak;
@@ -101,7 +101,7 @@ function updateHabitStatus(checkbox) {
         );
         if (streakSpan) {
             const baseStreak = parseInt(streakSpan.dataset.baseStreak || "0", 10);
-            const displayStreak = completed ? baseStreak + 1 : baseStreak;
+            const displayStreak = completed ? (baseStreak <= 0 ? 1 : baseStreak + 1) : baseStreak;
             streakSpan.textContent = 
                 displayStreak + ' day streak';
             applyStreakColor(streakSpan, displayStreak);
