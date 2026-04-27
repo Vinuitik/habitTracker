@@ -1,3 +1,7 @@
 backup/habitbackup.json
 **/*.class
 .claude/
+
+.graphify_python
+.graphify_*.json
+.graphify_*.txt
