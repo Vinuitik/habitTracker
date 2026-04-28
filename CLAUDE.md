@@ -80,6 +80,14 @@ Rules:
 - For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
 
+### Running /graphify — use the scripts, not manual commands
+IMPORTANT: Do NOT run graphify steps manually (individual python -c commands). Use the two scripts:
+1. `.\graphify_run.ps1` — detect, cache check, AST extraction. Read its output to get the uncached file list.
+2. Dispatch subagents (parallel) for uncached non-code files. Wait for completion.
+3. `.\graphify_finish.ps1` — merge, build, cluster. Read compact community table. Write labels to `graphify_labels.json`.
+4. `.\graphify_finish.ps1 -LabelsFile graphify_labels.json` — final report + HTML + cleanup.
+This keeps round-trips at ~4 instead of 15+, saving significant token quota.
+
 ## Skill routing
 
 When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.

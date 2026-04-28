@@ -1,89 +1,85 @@
-# Graph Report - .  (2026-04-28)
+# Graph Report - HabitTracker  (2026-04-28)
 
 ## Corpus Check
-- Corpus is ~25,417 words - fits in a single context window. You may not need a graph.
+- 70 files · ~26,296 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 629 nodes · 1069 edges · 51 communities detected
-- Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 290 edges (avg confidence: 0.8)
-- Token cost: 797 input · 692 output
+- 563 nodes · 939 edges · 46 communities detected
+- Extraction: 69% EXTRACTED · 31% INFERRED · 0% AMBIGUOUS · INFERRED: 290 edges (avg confidence: 0.8)
+- Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Core Service + Auth Security|Core Service + Auth Security]]
-- [[_COMMUNITY_JWT Authentication Module|JWT Authentication Module]]
-- [[_COMMUNITY_KPI Tracking System|KPI Tracking System]]
-- [[_COMMUNITY_Domain Model + Streak Logic|Domain Model + Streak Logic]]
-- [[_COMMUNITY_Streak Testing Suite|Streak Testing Suite]]
-- [[_COMMUNITY_HTTP Controllers + Routing|HTTP Controllers + Routing]]
-- [[_COMMUNITY_Daily Cron Updater Pipeline|Daily Cron Updater Pipeline]]
-- [[_COMMUNITY_Cron Scheduling Concepts|Cron Scheduling Concepts]]
-- [[_COMMUNITY_Structure Persistence|Structure Persistence]]
-- [[_COMMUNITY_KPI Dashboard Frontend|KPI Dashboard Frontend]]
-- [[_COMMUNITY_KPI List + System Tests|KPI List + System Tests]]
-- [[_COMMUNITY_Streak + Date Calc Tests|Streak + Date Calc Tests]]
-- [[_COMMUNITY_Rules Feature|Rules Feature]]
-- [[_COMMUNITY_Habit Repository Queries|Habit Repository Queries]]
-- [[_COMMUNITY_Infrastructure + Deployment|Infrastructure + Deployment]]
-- [[_COMMUNITY_Rule Setting Frontend|Rule Setting Frontend]]
-- [[_COMMUNITY_App Icons + Branding|App Icons + Branding]]
-- [[_COMMUNITY_Habit Input Frontend|Habit Input Frontend]]
-- [[_COMMUNITY_KPI Create Frontend|KPI Create Frontend]]
-- [[_COMMUNITY_Habit Table Frontend|Habit Table Frontend]]
-- [[_COMMUNITY_Habits List Frontend|Habits List Frontend]]
-- [[_COMMUNITY_CORS  MVC Config|CORS / MVC Config]]
-- [[_COMMUNITY_PWA Brand Design|PWA Brand Design]]
-- [[_COMMUNITY_Spring Boot Entry Point|Spring Boot Entry Point]]
-- [[_COMMUNITY_Structure DTO|Structure DTO]]
-- [[_COMMUNITY_Structure Repository|Structure Repository]]
-- [[_COMMUNITY_App Context Test|App Context Test]]
-- [[_COMMUNITY_iOS PWA Assets|iOS PWA Assets]]
-- [[_COMMUNITY_Docker Runner Script|Docker Runner Script]]
-- [[_COMMUNITY_MongoDB Backup Script|MongoDB Backup Script]]
-- [[_COMMUNITY_User Entity|User Entity]]
-- [[_COMMUNITY_Habit Entity|Habit Entity]]
-- [[_COMMUNITY_KPI Entity|KPI Entity]]
-- [[_COMMUNITY_KPI Data Entity|KPI Data Entity]]
-- [[_COMMUNITY_KPI Data DTO|KPI Data DTO]]
-- [[_COMMUNITY_KPI DTO|KPI DTO]]
-- [[_COMMUNITY_KPI-Habit Mapping Entity|KPI-Habit Mapping Entity]]
-- [[_COMMUNITY_Rule Entity|Rule Entity]]
-- [[_COMMUNITY_Rule DTO|Rule DTO]]
-- [[_COMMUNITY_Update DTO|Update DTO]]
-- [[_COMMUNITY_Habit Structure Entity|Habit Structure Entity]]
-- [[_COMMUNITY_Structure Entity|Structure Entity]]
-- [[_COMMUNITY_Last Run Date Entity|Last Run Date Entity]]
-- [[_COMMUNITY_Pair Utility|Pair Utility]]
-- [[_COMMUNITY_Create Habit JS|Create Habit JS]]
-- [[_COMMUNITY_Edit Habit JS|Edit Habit JS]]
-- [[_COMMUNITY_Info Page JS|Info Page JS]]
-- [[_COMMUNITY_Project Config (CLAUDE.md)|Project Config (CLAUDE.md)]]
-- [[_COMMUNITY_Web MVC Config Concept|Web MVC Config Concept]]
-- [[_COMMUNITY_README Overview|README Overview]]
-- [[_COMMUNITY_Docker Timezone Utility|Docker Timezone Utility]]
+- [[_COMMUNITY_Community 0|Community 0]]
+- [[_COMMUNITY_Community 1|Community 1]]
+- [[_COMMUNITY_Community 2|Community 2]]
+- [[_COMMUNITY_Community 3|Community 3]]
+- [[_COMMUNITY_Community 4|Community 4]]
+- [[_COMMUNITY_Community 5|Community 5]]
+- [[_COMMUNITY_Community 6|Community 6]]
+- [[_COMMUNITY_Community 7|Community 7]]
+- [[_COMMUNITY_Community 8|Community 8]]
+- [[_COMMUNITY_Community 9|Community 9]]
+- [[_COMMUNITY_Community 10|Community 10]]
+- [[_COMMUNITY_Community 11|Community 11]]
+- [[_COMMUNITY_Community 12|Community 12]]
+- [[_COMMUNITY_Community 13|Community 13]]
+- [[_COMMUNITY_Community 14|Community 14]]
+- [[_COMMUNITY_Community 15|Community 15]]
+- [[_COMMUNITY_Community 16|Community 16]]
+- [[_COMMUNITY_Community 17|Community 17]]
+- [[_COMMUNITY_Community 18|Community 18]]
+- [[_COMMUNITY_Community 19|Community 19]]
+- [[_COMMUNITY_Community 20|Community 20]]
+- [[_COMMUNITY_Community 21|Community 21]]
+- [[_COMMUNITY_Community 22|Community 22]]
+- [[_COMMUNITY_Community 23|Community 23]]
+- [[_COMMUNITY_Community 24|Community 24]]
+- [[_COMMUNITY_Community 25|Community 25]]
+- [[_COMMUNITY_Community 26|Community 26]]
+- [[_COMMUNITY_Community 27|Community 27]]
+- [[_COMMUNITY_Community 30|Community 30]]
+- [[_COMMUNITY_Community 31|Community 31]]
+- [[_COMMUNITY_Community 32|Community 32]]
+- [[_COMMUNITY_Community 33|Community 33]]
+- [[_COMMUNITY_Community 34|Community 34]]
+- [[_COMMUNITY_Community 35|Community 35]]
+- [[_COMMUNITY_Community 36|Community 36]]
+- [[_COMMUNITY_Community 37|Community 37]]
+- [[_COMMUNITY_Community 38|Community 38]]
+- [[_COMMUNITY_Community 39|Community 39]]
+- [[_COMMUNITY_Community 40|Community 40]]
+- [[_COMMUNITY_Community 41|Community 41]]
+- [[_COMMUNITY_Community 42|Community 42]]
+- [[_COMMUNITY_Community 43|Community 43]]
+- [[_COMMUNITY_Community 49|Community 49]]
+- [[_COMMUNITY_Community 50|Community 50]]
+- [[_COMMUNITY_Community 51|Community 51]]
+- [[_COMMUNITY_Community 52|Community 52]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `HabitService` - 22 edges
-2. `StreakCalculationServiceUnitTest` - 22 edges
-3. `UserPrincipal` - 20 edges
-4. `StructureService` - 16 edges
-5. `KPIService` - 15 edges
-6. `KPICollectionNameUtilTest` - 15 edges
-7. `DynamicKPIDataRepositoryTest` - 14 edges
-8. `DynamicKPIDataRepository` - 13 edges
-9. `KPIServiceTest` - 13 edges
-10. `Auth Implementation TODO List` - 13 edges
+1. `HabitService` - 21 edges
+2. `StreakCalculationServiceUnitTest` - 21 edges
+3. `UserPrincipal` - 19 edges
+4. `StructureService` - 15 edges
+5. `KPIService` - 14 edges
+6. `KPICollectionNameUtilTest` - 14 edges
+7. `DynamicKPIDataRepositoryTest` - 13 edges
+8. `Auth Implementation TODO List` - 13 edges
+9. `DynamicKPIDataRepository` - 12 edges
+10. `KPIServiceTest` - 12 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Backup Service Python Requirements` --references--> `Mongo Backup Container`  [INFERRED]
-  backup/requirements.txt → CLAUDE.md
-- `new-habit.html (Create Habit Form)` --shares_data_with--> `Habit Entity`  [INFERRED]
-  habitTracker/src/main/resources/static/addHabitView/new-habit.html → CLAUDE.md
-- `edit-habit.html (Edit Habit Form)` --shares_data_with--> `Habit Entity`  [INFERRED]
-  habitTracker/src/main/resources/templates/edit-habit.html → CLAUDE.md
-- `habits-list.html (My Habits List)` --shares_data_with--> `Habit Entity`  [INFERRED]
-  habitTracker/src/main/resources/templates/habits-list.html → CLAUDE.md
-- `info.html (Edit Habit Info)` --shares_data_with--> `Habit Entity`  [INFERRED]
-  habitTracker/src/main/resources/templates/info.html → CLAUDE.md
+- `Mongo Backup Container` --references--> `Backup Service Python Requirements`  [INFERRED]
+  CLAUDE.md → backup/requirements.txt
+- `Habit Entity` --shares_data_with--> `new-habit.html (Create Habit Form)`  [INFERRED]
+  CLAUDE.md → habitTracker/src/main/resources/static/addHabitView/new-habit.html
+- `Habit Entity` --shares_data_with--> `edit-habit.html (Edit Habit Form)`  [INFERRED]
+  CLAUDE.md → habitTracker/src/main/resources/templates/edit-habit.html
+- `Habit Entity` --shares_data_with--> `habits-list.html (My Habits List)`  [INFERRED]
+  CLAUDE.md → habitTracker/src/main/resources/templates/habits-list.html
+- `Habit Entity` --shares_data_with--> `info.html (Edit Habit Info)`  [INFERRED]
+  CLAUDE.md → habitTracker/src/main/resources/templates/info.html
 
 ## Hyperedges (group relationships)
 - **5-Container Docker Compose Stack** — claudemd_springboot_app, claudemd_mongodb_container, claudemd_mongo_backup_container, claudemd_caddy_container, claudemd_cloudflared_container [EXTRACTED 1.00]
@@ -94,294 +90,264 @@
 
 ## Communities
 
-### Community 0 - "Core Service + Auth Security"
-Cohesion: 0.05
-Nodes (6): DynamicKPIDataRepository, DynamicKPIDataRepositoryTest, HabitDTO, HabitService, KPIServiceTest, SecurityUtils
+### Community 0 - "Community 0"
+Cohesion: 0.08
+Nodes (4): DynamicKPIDataRepository, DynamicKPIDataRepositoryTest, HabitCompletionSystemTest, HabitService
 
-### Community 1 - "JWT Authentication Module"
+### Community 1 - "Community 1"
 Cohesion: 0.05
 Nodes (12): ApiAuthController, JwtAuthFilter, JwtUtil, OidcUser, OncePerRequestFilter, RegisterController, SecurityConfig, UserDetails (+4 more)
 
-### Community 2 - "KPI Tracking System"
-Cohesion: 0.06
-Nodes (5): KPICollectionNameUtil, KPICollectionNameUtilTest, KPIController, KPIRepository, KPIService
+### Community 2 - "Community 2"
+Cohesion: 0.05
+Nodes (7): HabitDateCalculator, HabitDTO, HabitReadController, HabitStructureManager, HabitUpdateService, HabitWriteController, KPIHabitMappingRepository
 
-### Community 3 - "Domain Model + Streak Logic"
+### Community 3 - "Community 3"
 Cohesion: 0.06
 Nodes (47): Chart.js External Library, defaultMade: missed days assumed completed, Habit Entity, HabitStructure Entity, StreakCalculationService, CSRF Protection (_csrf token meta tag), Habit Completion Toggle (complete/uncomplete), Habit Description and Status Fields (+39 more)
 
-### Community 4 - "Streak Testing Suite"
-Cohesion: 0.17
+### Community 4 - "Community 4"
+Cohesion: 0.08
+Nodes (5): HabitStructureRepository, RuleRepository, RuleService, SecurityUtils, StructureService
+
+### Community 5 - "Community 5"
+Cohesion: 0.1
+Nodes (4): KPICollectionNameUtil, KPICollectionNameUtilTest, KPIService, KPIServiceTest
+
+### Community 6 - "Community 6"
+Cohesion: 0.18
 Nodes (2): StreakCalculationServiceIntegrationTest, StreakCalculationServiceUnitTest
 
-### Community 5 - "HTTP Controllers + Routing"
-Cohesion: 0.07
-Nodes (3): HabitReadController, HabitWriteController, KPIHabitMappingRepository
-
-### Community 6 - "Daily Cron Updater Pipeline"
-Cohesion: 0.08
-Nodes (5): HabitDateCalculator, HabitStructureManager, HabitUpdateService, LastRunDateService, UpdateScheduler
-
-### Community 7 - "Cron Scheduling Concepts"
+### Community 7 - "Community 7"
 Cohesion: 0.1
 Nodes (27): Cron Idempotency (last_run_date guard), HabitDateCalculator, HabitReadController, HabitStructureManager, HabitUpdateService, HabitWriteController, LastRunDateService, UpdateScheduler (+19 more)
 
-### Community 8 - "Structure Persistence"
-Cohesion: 0.14
-Nodes (2): HabitStructureRepository, StructureService
+### Community 8 - "Community 8"
+Cohesion: 0.17
+Nodes (20): closeModal(), getColorIntensity(), getCsrfToken(), getTrendClass(), getTrendColor(), getTrendText(), handleFormSubmit(), initializeDashboard() (+12 more)
 
-### Community 9 - "KPI Dashboard Frontend"
-Cohesion: 0.23
-Nodes (22): addDataToKPI(), closeModal(), formatDate(), getColorIntensity(), getCsrfToken(), getTrendClass(), getTrendColor(), getTrendText() (+14 more)
-
-### Community 10 - "KPI List + System Tests"
-Cohesion: 0.14
-Nodes (10): HabitCompletionSystemTest, addData(), closeModal(), deleteKPI(), getCsrfToken(), handleFormSubmit(), initializeModal(), setTodayAsDefault() (+2 more)
-
-### Community 11 - "Streak + Date Calc Tests"
-Cohesion: 0.18
+### Community 9 - "Community 9"
+Cohesion: 0.22
 Nodes (2): HabitDateCalculatorTest, StreakCalculationService
 
-### Community 12 - "Rules Feature"
-Cohesion: 0.18
-Nodes (2): RuleRepository, RuleService
+### Community 10 - "Community 10"
+Cohesion: 0.14
+Nodes (2): KPIController, KPIRepository
 
-### Community 13 - "Habit Repository Queries"
-Cohesion: 0.2
-Nodes (1): HabitRepository
+### Community 11 - "Community 11"
+Cohesion: 0.24
+Nodes (2): LastRunDateService, UpdateScheduler
 
-### Community 14 - "Infrastructure + Deployment"
+### Community 12 - "Community 12"
+Cohesion: 0.33
+Nodes (6): closeModal(), deleteKPI(), getCsrfToken(), handleFormSubmit(), initializeModal(), showMessage()
+
+### Community 13 - "Community 13"
 Cohesion: 0.27
 Nodes (10): Backup Service Python Requirements, Caddy Reverse Proxy Container, Cloudflared Tunnel Container, Ingress Chain: Cloudflareв†’cloudflaredв†’caddyв†’javaapp, Mongo Backup Container, MongoDB Container (mongodbHabit), Spring Boot Application (javaapp), Spring Boot Reference Documentation Links (+2 more)
 
-### Community 15 - "Rule Setting Frontend"
-Cohesion: 0.5
-Nodes (7): gcd(), gcdArray(), getCsrfToken(), getSelectedFrequencies(), getSelectedHabitsInfo(), saveRule(), updateFrequencyResult()
+### Community 14 - "Community 14"
+Cohesion: 0.22
+Nodes (1): HabitRepository
 
-### Community 16 - "App Icons + Branding"
+### Community 15 - "Community 15"
 Cohesion: 0.31
 Nodes (9): Android Chrome App Icon (192x192), App Brand Identity, Favicon 16x16, App Favicon (32x32), HabitTracker Web Application, HabitTracker Brand Identity, HabitTracker Brand Identity, HabitTracker Progressive Web App (+1 more)
 
-### Community 17 - "Habit Input Frontend"
-Cohesion: 0.54
-Nodes (6): applyStreakColor(), getCsrfToken(), moveHabitToPosition(), organizeHabitsOnLoad(), removeHabitWithShameAnimation(), updateHabitStatus()
+### Community 16 - "Community 16"
+Cohesion: 0.39
+Nodes (6): gcdArray(), getCsrfToken(), getSelectedFrequencies(), getSelectedHabitsInfo(), saveRule(), updateFrequencyResult()
 
-### Community 18 - "KPI Create Frontend"
-Cohesion: 0.5
-Nodes (6): initializeFormValidation(), setupFormInteractions(), showError(), showFieldError(), validateForm(), validateKPIName()
+### Community 17 - "Community 17"
+Cohesion: 0.43
+Nodes (3): getCsrfToken(), removeHabitWithShameAnimation(), updateHabitStatus()
 
-### Community 19 - "Habit Table Frontend"
-Cohesion: 0.5
-Nodes (6): fetchUpdatedTable(), findHabitKeyByName(), getCsrfToken(), getHabitOrderFromHeaders(), updateHabitStatus(), updateTable()
+### Community 18 - "Community 18"
+Cohesion: 0.38
+Nodes (4): showError(), showFieldError(), validateForm(), validateKPIName()
 
-### Community 20 - "Habits List Frontend"
-Cohesion: 0.67
-Nodes (4): attachDeleteHandlers(), attachDropdownHandlers(), getCsrfToken(), swapHabitsList()
+### Community 19 - "Community 19"
+Cohesion: 0.38
+Nodes (4): getCsrfToken(), getHabitOrderFromHeaders(), updateHabitStatus(), updateTable()
 
-### Community 21 - "CORS / MVC Config"
+### Community 20 - "Community 20"
 Cohesion: 0.6
-Nodes (2): WebConfig, WebMvcConfigurer
+Nodes (3): attachDeleteHandlers(), attachDropdownHandlers(), swapHabitsList()
 
-### Community 22 - "PWA Brand Design"
+### Community 21 - "Community 21"
 Cohesion: 0.7
 Nodes (5): Android Chrome App Icon (512x512), Cross / Plus-Sign Iconography, HabitTracker Brand Identity, PWA Manifest Icon Asset, Teal/Neon Design Language
 
-### Community 23 - "Spring Boot Entry Point"
-Cohesion: 0.5
-Nodes (1): HabitTrackerApplication
+### Community 22 - "Community 22"
+Cohesion: 0.67
+Nodes (2): WebConfig, WebMvcConfigurer
 
-### Community 24 - "Structure DTO"
-Cohesion: 0.5
-Nodes (1): StructureDTO
-
-### Community 25 - "Structure Repository"
-Cohesion: 0.5
-Nodes (1): StructureRepository
-
-### Community 26 - "App Context Test"
-Cohesion: 0.5
-Nodes (1): HabitTrackerApplicationTests
-
-### Community 27 - "iOS PWA Assets"
+### Community 23 - "Community 23"
 Cohesion: 0.67
 Nodes (4): Teal-on-Dark Color Palette, HabitTracker PWA / Brand Identity, Apple Touch Icon (PWA App Icon), Static Assets Directory
 
-### Community 28 - "Docker Runner Script"
+### Community 24 - "Community 24"
 Cohesion: 0.67
-Nodes (1): Run-DockerCompose()
+Nodes (1): HabitTrackerApplication
 
-### Community 29 - "MongoDB Backup Script"
+### Community 25 - "Community 25"
 Cohesion: 0.67
-Nodes (1): do_backup()
+Nodes (1): StructureDTO
 
-### Community 30 - "User Entity"
+### Community 26 - "Community 26"
 Cohesion: 0.67
+Nodes (1): StructureRepository
+
+### Community 27 - "Community 27"
+Cohesion: 0.67
+Nodes (1): HabitTrackerApplicationTests
+
+### Community 30 - "Community 30"
+Cohesion: 1.0
 Nodes (1): User
 
-### Community 31 - "Habit Entity"
-Cohesion: 0.67
+### Community 31 - "Community 31"
+Cohesion: 1.0
 Nodes (1): Habit
 
-### Community 32 - "KPI Entity"
-Cohesion: 0.67
+### Community 32 - "Community 32"
+Cohesion: 1.0
 Nodes (1): KPI
 
-### Community 33 - "KPI Data Entity"
-Cohesion: 0.67
+### Community 33 - "Community 33"
+Cohesion: 1.0
 Nodes (1): KPIData
 
-### Community 34 - "KPI Data DTO"
-Cohesion: 0.67
+### Community 34 - "Community 34"
+Cohesion: 1.0
 Nodes (1): KPIDataDTO
 
-### Community 35 - "KPI DTO"
-Cohesion: 0.67
+### Community 35 - "Community 35"
+Cohesion: 1.0
 Nodes (1): KPIDTO
 
-### Community 36 - "KPI-Habit Mapping Entity"
-Cohesion: 0.67
+### Community 36 - "Community 36"
+Cohesion: 1.0
 Nodes (1): KPIHabitMapping
 
-### Community 37 - "Rule Entity"
-Cohesion: 0.67
+### Community 37 - "Community 37"
+Cohesion: 1.0
 Nodes (1): Rule
 
-### Community 38 - "Rule DTO"
-Cohesion: 0.67
+### Community 38 - "Community 38"
+Cohesion: 1.0
 Nodes (1): RuleDTO
 
-### Community 39 - "Update DTO"
-Cohesion: 0.67
+### Community 39 - "Community 39"
+Cohesion: 1.0
 Nodes (1): UpdateDTO
 
-### Community 40 - "Habit Structure Entity"
-Cohesion: 0.67
+### Community 40 - "Community 40"
+Cohesion: 1.0
 Nodes (1): HabitStructure
 
-### Community 41 - "Structure Entity"
-Cohesion: 0.67
+### Community 41 - "Community 41"
+Cohesion: 1.0
 Nodes (1): Structure
 
-### Community 42 - "Last Run Date Entity"
-Cohesion: 0.67
+### Community 42 - "Community 42"
+Cohesion: 1.0
 Nodes (1): LastRunDate
 
-### Community 43 - "Pair Utility"
-Cohesion: 0.67
+### Community 43 - "Community 43"
+Cohesion: 1.0
 Nodes (1): Pair
 
-### Community 44 - "Create Habit JS"
-Cohesion: 0.67
-Nodes (1): getCsrfToken()
-
-### Community 45 - "Edit Habit JS"
-Cohesion: 0.67
-Nodes (1): getCsrfToken()
-
-### Community 46 - "Info Page JS"
-Cohesion: 0.67
-Nodes (1): getCsrfToken()
-
-### Community 47 - "Project Config (CLAUDE.md)"
+### Community 49 - "Community 49"
 Cohesion: 1.0
 Nodes (1): HabitTracker Project (CLAUDE.md)
 
-### Community 48 - "Web MVC Config Concept"
+### Community 50 - "Community 50"
 Cohesion: 1.0
 Nodes (1): WebConfig (CORS/MVC)
 
-### Community 49 - "README Overview"
+### Community 51 - "Community 51"
 Cohesion: 1.0
 Nodes (1): HabitTracker README Overview
 
-### Community 50 - "Docker Timezone Utility"
+### Community 52 - "Community 52"
 Cohesion: 1.0
 Nodes (1): Timezone Auto-Detection and Mapping
 
 ## Knowledge Gaps
-- **28 isolated node(s):** `HabitTracker Project (CLAUDE.md)`, `HabitDateCalculator`, `HabitReadController`, `WebConfig (CORS/MVC)`, `Cron Idempotency (last_run_date guard)` (+23 more)
+- **42 isolated node(s):** `User`, `Habit`, `KPI`, `KPIData`, `KPIDataDTO` (+37 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Streak Testing Suite`** (36 nodes): `StreakCalculationServiceIntegrationTest.java`, `StreakCalculationServiceUnitTest.java`, `StreakCalculationServiceIntegrationTest.java`, `StreakCalculationServiceUnitTest.java`, `.updateAllStreaks()`, `StreakCalculationServiceIntegrationTest`, `.downtime7Days_defaultMadeFalse_streakDecreases7()`, `.downtime7Days_defaultMadeTrue_streakIncreases7_andUpdatesLongest()`, `.downtimeAfterPositiveStreak_streakResetsCorrectly()`, `.explicitCompletion_fromNegative_savesLastNegativeStreak()`, `.explicitCompletion_fromNegative_streakBecomesOne()`, `.inactiveHabit_streakNeverChanges()`, `.multipleHabits_eachUpdatedIndependently()`, `.positiveStreak_missedDay_streakDropsToZero_clearsLastNegativeStreak()`, `.savedDailyHabit()`, `StreakCalculationServiceUnitTest`, `.captureUpdate()`, `.dailyHabit()`, `.fastPath_dailyHabit_7dayGap_defaultMadeTrue_streakIncreases7()`, `.fastPath_dailyHabit_7dayGap_streakDecreases7()`, `.fastPath_negativeStreak_missedMoreDays_continuesDecrementing()`, `.fastPath_positiveStreak_missedDays_resetsToOneMinusDelta()`, `.fastPath_positiveStreak_missedDays_setsLastNegUnset()`, `.fastPath_weeklyHabit_14dayGap_counts2ScheduledDays()`, `.fastPath_weeklyHabit_gapStartsMidCycle_alignsToNextScheduledDay()`, `.lastNegFrom()`, `.lastNegUnset()`, `.setUp()`, `.slowPath_explicitCompletion_fromNegative_savesLastNegativeStreak()`, `.slowPath_explicitCompletion_fromNegative_streakBecomesOne()`, `.slowPath_inactiveHabit_isSkippedEntirely()`, `.slowPath_notCompleted_alreadyNegative_continuesDecrementing()`, `.slowPath_notCompleted_fromPositive_streakDropsToZero_clearsLastNeg()`, `.streakFrom()`, `.stubWith()`, `.weeklyHabit()`
+- **Thin community `Community 6`** (34 nodes): `StreakCalculationServiceIntegrationTest.java`, `StreakCalculationServiceUnitTest.java`, `.updateAllStreaks()`, `StreakCalculationServiceIntegrationTest`, `.downtime7Days_defaultMadeFalse_streakDecreases7()`, `.downtime7Days_defaultMadeTrue_streakIncreases7_andUpdatesLongest()`, `.downtimeAfterPositiveStreak_streakResetsCorrectly()`, `.explicitCompletion_fromNegative_savesLastNegativeStreak()`, `.explicitCompletion_fromNegative_streakBecomesOne()`, `.inactiveHabit_streakNeverChanges()`, `.multipleHabits_eachUpdatedIndependently()`, `.positiveStreak_missedDay_streakDropsToZero_clearsLastNegativeStreak()`, `.savedDailyHabit()`, `StreakCalculationServiceUnitTest`, `.captureUpdate()`, `.dailyHabit()`, `.fastPath_dailyHabit_7dayGap_defaultMadeTrue_streakIncreases7()`, `.fastPath_dailyHabit_7dayGap_streakDecreases7()`, `.fastPath_negativeStreak_missedMoreDays_continuesDecrementing()`, `.fastPath_positiveStreak_missedDays_resetsToOneMinusDelta()`, `.fastPath_positiveStreak_missedDays_setsLastNegUnset()`, `.fastPath_weeklyHabit_14dayGap_counts2ScheduledDays()`, `.fastPath_weeklyHabit_gapStartsMidCycle_alignsToNextScheduledDay()`, `.lastNegFrom()`, `.lastNegUnset()`, `.setUp()`, `.slowPath_explicitCompletion_fromNegative_savesLastNegativeStreak()`, `.slowPath_explicitCompletion_fromNegative_streakBecomesOne()`, `.slowPath_inactiveHabit_isSkippedEntirely()`, `.slowPath_notCompleted_alreadyNegative_continuesDecrementing()`, `.slowPath_notCompleted_fromPositive_streakDropsToZero_clearsLastNeg()`, `.streakFrom()`, `.stubWith()`, `.weeklyHabit()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Structure Persistence`** (25 nodes): `HabitStructureRepository.java`, `StructureService.java`, `.getMethodName()`, `.getHabitsByIds()`, `HabitStructureRepository`, `.findByStructureDate()`, `.findByStructureDateAndUserId()`, `.findByStructureDateBetween()`, `.findByStructureDateBetweenAndUserId()`, `HabitStructureRepository.java`, `StructureService.java`, `StructureService`, `.fetchHabitStructures()`, `.fillMissingHabits()`, `.filterFailedNegativeHabits()`, `.getHabitIdToNameMap()`, `.getHabitIdToNameMapFromIds()`, `.getStructureForDate()`, `.getStructuresForDateRange()`, `.getTodayStructure()`, `.initializeStructureMap()`, `.isHabitActiveOnDate()`, `.populateHabitStatuses()`, `.populateStructureDTO()`, `.populateStructureMap()`
+- **Thin community `Community 9`** (18 nodes): `.shouldTrackHabitOnDate()`, `HabitDateCalculatorTest`, `.frequency1_afterEndDate_notTracked()`, `.frequency1_afterStartDate_tracked()`, `.frequency1_beforeStartDate_notTracked()`, `.frequency1_nullStartDate_alwaysTracked()`, `.frequency1_onEndDate_tracked()`, `.frequency7_betweenScheduledDays_notTracked()`, `.frequency7_onScheduledDays_tracked()`, `.frequency7_onStartDate_tracked()`, `.habit()`, `StreakCalculationService.java`, `HabitDateCalculatorTest.java`, `StreakCalculationService`, `.countScheduledDays()`, `.fetchHabitStructures()`, `.StreakCalculationService()`, `.updateHabitStreak()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Streak + Date Calc Tests`** (20 nodes): `StreakCalculationService.java`, `HabitDateCalculatorTest.java`, `.shouldTrackHabitOnDate()`, `HabitDateCalculatorTest`, `.frequency1_afterEndDate_notTracked()`, `.frequency1_afterStartDate_tracked()`, `.frequency1_beforeStartDate_notTracked()`, `.frequency1_nullStartDate_alwaysTracked()`, `.frequency1_onEndDate_tracked()`, `.frequency7_betweenScheduledDays_notTracked()`, `.frequency7_onScheduledDays_tracked()`, `.frequency7_onStartDate_tracked()`, `.habit()`, `StreakCalculationService.java`, `HabitDateCalculatorTest.java`, `StreakCalculationService`, `.countScheduledDays()`, `.fetchHabitStructures()`, `.StreakCalculationService()`, `.updateHabitStreak()`
+- **Thin community `Community 10`** (17 nodes): `.findByHabitId()`, `KPIController.java`, `KPIRepository.java`, `KPIController`, `.addKPIData()`, `.createKPI()`, `.deleteKPI()`, `.getKPIsByHabit()`, `.showKPIDashboard()`, `.showKPIList()`, `KPIRepository`, `.existsByNameAndUserId()`, `.findByActive()`, `.findByActiveAndUserId()`, `.findByNameIn()`, `.getAllActiveKPIs()`, `.getKPIsByHabitId()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Rules Feature`** (13 nodes): `RuleRepository.java`, `RuleService.java`, `RuleRepository.java`, `RuleService.java`, `RuleRepository`, `.deleteByHabitSubId()`, `.findByHabitOwnerId()`, `.findByHabitSubId()`, `RuleService`, `.addRule()`, `.deleteBySubId()`, `.getMainIdsBySubId()`, `.getRulesByMainId()`
+- **Thin community `Community 11`** (12 nodes): `LastRunDateService.java`, `UpdateScheduler.java`, `LastRunDateService`, `.getLastRunDate()`, `.hasRunToday()`, `.LastRunDateService()`, `.markRunToday()`, `UpdateScheduler`, `.performDailyUpdate()`, `.runOnStartup()`, `.scheduledUpdate()`, `.UpdateScheduler()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Habit Repository Queries`** (10 nodes): `HabitRepository.java`, `HabitRepository`, `.findByCurDate()`, `.findByEndDateBetween()`, `.findByName()`, `.findByStartDateBetween()`, `.findByStartDateLessThanEqualAndEndDateGreaterThanEqual()`, `.findByStartDateLessThanEqualAndEndDateGreaterThanEqualAndFrequency()`, `.getHabitsByDate()`, `HabitRepository.java`
+- **Thin community `Community 14`** (9 nodes): `HabitRepository`, `.findByCurDate()`, `.findByEndDateBetween()`, `.findByName()`, `.findByStartDateBetween()`, `.findByStartDateLessThanEqualAndEndDateGreaterThanEqual()`, `.findByStartDateLessThanEqualAndEndDateGreaterThanEqualAndFrequency()`, `.getHabitsByDate()`, `HabitRepository.java`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `CORS / MVC Config`** (5 nodes): `WebConfig.java`, `WebConfig.java`, `WebConfig`, `.addResourceHandlers()`, `WebMvcConfigurer`
+- **Thin community `Community 22`** (4 nodes): `WebConfig.java`, `WebConfig`, `.addResourceHandlers()`, `WebMvcConfigurer`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Spring Boot Entry Point`** (4 nodes): `HabitTrackerApplication.java`, `HabitTrackerApplication.java`, `HabitTrackerApplication`, `.main()`
+- **Thin community `Community 24`** (3 nodes): `HabitTrackerApplication.java`, `HabitTrackerApplication`, `.main()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Structure DTO`** (4 nodes): `StructureDTO.java`, `StructureDTO.java`, `StructureDTO`, `.StructureDTO()`
+- **Thin community `Community 25`** (3 nodes): `StructureDTO.java`, `StructureDTO`, `.StructureDTO()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Structure Repository`** (4 nodes): `StructureRepository.java`, `StructureRepository.java`, `StructureRepository`, `.findByDateBetween()`
+- **Thin community `Community 26`** (3 nodes): `StructureRepository.java`, `StructureRepository`, `.findByDateBetween()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `App Context Test`** (4 nodes): `HabitTrackerApplicationTests.java`, `HabitTrackerApplicationTests.java`, `HabitTrackerApplicationTests`, `.contextLoads()`
+- **Thin community `Community 27`** (3 nodes): `HabitTrackerApplicationTests.java`, `HabitTrackerApplicationTests`, `.contextLoads()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Docker Runner Script`** (3 nodes): `docker-compose-runner-v1.ps1`, `docker-compose-runner-v1.ps1`, `Run-DockerCompose()`
+- **Thin community `Community 30`** (2 nodes): `User.java`, `User`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `MongoDB Backup Script`** (3 nodes): `backup.py`, `do_backup()`, `backup.py`
+- **Thin community `Community 31`** (2 nodes): `Habit`, `Habit.java`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `User Entity`** (3 nodes): `User.java`, `User.java`, `User`
+- **Thin community `Community 32`** (2 nodes): `KPI.java`, `KPI`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Habit Entity`** (3 nodes): `Habit.java`, `Habit`, `Habit.java`
+- **Thin community `Community 33`** (2 nodes): `KPIData.java`, `KPIData`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `KPI Entity`** (3 nodes): `KPI.java`, `KPI.java`, `KPI`
+- **Thin community `Community 34`** (2 nodes): `KPIDataDTO.java`, `KPIDataDTO`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `KPI Data Entity`** (3 nodes): `KPIData.java`, `KPIData.java`, `KPIData`
+- **Thin community `Community 35`** (2 nodes): `KPIDTO.java`, `KPIDTO`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `KPI Data DTO`** (3 nodes): `KPIDataDTO.java`, `KPIDataDTO.java`, `KPIDataDTO`
+- **Thin community `Community 36`** (2 nodes): `KPIHabitMapping.java`, `KPIHabitMapping`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `KPI DTO`** (3 nodes): `KPIDTO.java`, `KPIDTO.java`, `KPIDTO`
+- **Thin community `Community 37`** (2 nodes): `Rule.java`, `Rule`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `KPI-Habit Mapping Entity`** (3 nodes): `KPIHabitMapping.java`, `KPIHabitMapping.java`, `KPIHabitMapping`
+- **Thin community `Community 38`** (2 nodes): `RuleDTO.java`, `RuleDTO`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Rule Entity`** (3 nodes): `Rule.java`, `Rule.java`, `Rule`
+- **Thin community `Community 39`** (2 nodes): `UpdateDTO.java`, `UpdateDTO`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Rule DTO`** (3 nodes): `RuleDTO.java`, `RuleDTO.java`, `RuleDTO`
+- **Thin community `Community 40`** (2 nodes): `HabitStructure`, `HabitStructure.java`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Update DTO`** (3 nodes): `UpdateDTO.java`, `UpdateDTO.java`, `UpdateDTO`
+- **Thin community `Community 41`** (2 nodes): `Structure.java`, `Structure`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Habit Structure Entity`** (3 nodes): `HabitStructure.java`, `HabitStructure`, `HabitStructure.java`
+- **Thin community `Community 42`** (2 nodes): `LastRunDate.java`, `LastRunDate`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Structure Entity`** (3 nodes): `Structure.java`, `Structure.java`, `Structure`
+- **Thin community `Community 43`** (2 nodes): `Pair.java`, `Pair`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Last Run Date Entity`** (3 nodes): `LastRunDate.java`, `LastRunDate.java`, `LastRunDate`
+- **Thin community `Community 49`** (1 nodes): `HabitTracker Project (CLAUDE.md)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Pair Utility`** (3 nodes): `Pair.java`, `Pair.java`, `Pair`
+- **Thin community `Community 50`** (1 nodes): `WebConfig (CORS/MVC)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Create Habit JS`** (3 nodes): `new-habit.js`, `new-habit.js`, `getCsrfToken()`
+- **Thin community `Community 51`** (1 nodes): `HabitTracker README Overview`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Edit Habit JS`** (3 nodes): `edit-habit.js`, `getCsrfToken()`, `edit-habit.js`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Info Page JS`** (3 nodes): `info.js`, `info.js`, `getCsrfToken()`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Project Config (CLAUDE.md)`** (1 nodes): `HabitTracker Project (CLAUDE.md)`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Web MVC Config Concept`** (1 nodes): `WebConfig (CORS/MVC)`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `README Overview`** (1 nodes): `HabitTracker README Overview`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Docker Timezone Utility`** (1 nodes): `Timezone Auto-Detection and Mapping`
+- **Thin community `Community 52`** (1 nodes): `Timezone Auto-Detection and Mapping`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `UserPrincipal` connect `JWT Authentication Module` to `Core Service + Auth Security`, `HTTP Controllers + Routing`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
-- **Why does `HabitService` connect `Core Service + Auth Security` to `Structure Persistence`, `Habit Repository Queries`, `HTTP Controllers + Routing`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
-- **What connects `HabitTracker Project (CLAUDE.md)`, `HabitDateCalculator`, `HabitReadController` to the rest of the system?**
-  _28 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Core Service + Auth Security` be split into smaller, more focused modules?**
+- **Why does `UserPrincipal` connect `Community 1` to `Community 2`?**
+  _High betweenness centrality (0.047) - this node is a cross-community bridge._
+- **Why does `HabitService` connect `Community 0` to `Community 2`, `Community 4`, `Community 14`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **Why does `deleteKPI()` connect `Community 12` to `Community 5`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+- **What connects `User`, `Habit`, `KPI` to the rest of the system?**
+  _42 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Community 0` be split into smaller, more focused modules?**
+  _Cohesion score 0.08 - nodes in this community are weakly interconnected._
+- **Should `Community 1` be split into smaller, more focused modules?**
   _Cohesion score 0.05 - nodes in this community are weakly interconnected._
-- **Should `JWT Authentication Module` be split into smaller, more focused modules?**
+- **Should `Community 2` be split into smaller, more focused modules?**
   _Cohesion score 0.05 - nodes in this community are weakly interconnected._
-- **Should `KPI Tracking System` be split into smaller, more focused modules?**
-  _Cohesion score 0.06 - nodes in this community are weakly interconnected._
-- **Should `Domain Model + Streak Logic` be split into smaller, more focused modules?**
-  _Cohesion score 0.06 - nodes in this community are weakly interconnected._
