@@ -10,7 +10,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface HabitStructureRepository extends MongoRepository<HabitStructure, String> {
     List<HabitStructure> findByStructureDate(LocalDate date);
+    List<HabitStructure> findByStructureDateAndUserId(LocalDate date, String userId);
     List<HabitStructure> findByStructureDateBetween(LocalDate startDate, LocalDate endDate);
+    List<HabitStructure> findByStructureDateBetweenAndUserId(LocalDate startDate, LocalDate endDate, String userId);
     List<HabitStructure> findByHabitId(Integer habitName);
     Optional<HabitStructure> findByHabitIdAndStructureDate(Integer habitName, LocalDate date);
     void deleteByHabitIdAndStructureDate(Integer habitName, LocalDate date);

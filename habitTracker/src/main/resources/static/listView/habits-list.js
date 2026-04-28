@@ -1,3 +1,10 @@
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="_csrf"]');
+    if (meta) return meta.getAttribute('content');
+    const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+    return match ? decodeURIComponent(match.split('=')[1]) : '';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
 
     const habitsList = document.querySelector('.habits-list');
@@ -79,6 +86,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (confirm(`Are you sure you want to delete "${habitName}"?`)) {
                     fetch(`/habits/delete/${habitId}`, {
                         method: 'DELETE',
+                        headers: { 'X-XSRF-TOKEN': getCsrfToken() }
                     })
                     .then(response => {
                         if (!response.ok) throw new Error('Network response was not ok');

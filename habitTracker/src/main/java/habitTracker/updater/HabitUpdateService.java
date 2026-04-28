@@ -65,7 +65,7 @@ public class HabitUpdateService {
         boolean isDefaultMade = habit.getDefaultMade() != null && habit.getDefaultMade();
 
         if (curDate != null && curDate.isEqual(today)) {
-            habitStructureManager.createHabitStructure(habit.getId(), today, isDefaultMade);
+            habitStructureManager.createHabitStructure(habit.getId(), today, isDefaultMade, habit.getUserId());
             return;
         }
 
@@ -83,7 +83,7 @@ public class HabitUpdateService {
             System.out.println("Updated curDate for habit " + habit.getName() + " to " + newCurDate);
 
             if (newCurDate.equals(today)) {
-                habitStructureManager.createHabitStructure(habit.getId(), today, isDefaultMade);
+                habitStructureManager.createHabitStructure(habit.getId(), today, isDefaultMade, habit.getUserId());
             }
         }
     }

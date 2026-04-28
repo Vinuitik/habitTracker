@@ -29,4 +29,7 @@ public class HabitStructure {
     private LocalDate structureDate;
     
     private Boolean completed;
+
+    @Indexed
+    private String userId;
 }

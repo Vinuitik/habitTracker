@@ -22,4 +22,7 @@ public class KPIHabitMapping {
     
     @Indexed
     private Integer habitId; // reference to Habit by id
+
+    @Indexed
+    private String userId;
 }

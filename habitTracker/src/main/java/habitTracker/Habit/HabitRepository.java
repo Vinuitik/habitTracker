@@ -15,4 +15,5 @@ public interface HabitRepository extends MongoRepository<Habit, Integer> {
     List<Habit> findByStartDateLessThanEqualAndEndDateGreaterThanEqualAndFrequency(LocalDate startDate, LocalDate endDate, Integer frequency);
     List<Habit> findByName(String name);
     List<Habit> findByCurDate(LocalDate curDate);
+    List<Habit> findByUserId(String userId);
 }

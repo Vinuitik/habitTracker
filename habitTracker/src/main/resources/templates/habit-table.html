@@ -2,6 +2,7 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
+    <meta name="_csrf" th:content="${_csrf.token}">
     <title>Habit Table View</title>
     <link rel="stylesheet" th:href="@{/tableView/habit-table.css}">
     <link rel="stylesheet" th:href="@{/css/navigation.css}">

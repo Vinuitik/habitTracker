@@ -1,3 +1,10 @@
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="_csrf"]');
+    if (meta) return meta.getAttribute('content');
+    const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+    return match ? decodeURIComponent(match.split('=')[1]) : '';
+}
+
 // Enable/disable custom frequency input
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('input[name="freq"]').forEach(radio => {
@@ -156,7 +163,8 @@ function saveRule() {
     fetch('/habits/addRule', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-XSRF-TOKEN': getCsrfToken()
         },
         body: JSON.stringify(payload)
     })

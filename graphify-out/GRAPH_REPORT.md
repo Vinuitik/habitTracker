@@ -1,7 +1,7 @@
 # Graph Report - HabitTracker  (2026-04-27)
 
 ## Corpus Check
-- 58 files · ~23,249 words
+- 58 files · ~23,353 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary

@@ -1,3 +1,10 @@
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="_csrf"]');
+    if (meta) return meta.getAttribute('content');
+    const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+    return match ? decodeURIComponent(match.split('=')[1]) : '';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const frequencySelect = document.getElementById('frequency');
     const customContainer = document.getElementById('custom-frequency-container');
@@ -37,6 +44,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         fetch(this.action, {
             method: 'POST',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() },
             body: formData
         })
         .then(response => {

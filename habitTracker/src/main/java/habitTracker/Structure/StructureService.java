@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import habitTracker.Habit.Habit;
+import habitTracker.auth.SecurityUtils;
 import habitTracker.Habit.HabitService;
 import habitTracker.Rules.Rule;
 import habitTracker.Rules.RuleService;
@@ -36,7 +37,10 @@ public class StructureService {
     }
 
     private StructureDTO getStructureForDate(LocalDate date) {
-        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDate(date);
+        String userId = SecurityUtils.getCurrentUserId();
+        List<HabitStructure> habitStructures = userId != null
+                ? habitStructureRepository.findByStructureDateAndUserId(date, userId)
+                : habitStructureRepository.findByStructureDate(date);
         List<Integer> habitIds = habitStructures.stream()
             .map(HabitStructure::getHabitId)
             .distinct()
@@ -179,8 +183,10 @@ public class StructureService {
     }
 
     private List<HabitStructure> fetchHabitStructures(LocalDate startDate, LocalDate endDate) {
-        List<HabitStructure> habitStructures = habitStructureRepository.findByStructureDateBetween(startDate.minusDays(1), endDate.plusDays(1));
-        return habitStructures;
+        String userId = SecurityUtils.getCurrentUserId();
+        return userId != null
+                ? habitStructureRepository.findByStructureDateBetweenAndUserId(startDate.minusDays(1), endDate.plusDays(1), userId)
+                : habitStructureRepository.findByStructureDateBetween(startDate.minusDays(1), endDate.plusDays(1));
     }
 
     private void populateStructureMap(Map<LocalDate, StructureDTO> structureMap, List<HabitStructure> habitStructures, Map<Integer, String> habitIdToNameMap) {

@@ -1,3 +1,10 @@
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="_csrf"]');
+    if (meta) return meta.getAttribute('content');
+    const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+    return match ? decodeURIComponent(match.split('=')[1]) : '';
+}
+
 // Global counters for efficient habit positioning
 let totalHabits = 0;
 let checkedHabits = 0;
@@ -34,7 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
     fetch('/habits/streaks', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-XSRF-TOKEN': getCsrfToken()
         },
         body: JSON.stringify(habitIds)
     }).then(res => res.json())
@@ -84,6 +92,7 @@ function updateHabitStatus(checkbox) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
+            'X-XSRF-TOKEN': getCsrfToken()
         },
         body: formData
     })
@@ -222,6 +231,7 @@ function removeHabitWithShameAnimation(habitItem, habitId, completed) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
+            'X-XSRF-TOKEN': getCsrfToken()
         },
         body: formData
     })

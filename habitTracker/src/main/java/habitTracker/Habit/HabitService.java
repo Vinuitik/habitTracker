@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import habitTracker.auth.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,14 +34,20 @@ public class HabitService {
         if (habit.getDefaultMade() == null) {
             habit.setDefaultMade(false);
         }
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId != null) habit.setUserId(userId);
         habitRepository.save(habit);
         habitStructureRepository.save(HabitStructure.builder()
             .habitId(habit.getId())
             .structureDate(habit.getStartDate())
             .completed(false)
+            .userId(habit.getUserId())
             .build());
     }
+
     public List<Habit> getAllHabits() {
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId != null) return habitRepository.findByUserId(userId);
         return habitRepository.findAll();
     }
 
@@ -117,6 +124,7 @@ public class HabitService {
                     .habitId(existingHabit.getId())
                     .structureDate(LocalDate.now())
                     .completed(false)
+                    .userId(existingHabit.getUserId())
                     .build());
             }
             ruleService.deleteBySubId(existingHabit.getId());
@@ -220,6 +228,7 @@ public class HabitService {
             .habitId(mainHabit.getId())
             .structureDate(LocalDate.now())
             .completed(false)
+            .userId(mainHabit.getUserId())
             .build());
         
     }

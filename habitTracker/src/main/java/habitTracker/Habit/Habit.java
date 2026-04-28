@@ -2,6 +2,7 @@ package habitTracker.Habit;
 
 import java.time.LocalDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import lombok.AllArgsConstructor;
@@ -33,4 +34,7 @@ public class Habit {
     private String twoMinuteRule; // 2 minute rule
     private Boolean defaultMade;
     private Integer lastNegativeStreak;
+
+    @Indexed
+    private String userId;
 }

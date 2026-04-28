@@ -1,5 +1,6 @@
 package habitTracker.KPI;
 
+import habitTracker.auth.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,10 +25,11 @@ public class KPIService {
     
     @Transactional
     public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds) {
-        if (kpiRepository.existsByName(name)) {
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId != null ? kpiRepository.existsByNameAndUserId(name, userId) : kpiRepository.existsByName(name)) {
             throw new IllegalArgumentException("KPI with name '" + name + "' already exists");
         }
-        
+
         KPI kpi = KPI.builder()
                 .name(name)
                 .description(description)
@@ -35,6 +37,7 @@ public class KPIService {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .active(true)
+                .userId(userId)
                 .build();
         
         KPI savedKPI = kpiRepository.save(kpi);
@@ -45,10 +48,12 @@ public class KPIService {
         
         // Create habit mappings
         if (habitIds != null && !habitIds.isEmpty()) {
+            String finalUserId = userId;
             List<KPIHabitMapping> mappings = habitIds.stream()
                     .map(habitId -> KPIHabitMapping.builder()
                             .kpiName(name)
                             .habitId(habitId)
+                            .userId(finalUserId)
                             .build())
                     .collect(Collectors.toList());
             kpiHabitMappingRepository.saveAll(mappings);
@@ -58,7 +63,10 @@ public class KPIService {
     }
     
     public List<KPIDTO> getAllActiveKPIs() {
-        List<KPI> kpis = kpiRepository.findByActive(true);
+        String userId = SecurityUtils.getCurrentUserId();
+        List<KPI> kpis = userId != null
+                ? kpiRepository.findByActiveAndUserId(true, userId)
+                : kpiRepository.findByActive(true);
         return kpis.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
@@ -165,10 +173,12 @@ public class KPIService {
         
         // Add new mappings
         if (habitIds != null && !habitIds.isEmpty()) {
+            String userId = SecurityUtils.getCurrentUserId();
             List<KPIHabitMapping> mappings = habitIds.stream()
                     .map(habitId -> KPIHabitMapping.builder()
                             .kpiName(kpiName)
                             .habitId(habitId)
+                            .userId(userId)
                             .build())
                     .collect(Collectors.toList());
             kpiHabitMappingRepository.saveAll(mappings);

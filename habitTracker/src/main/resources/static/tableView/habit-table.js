@@ -1,3 +1,10 @@
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="_csrf"]');
+    if (meta) return meta.getAttribute('content');
+    const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+    return match ? decodeURIComponent(match.split('=')[1]) : '';
+}
+
 function updateHabitStatus(checkbox) {
     // Don't allow updates for inactive habits
     const habitStatus = checkbox.getAttribute('data-habit-status');
@@ -18,7 +25,8 @@ function updateHabitStatus(checkbox) {
     fetch(`/habits/update/${habitId}`, {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/x-www-form-urlencoded', // Change Content-Type
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-XSRF-TOKEN': getCsrfToken()
         },
         body: formData // Send as form data
     })

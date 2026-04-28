@@ -1,3 +1,10 @@
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="_csrf"]');
+    if (meta) return meta.getAttribute('content');
+    const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+    return match ? decodeURIComponent(match.split('=')[1]) : '';
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     // Prevent the default form submission
     const form = document.querySelector('form');
@@ -22,7 +29,8 @@ document.addEventListener('DOMContentLoaded', function () {
         fetch('/habits/info/save', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-XSRF-TOKEN': getCsrfToken()
             },
             body: JSON.stringify(habitData)
         })

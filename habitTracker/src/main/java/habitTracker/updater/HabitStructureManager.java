@@ -15,11 +15,12 @@ public class HabitStructureManager {
         this.mongoTemplate = mongoTemplate;
     }
 
-    public void createHabitStructure(Integer habitId, LocalDate date, boolean completed) {
+    public void createHabitStructure(Integer habitId, LocalDate date, boolean completed, String userId) {
         HabitStructure habitStructure = HabitStructure.builder()
                 .habitId(habitId)
                 .structureDate(date)
                 .completed(completed)
+                .userId(userId)
                 .build();
         System.out.println("Creating habit structure: " + habitStructure);
         mongoTemplate.save(habitStructure);

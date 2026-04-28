@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDate;
@@ -24,4 +25,7 @@ public class Rule { // this will store one to many relationship with habit - mea
     private String id;
     private Integer habitOwnerId; // id of the habit to which this rule belongs
     private Integer habitSubId;
+
+    @Indexed
+    private String userId;
 }
