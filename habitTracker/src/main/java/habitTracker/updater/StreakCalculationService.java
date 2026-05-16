@@ -163,10 +163,14 @@ public class StreakCalculationService {
                             if (currentStreak <= 0) {
                                 pendingLastNeg = currentStreak;
                                 shouldClearLastNeg = false;
+                                currentStreak = 1;
+                                System.out.println("Habit #" + habitId + " completed on " + currentDate +
+                                        ". Streak reset from negative to 1");
+                            } else {
+                                currentStreak++;
+                                System.out.println("Habit #" + habitId + " completed on " + currentDate +
+                                        ". Streak increased to " + currentStreak);
                             }
-                            currentStreak = 1;
-                            System.out.println("Habit #" + habitId + " completed on " + currentDate +
-                                    ". Streak reset to 1");
                         }
                         if (currentStreak > longestStreak) {
                             longestStreak = currentStreak;

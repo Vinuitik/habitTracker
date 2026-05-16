@@ -199,6 +199,18 @@ class StreakCalculationServiceUnitTest {
     }
 
     @Test
+    void slowPath_explicitCompletion_fromPositive_streakIncrements() {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        HabitStructure s = HabitStructure.builder()
+                .habitId(1).structureDate(yesterday).completed(true).build();
+        stubWith(dailyHabit(3, false), List.of(s));
+
+        service.updateAllStreaks(yesterday);
+
+        assertEquals(4, streakFrom(captureUpdate()));
+    }
+
+    @Test
     void slowPath_inactiveHabit_isSkippedEntirely() {
         Habit inactive = Habit.builder()
                 .id(1).frequency(1).startDate(LocalDate.of(2020, 1, 1))
