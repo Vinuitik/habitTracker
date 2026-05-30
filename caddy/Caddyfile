@@ -8,6 +8,13 @@
 :80 {
 	encode zstd gzip
 
+	# Trello MCP server — strips /mcp prefix before proxying
+	handle_path /mcp/* {
+		@unauth not header X-MCP-Token {env.MCP_TOKEN}
+		respond @unauth "Unauthorized" 401
+		reverse_proxy mongo-backup:8091
+	}
+
 	reverse_proxy javaapp:8089 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}

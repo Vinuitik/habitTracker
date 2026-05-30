@@ -1,7 +1,6 @@
 package habitTracker.Structure;
 
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +15,7 @@ import habitTracker.auth.SecurityUtils;
 import habitTracker.Habit.HabitService;
 import habitTracker.Rules.Rule;
 import habitTracker.Rules.RuleService;
+import habitTracker.updater.HabitDateCalculator;
 import habitTracker.Structure.StructureDTO.HabitStatus;
 import habitTracker.util.Pair;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +27,7 @@ public class StructureService {
     private final HabitStructureRepository habitStructureRepository;
     private final HabitService habitService;
     private final RuleService ruleService;
+    private final HabitDateCalculator habitDateCalculator;
 
     @Transactional(readOnly = true)
     public StructureDTO getTodayStructure() {
@@ -56,38 +57,11 @@ public class StructureService {
         return populateStructureDTO(date, habitStructures, habitIdToNameMap);
     }
     
-    /**
-     * Determines if a habit should be active/tracked on a specific date
-     * Based on habit's startDate, endDate, frequency, and active status
-     */
     private boolean isHabitActiveOnDate(Habit habit, LocalDate date) {
-        // Check if habit is globally active
         if (habit.getActive() == null || !habit.getActive()) {
             return false;
         }
-        
-        // Check if date is before habit start date
-        if (habit.getStartDate() != null && date.isBefore(habit.getStartDate())) {
-            return false;
-        }
-        
-        // Check if date is after habit end date
-        if (habit.getEndDate() != null && date.isAfter(habit.getEndDate())) {
-            return false;
-        }
-        
-        // For daily habits (frequency=1), always active if within date range
-        if (habit.getFrequency() == null || habit.getFrequency() == 1) {
-            return true;
-        }
-        
-        // For other frequencies, check if this is a scheduled day
-        if (habit.getStartDate() != null) {
-            long daysSinceStart = ChronoUnit.DAYS.between(habit.getStartDate(), date);
-            return daysSinceStart >= 0 && daysSinceStart % habit.getFrequency() == 0;
-        }
-        
-        return true; // Default to active if no specific frequency logic applies
+        return habitDateCalculator.shouldTrackHabitOnDate(habit, date);
     }
 
     private Map<Integer, String> getHabitIdToNameMap(List<HabitStructure> habitStructures) {

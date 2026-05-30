@@ -6,6 +6,7 @@ Files: `docker-compose.yml`, `caddy/Caddyfile`, `cloudflared/config.yml`, `docke
 
 ```
 Cloudflare edge → cloudflared (tunnel) → Caddy:80 → javaapp:8089
+                                                   → /mcp/* → mongo-backup:8091 (MCP)
 ```
 
 | Hop | Config | Key detail |
@@ -13,7 +14,9 @@ Cloudflare edge → cloudflared (tunnel) → Caddy:80 → javaapp:8089
 | Cloudflare → cloudflared | `cloudflared/config.yml` | Tunnel token in env; routes `habittrackerdima.me` |
 | cloudflared → Caddy | `cloudflared/config.yml` → `ingress[].service` | Points to `http://caddy:80` (internal Docker network) |
 | Caddy → javaapp | `caddy/Caddyfile` | Reverse proxy to `javaapp:8089`; auto-TLS from Let's Encrypt |
+| Caddy → mongo-backup (MCP) | `caddy/Caddyfile` `handle_path /mcp/*` | Strips `/mcp` prefix; proxies to `mongo-backup:8091` |
 | javaapp | Spring Boot | Listens on `8089`; no public port exposed |
+| mongo-backup MCP | FastMCP SSE | Listens on `8091`; no public port exposed — see `backup/FLOWS_mcp.md` |
 
 To change the public domain: `cloudflared/config.yml` + `caddy/Caddyfile` (both reference the hostname).
 To change TLS: Caddy handles it automatically — no cert files needed unless switching off Let's Encrypt.

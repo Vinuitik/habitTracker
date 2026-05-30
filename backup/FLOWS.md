@@ -1,3 +1,12 @@
+# Backup Service — Flow Index
+
+| Subsystem | File |
+|---|---|
+| MongoDB → Google Drive backup | see below |
+| Trello MCP server + cron | `FLOWS_mcp.md` |
+
+---
+
 # Backup Flow
 
 Files: `backup.py`

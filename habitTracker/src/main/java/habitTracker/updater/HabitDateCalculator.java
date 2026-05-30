@@ -25,7 +25,7 @@ public class HabitDateCalculator {
 
     public boolean shouldTrackHabitOnDate(Habit habit, LocalDate date) {
         LocalDate startDate = habit.getStartDate();
-        int frequency = habit.getFrequency();
+        int frequency = habit.getFrequency() != null ? habit.getFrequency() : 1;
 
         if (startDate != null && date.isBefore(startDate)) {
             return false;

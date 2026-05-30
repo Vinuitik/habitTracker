@@ -18,9 +18,11 @@ WORKDIR /app
 
 # Copy files
 COPY backup.py .
+COPY mcp_server.py .
+COPY start.sh .
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "backup.py"]
+CMD ["sh", "start.sh"]
