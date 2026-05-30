@@ -15,6 +15,7 @@ import mcp_server
 from mcp_server import (
     _cron_update_card_statuses,
     create_card,
+    get_all_cards,
     get_urgent_cards,
     list_boards_and_lists,
     update_card,
@@ -26,6 +27,7 @@ _list_boards = list_boards_and_lists.fn
 _create_card = create_card.fn
 _update_card = update_card.fn
 _get_urgent = get_urgent_cards.fn
+_get_all = get_all_cards.fn
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -340,6 +342,37 @@ async def test_get_urgent_cards_includes_checklist_state():
 
     items = result["cards"][0]["checklist_items"]
     assert items == [{"name": "Step 1", "checked": True}, {"name": "Step 2", "checked": False}]
+
+
+# ── get_all_cards ────────────────────────────────────────────────────────────
+
+
+async def test_get_all_cards_returns_everything():
+    cards = [
+        {"id": "c1", "name": "Card A", "desc": "", "due": None, "idList": "l-todo", "labels": [], "shortUrl": "", "checklists": []},
+        {"id": "c2", "name": "Card B", "desc": "", "due": None, "idList": "l-done", "labels": [], "shortUrl": "", "checklists": []},
+    ]
+    ctx, _ = make_async_ctx(async_resp(cards))
+
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await _get_all(board_id="b1")
+
+    assert len(result["cards"]) == 2
+
+
+async def test_get_all_cards_exclude_lists():
+    lists = [{"id": "l-done", "name": "Done"}, {"id": "l-todo", "name": "To Do"}]
+    cards = [
+        {"id": "c1", "name": "Active", "desc": "", "due": None, "idList": "l-todo", "labels": [], "shortUrl": "", "checklists": []},
+        {"id": "c2", "name": "Archived", "desc": "", "due": None, "idList": "l-done", "labels": [], "shortUrl": "", "checklists": []},
+    ]
+    ctx, _ = make_async_ctx(async_resp(lists), async_resp(cards))
+
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await _get_all(board_id="b1", exclude_lists=["Done"])
+
+    assert len(result["cards"]) == 1
+    assert result["cards"][0]["card_id"] == "c1"
 
 
 # ── Cron ─────────────────────────────────────────────────────────────────────

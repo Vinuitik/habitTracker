@@ -197,6 +197,51 @@ async def get_urgent_cards(
     }
 
 
+@mcp.tool()
+async def get_all_cards(
+    board_id: str,
+    exclude_lists: list[str] | None = None,
+) -> dict:
+    """Returns every card on a board. Pass exclude_lists to skip lists by name (e.g. ['Done', 'Archive'])."""
+    excluded = set(exclude_lists or [])
+
+    async with httpx.AsyncClient() as client:
+        if excluded:
+            lsr = await client.get(f"{TRELLO_BASE}/boards/{board_id}/lists", params={**_auth(), "fields": "name,id"})
+            lsr.raise_for_status()
+            skip_ids = {l["id"] for l in lsr.json() if l["name"] in excluded}
+        else:
+            skip_ids = set()
+
+        car = await client.get(
+            f"{TRELLO_BASE}/boards/{board_id}/cards",
+            params={**_auth(), "fields": "name,desc,due,idList,labels,shortUrl", "checklists": "all"},
+        )
+        car.raise_for_status()
+
+    cards = [c for c in car.json() if c["idList"] not in skip_ids]
+
+    return {
+        "cards": [
+            {
+                "card_id": c["id"],
+                "title": c["name"],
+                "description": c.get("desc", ""),
+                "due": c.get("due"),
+                "list_id": c["idList"],
+                "labels": [l["name"] for l in c.get("labels", [])],
+                "url": c.get("shortUrl", ""),
+                "checklist_items": [
+                    {"name": item["name"], "checked": item["state"] == "complete"}
+                    for cl in c.get("checklists", [])
+                    for item in cl.get("checkItems", [])
+                ],
+            }
+            for c in cards
+        ]
+    }
+
+
 # ── Cron ───────────────────────────────────────────────────────────────────────
 
 def _resolve_cron_board_id() -> str:
