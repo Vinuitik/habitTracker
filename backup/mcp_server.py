@@ -198,6 +198,19 @@ async def get_urgent_cards(
 
 
 @mcp.tool()
+async def create_list(board_id: str, name: str, pos: str = "bottom") -> dict:
+    """Creates a new list on a Trello board. Call list_boards_and_lists first to resolve board_id. pos can be 'top', 'bottom', or an integer."""
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{TRELLO_BASE}/lists",
+            params={**_auth(), "idBoard": board_id, "name": name, "pos": pos},
+        )
+        r.raise_for_status()
+        lst = r.json()
+    return {"list_id": lst["id"], "list_name": lst["name"], "board_id": board_id}
+
+
+@mcp.tool()
 async def get_all_cards(
     board_id: str,
     exclude_lists: list[str] | None = None,

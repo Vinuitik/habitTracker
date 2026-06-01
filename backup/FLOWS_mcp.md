@@ -87,6 +87,19 @@ Sparse — only processes keys present in `fields`:
 
 To change excluded lists: `get_urgent_cards` `exclude` set in `mcp_server.py`.
 
+### get_all_cards
+1. If `exclude_lists` provided: `GET /boards/{board_id}/lists` → collect IDs to skip
+2. `GET /boards/{board_id}/cards?checklists=all` → filter out skipped list IDs
+3. Returns every remaining card with full fields (title, desc, due, labels, checklist items)
+
+Use when you need a full inventory of a board rather than a priority-sorted slice.
+
+### create_list
+1. `POST /lists` with `idBoard`, `name`, optional `pos` (default `"bottom"`)
+2. Returns `{list_id, list_name, board_id}`
+
+Use to create new lists on a board before populating them with cards.
+
 ---
 
 ## Cron: Hourly Card Status Labels
@@ -146,4 +159,5 @@ At the start of a coding session, call `get_urgent_cards` to know what to work o
 | Cron label logic | `mcp_server.py` `_cron_update_card_statuses()` | labels must exist on board |
 | Checklist name | `create_card` / `update_card` → `POST /checklists name=Tasks` | currently "Tasks" |
 | Excluded lists (urgent query) | `get_urgent_cards` `exclude` set | currently `{"Done", "Archive"}` |
+| New list position | `create_list` `pos` param | `"top"`, `"bottom"`, or integer |
 | Trello credentials | `TRELLO_API_KEY`, `TRELLO_TOKEN` env vars | from trello.com/power-ups/admin |
