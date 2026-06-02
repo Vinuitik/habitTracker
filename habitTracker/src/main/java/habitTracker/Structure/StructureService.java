@@ -41,7 +41,7 @@ public class StructureService {
         String userId = SecurityUtils.getCurrentUserId();
         List<HabitStructure> habitStructures = userId != null
                 ? habitStructureRepository.findByStructureDateAndUserId(date, userId)
-                : habitStructureRepository.findByStructureDate(date);
+                : List.of();
         List<Integer> habitIds = habitStructures.stream()
             .map(HabitStructure::getHabitId)
             .distinct()
@@ -160,7 +160,7 @@ public class StructureService {
         String userId = SecurityUtils.getCurrentUserId();
         return userId != null
                 ? habitStructureRepository.findByStructureDateBetweenAndUserId(startDate.minusDays(1), endDate.plusDays(1), userId)
-                : habitStructureRepository.findByStructureDateBetween(startDate.minusDays(1), endDate.plusDays(1));
+                : List.of();
     }
 
     private void populateStructureMap(Map<LocalDate, StructureDTO> structureMap, List<HabitStructure> habitStructures, Map<Integer, String> habitIdToNameMap) {

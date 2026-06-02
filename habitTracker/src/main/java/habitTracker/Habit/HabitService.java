@@ -35,7 +35,8 @@ public class HabitService {
             habit.setDefaultMade(false);
         }
         String userId = SecurityUtils.getCurrentUserId();
-        if (userId != null) habit.setUserId(userId);
+        if (userId == null) throw new IllegalStateException("Cannot save habit: no authenticated user");
+        habit.setUserId(userId);
         habitRepository.save(habit);
         habitStructureRepository.save(HabitStructure.builder()
             .habitId(habit.getId())
@@ -48,7 +49,7 @@ public class HabitService {
     public List<Habit> getAllHabits() {
         String userId = SecurityUtils.getCurrentUserId();
         if (userId != null) return habitRepository.findByUserId(userId);
-        return habitRepository.findAll();
+        return List.of();
     }
 
     public List<Pair<String, Integer> > getAllUniqueHabitNamesIds() {
@@ -145,20 +146,20 @@ public class HabitService {
     }
 
     public List<HabitDTO> getAllHabitsAsDTOs() {
-        return habitRepository.findAll().stream()
-            .map(HabitDTO::fromHabit) // Convert Habit to HabitDTO
+        return getAllHabits().stream()
+            .map(HabitDTO::fromHabit)
             .collect(Collectors.toList());
     }
     public List<HabitDTO> getAllActiveHabitsAsDTOs() {
-        return habitRepository.findAll().stream()
+        return getAllHabits().stream()
             .filter(habit -> (habit.getActive() != null && habit.getActive() != false))
-            .map(HabitDTO::fromHabit) // Convert Habit to HabitDTO
+            .map(HabitDTO::fromHabit)
             .collect(Collectors.toList());
     }
     public List<HabitDTO> getAllInactiveHabitsAsDTOs() {
-        return habitRepository.findAll().stream()
+        return getAllHabits().stream()
             .filter(habit -> (habit.getActive() == null || habit.getActive() == false))
-            .map(HabitDTO::fromHabit) // Convert Habit to HabitDTO
+            .map(HabitDTO::fromHabit)
             .collect(Collectors.toList());
     }
 
