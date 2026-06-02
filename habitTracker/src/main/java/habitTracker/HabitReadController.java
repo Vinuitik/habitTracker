@@ -70,7 +70,7 @@ public class HabitReadController {
 
     @GetMapping("/habits/add")
     public String showAddForm(Model model) {
-        return "redirect:/addHabitView/new-habit.html"; // This will look for add-habit.html in templates folder
+        return "new-habit";
     }
     
     @GetMapping("/habits/table")

@@ -53,7 +53,7 @@ public class SecurityConfig {
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/login", "/register", "/css/**", "/js/**",
-                        "/addHabitView/**", "/error").permitAll()
+                        "/addHabitView/*.css", "/addHabitView/*.js", "/error").permitAll()
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form

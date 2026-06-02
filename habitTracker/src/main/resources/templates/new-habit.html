@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Create New Habit</title>
+  <link rel="stylesheet" th:href="@{/addHabitView/new-habit.css}"/>
+  <link rel="stylesheet" th:href="@{/css/navigation.css}"/>
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+
+  <nav class="nav-bar">
+    <div class="nav-container">
+      <div class="nav-brand">
+        <a href="/" class="nav-logo">HabitTracker</a>
+      </div>
+      <ul class="nav-links">
+        <li><a href="/" class="nav-item">Today</a></li>
+        <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+        <li><a href="/habits/table" class="nav-item">Overview</a></li>
+        <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+        <li><a href="/kpis" class="nav-item">KPIs</a></li>
+        <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+        <li>
+          <form th:action="@{/logout}" method="post" style="margin:0">
+            <button type="submit" class="nav-item">Sign out</button>
+          </form>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <h1 class="date-header">
+    Create a New Habit
+    <span class="date-tooltip">Add something to track daily!</span>
+  </h1>
+
+  <form class="habit-form" th:action="@{/new-habit}" method="post">
+    <div class="form-group">
+      <label for="name">Habit Name</label>
+      <input type="text" id="name" name="name" class="habit-input" placeholder="Enter your new habit..." required />
+    </div>
+
+    <div class="form-group">
+      <label for="frequency">Frequency</label>
+      <select id="frequency" name="frequency" class="habit-input" required>
+        <option value="">Select frequency</option>
+        <option value="1">Daily</option>
+        <option value="7">Weekly</option>
+        <option value="30">Monthly</option>
+        <option value="CUSTOM">Custom</option>
+      </select>
+    </div>
+
+    <div id="custom-frequency-container" class="form-group" style="display: none;">
+      <label for="customFrequency">Custom Frequency (days)</label>
+      <input type="number" id="customFrequency" name="customFrequency" class="habit-input" placeholder="e.g. 3" min="1" />
+    </div>
+
+    <div class="form-group">
+      <label for="startDate">Start Date</label>
+      <input type="date" id="startDate" name="startDate" class="habit-input" required />
+    </div>
+
+    <div class="form-group">
+      <label for="endDate">End Date (Optional)</label>
+      <input type="date" id="endDate" name="endDate" class="habit-input" />
+    </div>
+
+    <div class="form-group">
+      <label for="defaultMade">Mark as successful by default</label>
+      <div class="checkbox-wrapper">
+        <input type="checkbox" id="defaultMade" name="defaultMade" />
+        <span class="checkbox-label">Check if this habit is successful unless you fail (e.g. sleeping late).</span>
+      </div>
+    </div>
+
+    <button type="submit" class="habit-button">Add Habit</button>
+  </form>
+
+  <script th:src="@{/addHabitView/new-habit.js}"></script>
+</body>
+</html>
