@@ -3,102 +3,88 @@ package habitTracker.KPI;
 import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
-@Controller
+@RestController
 @RequiredArgsConstructor
 @RequestMapping("/kpis")
 public class KPIController {
-    
+
     private final KPIService kpiService;
     private final HabitService habitService;
-    
+
     @GetMapping
-    public String showKPIList(Model model) {
-        List<KPIDTO> kpis = kpiService.getAllActiveKPIs();
-        model.addAttribute("kpis", kpis);
-        return "kpi-list";
+    public List<KPIDTO> listKPIs() {
+        return kpiService.getAllActiveKPIs();
     }
-    
-    @GetMapping("/create")
-    public String showCreateKPIForm(Model model) {
-        List<Habit> activeHabits = habitService.getAllHabits().stream()
+
+    @GetMapping("/available-habits")
+    public List<Habit> availableHabits() {
+        return habitService.getAllHabits().stream()
                 .filter(Habit::getActive)
                 .collect(Collectors.toList());
-        model.addAttribute("availableHabits", activeHabits);
-        return "kpi-create";
     }
-    
-    @PostMapping("/create")
-    public String createKPI(@RequestParam String name,
-                           @RequestParam String description,
-                           @RequestParam Boolean higherIsBetter,
-                           @RequestParam(required = false) List<Integer> habitIds,
-                           RedirectAttributes redirectAttributes) {
-        try {
-            kpiService.createKPI(name.trim(), description.trim(), higherIsBetter, habitIds);
-            redirectAttributes.addFlashAttribute("successMessage", "KPI '" + name + "' created successfully!");
-            return "redirect:/kpis";
-        } catch (IllegalArgumentException e) {
-            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
-            return "redirect:/kpis/create";
-        }
-    }
-    
+
     @GetMapping("/dashboard")
-    public String showKPIDashboard(Model model) {
-        List<KPIDTO> kpis = kpiService.getAllActiveKPIs();
-        model.addAttribute("kpis", kpis);
-        return "kpi-dashboard";
+    public List<KPIDTO> dashboardKPIs() {
+        return kpiService.getAllActiveKPIs();
     }
-    
-    @GetMapping("/{name}/data")
-    @ResponseBody
-    public List<KPIDataDTO> getKPIData(@PathVariable String name,
-                                      @RequestParam(defaultValue = "weekly") String period) {
-        switch (period.toLowerCase()) {
-            case "weekly":
-                return kpiService.getWeeklyKPIData(name);
-            case "monthly":
-                return kpiService.getMonthlyKPIData(name);
-            default:
-                return kpiService.getWeeklyKPIData(name);
+
+    @PostMapping("/create")
+    public ResponseEntity<?> createKPI(@RequestBody Map<String, Object> body) {
+        try {
+            String name = ((String) body.get("name")).trim();
+            String description = body.get("description") != null ? ((String) body.get("description")).trim() : "";
+            Boolean higherIsBetter = (Boolean) body.get("higherIsBetter");
+            @SuppressWarnings("unchecked")
+            List<Integer> habitIds = body.get("habitIds") != null
+                    ? ((List<?>) body.get("habitIds")).stream().map(v -> ((Number) v).intValue()).collect(Collectors.toList())
+                    : null;
+            kpiService.createKPI(name, description, higherIsBetter, habitIds);
+            return ResponseEntity.ok(Map.of("message", "KPI created successfully"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
-    
+
+    @GetMapping("/{name}/data")
+    public List<KPIDataDTO> getKPIData(@PathVariable String name,
+                                       @RequestParam(defaultValue = "weekly") String period) {
+        return switch (period.toLowerCase()) {
+            case "monthly" -> kpiService.getMonthlyKPIData(name);
+            default -> kpiService.getWeeklyKPIData(name);
+        };
+    }
+
     @PostMapping("/{name}/data")
-    @ResponseBody
-    public String addKPIData(@PathVariable String name,
-                           @RequestParam LocalDate date,
-                           @RequestParam Double value) {
+    public ResponseEntity<String> addKPIData(@PathVariable String name,
+                                             @RequestParam LocalDate date,
+                                             @RequestParam Double value) {
         try {
             kpiService.addKPIData(name, date, value);
-            return "Data added successfully";
+            return ResponseEntity.ok("Data added successfully");
         } catch (Exception e) {
-            return "Error: " + e.getMessage();
+            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
         }
     }
-    
+
     @DeleteMapping("/{name}")
-    @ResponseBody
-    public String deleteKPI(@PathVariable String name) {
+    public ResponseEntity<String> deleteKPI(@PathVariable String name) {
         try {
             kpiService.deleteKPI(name);
-            return "KPI deleted successfully";
+            return ResponseEntity.ok("KPI deleted successfully");
         } catch (Exception e) {
-            return "Error: " + e.getMessage();
+            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
         }
     }
-    
+
     @GetMapping("/habits/{habitId}")
-    @ResponseBody
     public List<KPIDTO> getKPIsByHabit(@PathVariable Integer habitId) {
         return kpiService.getKPIsByHabitId(habitId);
     }
