@@ -1,115 +1,173 @@
 # App UI Flows
 
-Files: `HabitReadController.java`, `HabitWriteController.java`, `RegisterController.java`, `StructureService.java`, `HabitService.java`, templates in `src/main/resources/templates/`
+Files: `PageController.java`, `HabitReadController.java`, `HabitWriteController.java`, `KPIController.java`, `RegisterController.java`, `StructureService.java`, `HabitService.java`, static HTML in `src/main/resources/static/`
+
+---
+
+## Architecture Overview
+
+Static HTML shells (served by Spring) + vanilla JS that fetches data via JSON APIs. No Thymeleaf in page rendering — Thymeleaf is only used for `/login` and `/register`.
+
+```
+Browser → Spring (PageController) → forwards to static/[page].html
+                                  ↓
+                        JS fetch → JSON API endpoints (session cookie)
+```
+
+Auth enforcement:
+- `PageController` routes (`/habits/list`, etc.) require session auth → Spring Security redirects to `/login` if unauthenticated
+- JSON API endpoints also require session auth
+- `/auth/me` is public and returns 401 manually if no session — JS guard on each page uses this for UX
+
+---
+
+## Page Routing (PageController)
+
+`PageController.java` maps old URL paths → forward to static HTML files:
+
+| URL | Static file served |
+|---|---|
+| `/`, `/habit` | `static/index.html` |
+| `/habits/list` | `static/habits-list.html` |
+| `/habits/table` | `static/habit-table.html` |
+| `/habits/rules` | `static/rule-setting.html` |
+| `/habits/add` | `static/habit-add.html` |
+| `/habits/edit/{id}` | `static/habit-edit.html` |
+| `/habits/info/{id}` | `static/habit-info.html` |
+| `/kpis` | `static/kpi-list.html` |
+| `/kpis/create` | `static/kpi-create.html` |
+| `/kpis/dashboard` | `static/kpi-dashboard.html` |
+
+Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop()`.
 
 ---
 
 ## Page Graph
 
 ```
-/login ──────────────────────────────────────────────────────────────────┐
-  ├── POST /login (form)           → / (on success) | /login?error        │
-  ├── GET  /oauth2/authorization/google → Google → / (on success)         │
-  └── GET  /register               → register.html                        │
-                                                                           │
-/register                                                                  │
-  └── POST /register               → / (auto-login on success)            │
-                                                                           ↓
-/ (Today) ←── all nav bars link here as "Today"                      ←────┘
-  ├── checkbox toggle              → POST /habits/update/{id} (AJAX)
+/login (Thymeleaf) ──────────────────────────────────────────────────┐
+  ├── POST /login (form)       → / (on success) | /login?error        │
+  ├── GET  /oauth2/authorization/google → Google → / (on success)     │
+  └── GET  /register (Thymeleaf)                                      │
+                                                                       ↓
+/ (Today) ←── all nav bars link here                             ←────┘
+  ├── JS fetches /api/today → renders habit list
+  ├── checkbox toggle → POST /habits/update/{id}
   └── nav → My Habits | Overview | Rules | KPIs | KPI Dashboard | Sign out
 
 /habits/list (My Habits)
-  ├── dropdown: Edit               → GET /habits/edit/{id}
-  ├── dropdown: Info               → GET /habits/info/{id}
-  ├── dropdown: Delete             → DELETE /habits/delete/{id} (AJAX, marks active=false)
-  ├── "+" button                   → GET /habits/add → redirect /addHabitView/new-habit.html (static)
-  └── inactive habits panel        → GET /habits/inactive (AJAX, JSON)
+  ├── JS fetches /api/habits → renders list
+  ├── dropdown Edit → /habits/edit/{id}
+  ├── dropdown Info → /habits/info/{id}
+  ├── dropdown Delete → DELETE /habits/delete/{id}
+  ├── Inactive toggle → GET /habits/inactive (JSON)
+  └── "+" → /habits/add
 
-/addHabitView/new-habit.html (static — no Thymeleaf)
-  └── POST /new-habit              → redirect /habit
+/habits/add
+  └── POST /new-habit (JSON body) → redirect /
 
 /habits/edit/{id}
-  └── POST /habits/edit/{id}       → "Habit updated successfully" (AJAX, stays on page)
+  ├── JS fetches /api/habits/{id} → pre-fills form
+  └── POST /habits/edit/{id} (JSON body) → redirect /habits/list
 
 /habits/info/{id}
-  └── POST /habits/info/save       → 200 OK (AJAX)
+  ├── JS fetches /api/habits/{id} → pre-fills form
+  └── POST /habits/info/save (JSON body) → redirect /habits/list
 
 /habits/table (Overview)
-  ├── date range picker            → GET /habits/tableAsync (AJAX, replaces table)
-  └── streak fetch on load         → POST /habits/streaks (AJAX, JSON list of IDs → streaks)
+  ├── JS fetches /api/habits/table → renders headers + initial rows
+  └── date range update → GET /habits/tableAsync (JSON, reuses existing JS)
 
 /habits/rules (Rules)
-  └── save rule                   → POST /habits/addRule (AJAX)
+  ├── JS fetches /api/habits/rules → renders habit lists
+  └── save rule → POST /habits/addRule (JSON)
 
 /kpis (KPI List)
-  ├── delete KPI                  → DELETE /kpis/{id} (AJAX)
-  └── "Create KPI"                → GET /kpis/create
+  ├── JS fetches /kpis (JSON) → renders KPI cards
+  └── delete → DELETE /kpis/{name}
 
 /kpis/create
-  └── POST /kpis                  → redirect /kpis
+  ├── JS fetches /kpis/available-habits → renders habit checkboxes
+  └── POST /kpis/create (JSON body) → redirect /kpis
 
 /kpis/dashboard
-  └── data fetch on load          → GET /kpis/data (AJAX, JSON)
+  ├── JS fetches /kpis/dashboard (JSON) → renders chart cards
+  └── chart data → GET /kpis/{name}/data
 
 POST /logout (all pages via nav "Sign out" button)
-  └── Spring Security: invalidate session + clear JSESSIONID cookie → redirect /login?logout
+  └── CSRF token from XSRF-TOKEN cookie → Spring Security invalidates session → redirect /login?logout
 ```
 
 ---
 
 ## Auth Flows
 
-### Google OAuth
-`/login` → click "Sign in with Google" → `/oauth2/authorization/google` → Google OIDC → callback → `SecurityConfig.loadOidcUser()` → `UserService.findOrCreateOAuthUser()` → new or existing `User` saved → `UserPrincipal` set in session → redirect `/`
+### Google OAuth (unchanged)
+`/login` → "Sign in with Google" → `/oauth2/authorization/google` → Google OIDC → `SecurityConfig.loadOidcUser()` → `UserService.findOrCreateOAuthUser()` → session → redirect `/`
 
-To change redirect on success: `SecurityConfig.webFilterChain()` → `oauth2Login().defaultSuccessUrl()`
-To change user creation logic: `UserService.findOrCreateOAuthUser()` (3 cases: googleId match / email match / new)
+### Local Login (unchanged)
+`/login` form → `POST /login` → Spring `UsernamePasswordAuthenticationFilter` → `UserService.loadUserByUsername()` → BCrypt → session → redirect `/`
 
-### Local Login
-`/login` form → `POST /login` → Spring `UsernamePasswordAuthenticationFilter` → `UserService.loadUserByUsername()` → BCrypt check → session → redirect `/`
-
-### Registration
+### Registration (unchanged)
 `GET /register` → `RegisterController.registerPage()` → `register.html`
-`POST /register` → `RegisterController.register()` → `UserService.register()` → BCrypt encode → save `User` → auto-login → redirect `/`
-Duplicate email → back to `register.html` with error
+`POST /register` → `RegisterController.register()` → BCrypt → auto-login → redirect `/`
 
 ### Sign Out
-Any page → click "Sign out" → `POST /logout` (CSRF token injected by Thymeleaf `th:action`) → Spring Security: `SecurityContextHolder` cleared + session invalidated + `JSESSIONID` cookie cleared → redirect `/login?logout`
+Any page → click "Sign out" → `POST /logout` (CSRF from XSRF-TOKEN cookie) → Spring Security: session invalidated → redirect `/login?logout`
+
+### `/auth/me` (JS auth guard)
+`GET /auth/me` → public endpoint → `SecurityUtils.getCurrentUserId()` → 200+userId if session valid, 401 if not
+JS on each page calls this on load; 401 → `window.location.href = '/login'`
 
 ---
 
-## Key Data Flows Per Page
+## JSON API Endpoints (session-auth via web chain)
 
-### / (Today)
-`HabitReadController.getMethodName()` → `StructureService.getTodayStructure()` → query `habit_structures` by `(date, userId)` → filter active habits → `filterFailedNegativeHabits()` → render `index.html`
-On load: JS → `POST /habits/streaks` with all habit IDs → renders streak badges async
-On checkbox: JS → `POST /habits/update/{id}?completed=true/false` → `StructureService.updateHabitCompletion()`
+| Endpoint | Returns |
+|---|---|
+| `GET /api/today` | `{date, habits:[{id,name,completed,defaultMade}]}` |
+| `GET /api/habits` | `List<HabitDTO>` (active, sorted by name) |
+| `GET /api/habits/table?startDate&endDate` | `{startDate,endDate,habitNames,tableData}` |
+| `GET /api/habits/rules` | `List<RuleDTO>` (active habits for rules page) |
+| `GET /api/habits/{id}` | `Habit` (single habit by ID) |
+| `GET /api/habits/inactive` | `List<HabitDTO>` (inactive) |
+| `GET /habits/inactive` | same (legacy path kept for habits-list.js) |
+| `GET /habits/tableAsync?startDate&endDate` | `List<StructureDTO>` (kept for habit-table.js) |
+| `POST /habits/streaks` | `List<Pair<Integer,Integer>>` body: `[habitId,...]` |
+| `GET /kpis` | `List<KPIDTO>` |
+| `GET /kpis/available-habits` | `List<Habit>` (active habits for KPI create) |
+| `GET /kpis/dashboard` | `List<KPIDTO>` |
+| `GET /kpis/{name}/data?period=weekly|monthly` | `List<KPIDataDTO>` |
+| `GET /auth/me` | `{userId}` or 401 |
 
-To change: what appears on today → `StructureService.getStructureForDate()` + `filterFailedNegativeHabits()`
-To change: streak display → JS in `inputView/` static assets
+### Write endpoints (unchanged)
+| Endpoint | Body | Notes |
+|---|---|---|
+| `POST /new-habit` | JSON `Habit` | sets curDate, active, streak before save |
+| `POST /habits/edit/{id}` | JSON `Habit` | |
+| `POST /habits/update/{id}?completed=&date=` | form params | checkbox toggle |
+| `POST /habits/info/save` | JSON `Habit` | partial update |
+| `POST /habits/addRule` | JSON `UpdateDTO` | |
+| `DELETE /habits/delete/{id}` | — | marks active=false |
+| `POST /kpis/create` | JSON `{name,description,higherIsBetter,habitIds}` | |
+| `POST /kpis/{name}/data?date=&value=` | form params | |
+| `DELETE /kpis/{name}` | — | |
 
-### /habits/list (My Habits)
-`HabitReadController.listHabits()` → `HabitService.getAllActiveHabitsAsDTOs()` → `findByUserId(userId)` → `habits-list.html`
-Inactive panel: JS → `GET /habits/inactive` → `HabitService.getAllInactiveHabitsAsDTOs()` → `findByUserId(userId)`
+---
 
-### /habits/table (Overview)
-`HabitReadController.getHabitTable()` → `HabitService.getAllUniqueHabitNamesIds()` + `StructureService.getStructuresForDateRange()` → `habit-table.html`
-Date change: JS → `GET /habits/tableAsync` → same services → JSON → replaces table DOM
+## CSRF
 
-### /habits/rules
-`HabitReadController.showRuleSetting()` → `HabitService.getAllHabits()` (userId-scoped) → active habits only → `rule-setting.html`
-Save: JS → `POST /habits/addRule` → `RuleService.addRule()` + `HabitService.updateRule()`
+`CookieCsrfTokenRepository.withHttpOnlyFalse()` sets `XSRF-TOKEN` cookie. All JS reads it via:
+```js
+document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN=')).split('=')[1]
+```
+and sends as `X-XSRF-TOKEN` header. Logout form reads same cookie into a hidden `_csrf` input.
 
 ---
 
 ## User Scoping (all pages)
 
-Every server-side data query goes through `SecurityUtils.getCurrentUserId()`.
-- Authenticated: `UserPrincipal.getId()` → `findByUserId(id)` → user's data only
-- Null (should not reach here — `anyRequest().authenticated()` blocks it): `List.of()` — empty, never all-users data
-
-To change scoping logic: `HabitService.getAllHabits()`, `StructureService.getStructureForDate()`, `StructureService.fetchHabitStructures()`
+All server-side data queries go through `SecurityUtils.getCurrentUserId()` → `findByUserId(id)`. If userId is null (should not reach here — `anyRequest().authenticated()` blocks it): `List.of()`.
 
 ---
 
@@ -117,23 +175,24 @@ To change scoping logic: `HabitService.getAllHabits()`, `StructureService.getStr
 
 | Route | Auth required | Note |
 |---|---|---|
-| `/login` | No | Spring `permitAll` |
-| `/register` | No | Spring `permitAll` |
-| `/css/**`, `/js/**`, `/addHabitView/**` | No | Static assets |
+| `/login`, `/register` | No | Spring `permitAll` |
+| `/auth/me` | No (manual 401) | public endpoint, checks session internally |
+| `/css/**`, `/js/**`, `/*.html`, static assets | No | static resources |
+| All page routes (`/`, `/habits/list`, etc.) | Yes (session) | `PageController` + Spring Security |
+| All API routes (`/api/**`, `/kpis/**`, etc.) | Yes (session) | web chain `anyRequest().authenticated()` |
+| `/api/auth/**` | JWT | separate stateless chain |
 | `/error` | No | Spring `permitAll` |
-| Everything else | Yes | Redirects to `/login` |
-| `/api/**` | JWT token | Stateless chain, separate from session |
-
-To add/remove public routes: `SecurityConfig.webFilterChain()` → `requestMatchers(...).permitAll()`
 
 ---
 
 ## Technology Notes
 
 - **Sessions**: Spring Boot default in-memory `HttpSession`. All sessions lost on container restart — users must re-login after every `docker-compose` restart.
-- **CSRF**: `CookieCsrfTokenRepository` — token stored in `XSRF-TOKEN` cookie, readable by JS. Thymeleaf `th:action` injects hidden `_csrf` field automatically. AJAX calls must read the cookie and send the token.
-- **Static add-habit page**: `/addHabitView/new-habit.html` is a plain static file, not a Thymeleaf template. It does NOT get CSRF or auth context from Thymeleaf — it reads the CSRF cookie via JS.
-- **Nav is copy-pasted**: There is no shared Thymeleaf fragment file. Each of the 9 templates defines its own `<nav>`. Changes to nav must be applied to all 9 files.
+- **CSRF**: `CookieCsrfTokenRepository` — token in `XSRF-TOKEN` cookie, readable by JS. No Thymeleaf `th:action` needed on static pages — JS reads cookie directly.
+- **Static pages**: Thymeleaf is NOT used for page rendering. Pages are plain HTML files in `static/`. `PageController` does a servlet `forward:` to each file. Spring Security auth runs on the page route, not the forwarded path.
+- **Edit/Info page ID**: Habit ID extracted from URL path via `window.location.pathname.split('/').pop()` — no query string needed.
+- **Nav is copy-pasted**: All 10 static HTML files have their own `<nav>`. Changes must be applied to all 10 files.
+- **Legacy JS reuse**: `input.js`, `habits-list.js`, `habit-table.js`, `edit-habit.js`, `info.js`, `rule-setting.js`, `kpi-list.js`, `kpi-dashboard.js` are all kept. Their `DOMContentLoaded` handlers fire before async `init()` populates the DOM, so each page's `init()` re-runs any DOM-dependent setup after data loads.
 
 ---
 
@@ -141,15 +200,19 @@ To add/remove public routes: `SecurityConfig.webFilterChain()` → `requestMatch
 
 | What to change | Where |
 |---|---|
-| Add a new nav link | All 9 templates (no shared fragment) |
+| Add a new nav link | All 10 static HTML files (no shared fragment) |
+| Add a new page route | `PageController.java` + new static HTML file + SecurityConfig if new path pattern |
 | Login page layout | `templates/login.html` |
 | Register page layout | `templates/register.html` |
 | Redirect after login/OAuth | `SecurityConfig.webFilterChain()` → `defaultSuccessUrl()` |
 | Redirect after logout | `SecurityConfig.webFilterChain()` → `logout().logoutSuccessUrl()` |
-| Add habit form fields | `addHabitView/new-habit.html` (static) + `Habit.java` + `POST /new-habit` in `HabitWriteController` |
-| Today page habit display logic | `StructureService.getTodayStructure()`, `filterFailedNegativeHabits()` |
-| Mark habit complete endpoint | `HabitWriteController.updateHabit()` → `POST /habits/update/{id}` |
-| Edit habit fields | `templates/edit-habit.html` + `HabitWriteController.updateHabit()` → `POST /habits/edit/{id}` |
-| Habit info fields | `templates/info.html` + `HabitWriteController.saveHabit()` → `POST /habits/info/save` |
-| Overview date range | `HabitReadController.getHabitTable()` / `getHabitTableData()` → `StructureService.getStructuresForDateRange()` |
-| Public/protected route list | `SecurityConfig.webFilterChain()` → `authorizeHttpRequests(...)` |
+| Today page habit data | `HabitReadController.getToday()` → `GET /api/today` |
+| Mark habit complete | `HabitWriteController.updateCompletion()` → `POST /habits/update/{id}` |
+| Habit list data | `HabitReadController.listHabits()` → `GET /api/habits` |
+| Table data | `HabitReadController.getHabitTable()` → `GET /api/habits/table` |
+| Rules data | `HabitReadController.getRulesHabits()` → `GET /api/habits/rules` |
+| Single habit fetch | `HabitReadController.getHabit()` → `GET /api/habits/{id}` |
+| KPI list data | `KPIController.listKPIs()` → `GET /kpis` |
+| KPI create | `KPIController.createKPI()` → `POST /kpis/create` |
+| Auth guard (JS) | Each HTML file's inline `init()` script |
+| Public/protected routes | `SecurityConfig.webFilterChain()` → `authorizeHttpRequests(...)` |
