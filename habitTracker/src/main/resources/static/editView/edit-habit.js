@@ -9,48 +9,52 @@ document.addEventListener('DOMContentLoaded', function() {
     const frequencySelect = document.getElementById('frequency');
     const customContainer = document.getElementById('custom-frequency-container');
     const customInput = document.getElementById('customFrequency');
-    
-    // Show/hide custom frequency input based on selection
+
     frequencySelect.addEventListener('change', function() {
         if (this.value === 'CUSTOM') {
             customContainer.style.display = 'block';
-            frequencySelect.removeAttribute('name');
-            customInput.setAttribute('name', 'frequency');
         } else {
             customContainer.style.display = 'none';
-            frequencySelect.setAttribute('name', 'frequency');
-            customInput.removeAttribute('name');
         }
     });
 
-    // Form submission handling
+    if (frequencySelect.value === 'CUSTOM') {
+        customContainer.style.display = 'block';
+    }
+
     document.querySelector('.habit-form').addEventListener('submit', function(e) {
         e.preventDefault();
-        
-        // Ensure correct frequency field is being sent
-        if (frequencySelect.value === 'CUSTOM') {
-            if (!customInput.value.trim()) {
-                alert('Please enter a custom frequency');
-                return;
-            }
-            frequencySelect.removeAttribute('name');
-            customInput.setAttribute('name', 'frequency');
-        } else {
-            customInput.removeAttribute('name');
-            frequencySelect.setAttribute('name', 'frequency');
+
+        const freq = frequencySelect.value === 'CUSTOM'
+            ? parseInt(customInput.value.trim(), 10)
+            : parseInt(frequencySelect.value, 10);
+
+        if (frequencySelect.value === 'CUSTOM' && !customInput.value.trim()) {
+            alert('Please enter a custom frequency');
+            return;
         }
 
-        const formData = new FormData(this);
-        
-        fetch(this.action, {
+        const habitId = parseInt(this.getAttribute('data-habit-id'), 10);
+        const body = {
+            id: habitId,
+            name: document.getElementById('name').value,
+            frequency: freq,
+            startDate: document.getElementById('startDate').value || null,
+            endDate: document.getElementById('endDate').value || null,
+            active: document.getElementById('isActive').checked,
+            defaultMade: document.getElementById('defaultMade').checked
+        };
+
+        fetch(`/habits/edit/${habitId}`, {
             method: 'POST',
-            headers: { 'X-XSRF-TOKEN': getCsrfToken() },
-            body: formData
+            headers: {
+                'Content-Type': 'application/json',
+                'X-XSRF-TOKEN': getCsrfToken()
+            },
+            body: JSON.stringify(body)
         })
         .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
+            if (!response.ok) throw new Error('Failed to update habit');
             window.location.href = '/habits/list';
         })
         .catch(error => {
@@ -58,11 +62,4 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Failed to update habit. Please try again.');
         });
     });
-
-    // Initialize custom frequency container if CUSTOM is selected
-    if (frequencySelect.value === 'CUSTOM') {
-        customContainer.style.display = 'block';
-        frequencySelect.removeAttribute('name');
-        customInput.setAttribute('name', 'frequency');
-    }
 });
