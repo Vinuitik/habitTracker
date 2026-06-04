@@ -27,12 +27,12 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final UserService userService;
 
-    // Chain 1: /api/** — stateless JWT, no session, returns 401 JSON on failure
+    // Chain 1: /api/auth/** only — stateless JWT, no session, returns 401 JSON on failure
     @Bean
     @Order(1)
     public SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
         http
-            .securityMatcher("/api/**")
+            .securityMatcher("/api/auth/**")
             .csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
@@ -52,8 +52,14 @@ public class SecurityConfig {
     public SecurityFilterChain webFilterChain(HttpSecurity http) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login", "/register", "/css/**", "/js/**",
-                        "/addHabitView/*.css", "/addHabitView/*.js", "/error").permitAll()
+                .requestMatchers(
+                    "/login", "/register", "/error",
+                    "/auth/me",
+                    "/css/**", "/js/**",
+                    "/inputView/**", "/listView/**", "/editView/**",
+                    "/tableView/**", "/addHabitView/**",
+                    "/*.html", "/*.css", "/*.js", "/*.png", "/*.ico", "/*.webmanifest"
+                ).permitAll()
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form
