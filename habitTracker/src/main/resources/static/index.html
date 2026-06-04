@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit Tracker</title>
+    <link rel="stylesheet" href="/inputView/style.css">
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item active">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+                <li><a href="/kpis" class="nav-item">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+                <li>
+                    <form id="logout-form" action="/logout" method="post" style="margin:0">
+                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+                        <button type="submit" class="nav-item">Sign out</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1 class="date-header">
+            TODAY
+            <span class="date-tooltip" id="today-date"></span>
+        </h1>
+        <ul class="habit-list" id="habit-list"></ul>
+    </div>
+
+    <button class="habit-add-button">
+        <a href="/habits/add" class="habit-add-link">Go to New Habit View</a>
+    </button>
+
+    <script src="/inputView/input.js"></script>
+    <script>
+        function getCsrfCookie() {
+            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+            return match ? decodeURIComponent(match.split('=')[1]) : '';
+        }
+
+        async function init() {
+            const authRes = await fetch('/auth/me', { credentials: 'include' });
+            if (!authRes.ok) { window.location.href = '/login'; return; }
+
+            document.getElementById('logout-csrf').value = getCsrfCookie();
+
+            const data = await fetch('/api/today', { credentials: 'include' }).then(r => r.json());
+
+            document.getElementById('today-date').textContent =
+                new Date(data.date + 'T00:00:00').toLocaleDateString('en-US',
+                    { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            const list = document.getElementById('habit-list');
+            data.habits.forEach(h => {
+                const li = document.createElement('li');
+                li.className = 'habit-item';
+                li.innerHTML = `
+                    <div class="habit-item-content">
+                        <div class="habit-left">
+                            <input type="checkbox" class="habit-checkbox"
+                                id="habit-${h.name}-${h.id}"
+                                ${h.completed ? 'checked' : ''}
+                                data-habit-name="${h.name}"
+                                data-habit-id="${h.id}"
+                                data-default-made="${h.defaultMade}"
+                                onchange="updateHabitStatus(this)">
+                            <span class="habit-name">${h.name}</span>
+                        </div>
+                        <div class="habit-right">
+                            <span class="habit-streak" data-habit-id="${h.id}">0 day streak</span>
+                        </div>
+                    </div>`;
+                list.appendChild(li);
+            });
+
+            organizeHabitsOnLoad();
+
+            // load streaks (mirrors input.js DOMContentLoaded logic which ran before habits were rendered)
+            const checkboxes = document.querySelectorAll('.habit-checkbox[data-habit-id]');
+            totalHabits = checkboxes.length;
+            checkedHabits = Array.from(checkboxes).filter(cb => cb.checked).length;
+            const habitIds = Array.from(checkboxes).map(cb => cb.getAttribute('data-habit-id'));
+
+            fetch('/habits/streaks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfCookie() },
+                body: JSON.stringify(habitIds)
+            })
+            .then(r => r.json())
+            .then(streaks => {
+                streaks.forEach(({ key, value }) => {
+                    const habitId = String(key);
+                    const streakSpan = document.querySelector(`.habit-streak[data-habit-id="${habitId}"]`);
+                    const checkbox = document.querySelector(`.habit-checkbox[data-habit-id="${habitId}"]`);
+                    if (streakSpan && checkbox) {
+                        const displayStreak = checkbox.checked ? (value <= 0 ? 1 : value + 1) : value;
+                        streakSpan.textContent = displayStreak + ' day streak';
+                        streakSpan.dataset.baseStreak = value;
+                        applyStreakColor(streakSpan, displayStreak);
+                    }
+                });
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>

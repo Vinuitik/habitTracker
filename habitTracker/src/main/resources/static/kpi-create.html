@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create KPI - HabitTracker</title>
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="stylesheet" href="/css/kpi-create.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+                <li><a href="/kpis" class="nav-item active">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+                <li>
+                    <form id="logout-form" action="/logout" method="post" style="margin:0">
+                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+                        <button type="submit" class="nav-item">Sign out</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="main-content">
+        <h1 class="page-header">
+            Create New KPI
+            <span class="page-subtitle">Define a new key performance indicator</span>
+        </h1>
+        <div id="error-message" class="alert alert-error" style="display:none;"></div>
+
+        <form class="kpi-form" id="kpi-form">
+            <div class="form-section">
+                <h2>Basic Information</h2>
+                <div class="form-group">
+                    <label for="name">KPI Name *</label>
+                    <input type="text" id="name" name="name" class="form-input"
+                           placeholder="e.g., Daily Steps, Reading Pages, Weight" required>
+                    <small class="form-help">Must be unique - this will be used as the identifier</small>
+                </div>
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" class="form-textarea"
+                              placeholder="Describe what this KPI measures..." rows="3"></textarea>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>KPI Configuration</h2>
+                <div class="form-group">
+                    <label>Direction Preference *</label>
+                    <div class="radio-group">
+                        <div class="radio-option">
+                            <input type="radio" id="higherBetter" name="higherIsBetter" value="true" required>
+                            <label for="higherBetter">
+                                <span class="radio-icon">↑</span> Higher is Better
+                                <small>More is good (e.g., steps taken, books read)</small>
+                            </label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" id="lowerBetter" name="higherIsBetter" value="false">
+                            <label for="lowerBetter">
+                                <span class="radio-icon">↓</span> Lower is Better
+                                <small>Less is good (e.g., weight, time spent on phone)</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Habit Connections</h2>
+                <p class="section-description">Link this KPI to specific habits for better tracking and analysis.</p>
+                <div class="form-group">
+                    <label>Related Habits (Optional)</label>
+                    <div class="checkbox-group" id="habits-list">
+                        <p>Loading habits...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Create KPI</button>
+                <a href="/kpis" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function getCsrfCookie() {
+            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+            return match ? decodeURIComponent(match.split('=')[1]) : '';
+        }
+
+        async function init() {
+            const authRes = await fetch('/auth/me', { credentials: 'include' });
+            if (!authRes.ok) { window.location.href = '/login'; return; }
+
+            document.getElementById('logout-csrf').value = getCsrfCookie();
+
+            const habits = await fetch('/kpis/available-habits', { credentials: 'include' }).then(r => r.json());
+            const container = document.getElementById('habits-list');
+
+            if (!habits || habits.length === 0) {
+                container.innerHTML = `<p>No active habits available. <a href="/habits/add">Create a habit first</a>.</p>`;
+            } else {
+                container.innerHTML = '';
+                habits.forEach(h => {
+                    const div = document.createElement('div');
+                    div.className = 'checkbox-option';
+                    div.innerHTML = `
+                        <input type="checkbox" id="habit${h.id}" name="habitIds" value="${h.id}">
+                        <label for="habit${h.id}">${h.name}</label>`;
+                    container.appendChild(div);
+                });
+            }
+        }
+
+        document.getElementById('kpi-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const higherVal = document.querySelector('input[name="higherIsBetter"]:checked');
+            if (!higherVal) { alert('Please select a direction preference'); return; }
+
+            const checkedHabits = Array.from(document.querySelectorAll('input[name="habitIds"]:checked'))
+                .map(cb => parseInt(cb.value, 10));
+
+            const body = {
+                name: document.getElementById('name').value,
+                description: document.getElementById('description').value,
+                higherIsBetter: higherVal.value === 'true',
+                habitIds: checkedHabits.length > 0 ? checkedHabits : null
+            };
+
+            const res = await fetch('/kpis/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfCookie() },
+                body: JSON.stringify(body)
+            });
+
+            if (res.ok) {
+                window.location.href = '/kpis';
+            } else {
+                const err = await res.json().catch(() => ({ error: 'Failed to create KPI' }));
+                const msg = document.getElementById('error-message');
+                msg.textContent = err.error || 'Failed to create KPI';
+                msg.style.display = 'block';
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>

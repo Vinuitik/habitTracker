@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Habit Info</title>
+    <link rel="stylesheet" href="/css/info.css">
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+                <li><a href="/kpis" class="nav-item">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+                <li>
+                    <form id="logout-form" action="/logout" method="post" style="margin:0">
+                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+                        <button type="submit" class="nav-item">Sign out</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1 class="date-header">Edit Habit Info</h1>
+        <form id="info-form">
+            <div class="info-field">
+                <label for="habit-name">Habit Name:</label>
+                <input type="text" id="habit-name" name="name" class="habit-input" data-id="">
+            </div>
+            <div class="info-field">
+                <label for="habit-description">Description:</label>
+                <textarea id="habit-description" name="description" class="habit-input"></textarea>
+            </div>
+            <div class="info-field">
+                <label for="two-minute-rule">2-Minute Rule:</label>
+                <textarea id="two-minute-rule" name="twoMinuteRule" class="habit-input"></textarea>
+            </div>
+            <div class="info-field">
+                <label for="habit-status">Status:</label>
+                <select id="habit-status" name="status" class="habit-input">
+                    <option value="priority">Priority</option>
+                    <option value="maintaining">Maintaining</option>
+                    <option value="abandoned">Abandoned</option>
+                </select>
+            </div>
+            <div class="info-field">
+                <label for="habit-streak">Streak:</label>
+                <input type="number" id="habit-streak" name="streak" class="habit-input">
+            </div>
+            <button type="submit" class="habit-add-button">Save</button>
+        </form>
+    </div>
+
+    <script src="/inputView/info.js"></script>
+    <script>
+        function getCsrfCookie() {
+            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+            return match ? decodeURIComponent(match.split('=')[1]) : '';
+        }
+
+        async function init() {
+            const authRes = await fetch('/auth/me', { credentials: 'include' });
+            if (!authRes.ok) { window.location.href = '/login'; return; }
+
+            document.getElementById('logout-csrf').value = getCsrfCookie();
+
+            const habitId = window.location.pathname.split('/').pop();
+            const habit = await fetch(`/api/habits/${habitId}`, { credentials: 'include' }).then(r => r.json());
+
+            document.getElementById('habit-name').value = habit.name || '';
+            document.getElementById('habit-name').setAttribute('data-id', habit.id);
+            document.getElementById('habit-description').value = habit.description || '';
+            document.getElementById('two-minute-rule').value = habit.twoMinuteRule || '';
+            document.getElementById('habit-status').value = habit.status || 'priority';
+            document.getElementById('habit-streak').value = habit.streak || 0;
+        }
+
+        init();
+    </script>
+</body>
+</html>

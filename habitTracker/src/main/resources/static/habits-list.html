@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Habits</title>
+    <link rel="stylesheet" href="/listView/habits-list.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item active">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+                <li><a href="/kpis" class="nav-item">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+                <li>
+                    <form id="logout-form" action="/logout" method="post" style="margin:0">
+                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+                        <button type="submit" class="nav-item">Sign out</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1 class="date-header">
+            My Habits
+            <span class="date-tooltip">Manage your habits here</span>
+        </h1>
+
+        <div class="toggle-btn-group">
+            <button id="activeBtn" class="toggle-btn active">Active</button>
+            <button id="inactiveBtn" class="toggle-btn">Inactive</button>
+        </div>
+
+        <ul class="habits-list" id="habits-list"></ul>
+    </div>
+
+    <script src="/listView/habits-list.js"></script>
+    <script>
+        function getCsrfCookie() {
+            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+            return match ? decodeURIComponent(match.split('=')[1]) : '';
+        }
+
+        async function init() {
+            const authRes = await fetch('/auth/me', { credentials: 'include' });
+            if (!authRes.ok) { window.location.href = '/login'; return; }
+
+            document.getElementById('logout-csrf').value = getCsrfCookie();
+
+            const habits = await fetch('/api/habits', { credentials: 'include' }).then(r => r.json());
+
+            const list = document.getElementById('habits-list');
+            habits.forEach(h => {
+                const li = document.createElement('li');
+                li.className = 'habit-item';
+                li.innerHTML = `
+                    <span class="habit-name">${h.name}</span>
+                    <div class="habit-actions">
+                        <div class="dropdown">
+                            <button class="dropdown-btn"><i class="fas fa-ellipsis-v"></i></button>
+                            <div class="dropdown-content">
+                                <a href="/habits/edit/${h.id}">Edit</a>
+                                <a href="/habits/info/${h.id}">Info</a>
+                                <a href="#" class="delete-btn" data-habit="${h.name}" data-habit-id="${h.id}">Delete</a>
+                            </div>
+                        </div>
+                    </div>`;
+                list.appendChild(li);
+            });
+
+            // habits-list.js DOMContentLoaded already ran (before habits loaded);
+            // re-attach handlers to the freshly rendered items
+            document.querySelectorAll('.dropdown-btn').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const d = btn.closest('.dropdown');
+                    document.querySelectorAll('.dropdown').forEach(x => { if (x !== d) x.classList.remove('active'); });
+                    d.classList.toggle('active');
+                });
+            });
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    e.preventDefault(); e.stopPropagation();
+                    const id = btn.getAttribute('data-habit-id');
+                    const name = btn.getAttribute('data-habit');
+                    if (confirm(`Are you sure you want to delete "${name}"?`)) {
+                        fetch(`/habits/delete/${id}`, { method: 'DELETE', headers: { 'X-XSRF-TOKEN': getCsrfCookie() } })
+                            .then(r => { if (r.ok) btn.closest('.habit-item').remove(); else alert('Failed to delete habit'); });
+                    }
+                });
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>

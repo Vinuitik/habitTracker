@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set Habit Rules</title>
+    <link rel="stylesheet" href="/css/rule-setting.css">
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item active">Rules</a></li>
+                <li><a href="/kpis" class="nav-item">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+                <li>
+                    <form id="logout-form" action="/logout" method="post" style="margin:0">
+                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+                        <button type="submit" class="nav-item">Sign out</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="rule-setting-container">
+        <h1>Set Habit Combination Rule</h1>
+        <div class="rule-setting-main">
+            <div class="habit-list-panel">
+                <h2>All Habits (Active)</h2>
+                <ul class="habit-list left-habit-list" id="left-habits"></ul>
+                <a href="/habits/add" class="new-habit-btn">+ Create New Habit</a>
+            </div>
+            <div class="habit-combo-panel">
+                <h2>Combine With</h2>
+                <ul class="habit-list right-habit-list" id="right-habits"></ul>
+            </div>
+        </div>
+        <div class="frequency-section">
+            <h3>Frequency Selection</h3>
+            <div class="frequency-options" style="display:flex;justify-content:space-around;align-items:center;">
+                <div>
+                    <label><input type="radio" name="freq" value="average" checked> Average of selected habits</label>
+                    <label><input type="radio" name="freq" value="gcd"> GCD of selected habits</label>
+                    <label><input type="radio" name="freq" value="custom"> Custom:
+                        <input type="number" min="1" id="custom-freq" placeholder="Enter frequency" disabled>
+                    </label>
+                </div>
+                <div>
+                    <span style="font-weight:600;">Resulting Frequency:</span>
+                    <span id="result-frequency" style="display:inline-block;min-width:40px;margin-left:10px;font-size:1.2em;background:#e6f7fb;padding:6px 16px;border-radius:6px;color:#2eaadc;">-</span>
+                </div>
+            </div>
+        </div>
+        <button class="save-rule-btn">Save Rule</button>
+    </div>
+
+    <script src="/js/rule-setting.js"></script>
+    <script>
+        function getCsrfCookie() {
+            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+            return match ? decodeURIComponent(match.split('=')[1]) : '';
+        }
+
+        async function init() {
+            const authRes = await fetch('/auth/me', { credentials: 'include' });
+            if (!authRes.ok) { window.location.href = '/login'; return; }
+
+            document.getElementById('logout-csrf').value = getCsrfCookie();
+
+            const habits = await fetch('/api/habits/rules', { credentials: 'include' }).then(r => r.json());
+
+            function buildItem(h) {
+                const li = document.createElement('li');
+                li.className = 'habit-item left-habit';
+                li.setAttribute('data-id', h.id);
+                li.setAttribute('data-frequency', h.frequency);
+                li.setAttribute('data-streak', h.streak);
+                li.innerHTML = `<span class="habit-name">${h.name}</span>`;
+                return li;
+            }
+
+            const left = document.getElementById('left-habits');
+            const right = document.getElementById('right-habits');
+            habits.forEach(h => {
+                left.appendChild(buildItem(h));
+                const ri = buildItem(h);
+                ri.className = 'habit-item right-habit';
+                right.appendChild(ri);
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>

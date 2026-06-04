@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPIs - HabitTracker</title>
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="stylesheet" href="/css/kpi-list.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-item">Today</a></li>
+                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
+                <li><a href="/habits/table" class="nav-item">Overview</a></li>
+                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
+                <li><a href="/kpis" class="nav-item active">KPIs</a></li>
+                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
+                <li>
+                    <form id="logout-form" action="/logout" method="post" style="margin:0">
+                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+                        <button type="submit" class="nav-item">Sign out</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="main-content">
+        <h1 class="page-header">
+            Key Performance Indicators
+            <span class="page-subtitle">Track and analyze your metrics</span>
+        </h1>
+        <div class="actions-bar">
+            <a href="/kpis/create" class="btn btn-primary">Create New KPI</a>
+            <a href="/kpis/dashboard" class="btn btn-secondary">View Dashboard</a>
+        </div>
+        <div id="flash-message"></div>
+        <div class="kpi-container" id="kpi-container"></div>
+    </div>
+
+    <!-- Add Data Modal -->
+    <div id="addDataModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add KPI Data</h2>
+            <form id="addDataForm">
+                <input type="hidden" id="kpiName" name="kpiName">
+                <div class="form-group">
+                    <label for="dataDate">Date:</label>
+                    <input type="date" id="dataDate" name="date" required>
+                </div>
+                <div class="form-group">
+                    <label for="dataValue">Value:</label>
+                    <input type="number" step="0.01" id="dataValue" name="value" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add Data</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/js/kpi-list.js"></script>
+    <script>
+        function getCsrfCookie() {
+            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+            return match ? decodeURIComponent(match.split('=')[1]) : '';
+        }
+
+        async function init() {
+            const authRes = await fetch('/auth/me', { credentials: 'include' });
+            if (!authRes.ok) { window.location.href = '/login'; return; }
+
+            document.getElementById('logout-csrf').value = getCsrfCookie();
+
+            const kpis = await fetch('/kpis', { credentials: 'include' }).then(r => r.json());
+            const container = document.getElementById('kpi-container');
+
+            if (!kpis || kpis.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h2>No KPIs Found</h2>
+                        <p>Start tracking your performance by creating your first KPI.</p>
+                        <a href="/kpis/create" class="btn btn-primary">Create Your First KPI</a>
+                    </div>`;
+                return;
+            }
+
+            const grid = document.createElement('div');
+            grid.className = 'kpi-grid';
+            kpis.forEach(kpi => {
+                const card = document.createElement('div');
+                card.className = 'kpi-card';
+                const created = kpi.createdAt ? new Date(kpi.createdAt).toLocaleDateString('en-US', { month:'short', day:'2-digit', year:'numeric' }) : '';
+                const linked = kpi.linkedHabitIds && kpi.linkedHabitIds.length > 0
+                    ? `<div class="meta-item"><span class="meta-label">Linked Habits:</span><span class="meta-value">${kpi.linkedHabitIds.length} habits</span></div>` : '';
+                card.innerHTML = `
+                    <div class="kpi-header">
+                        <h3 class="kpi-name">${kpi.name}</h3>
+                        <div class="kpi-indicator">
+                            <span class="indicator ${kpi.higherIsBetter ? 'indicator-up' : 'indicator-down'}">${kpi.higherIsBetter ? '↑ Higher is Better' : '↓ Lower is Better'}</span>
+                        </div>
+                    </div>
+                    <div class="kpi-description"><p>${kpi.description || ''}</p></div>
+                    <div class="kpi-meta">
+                        <div class="meta-item"><span class="meta-label">Created:</span><span class="meta-value">${created}</span></div>
+                        ${linked}
+                    </div>
+                    <div class="kpi-actions">
+                        <button class="btn btn-small btn-primary" onclick="addData('${kpi.name}')">Add Data</button>
+                        <button class="btn btn-small btn-secondary" onclick="viewData('${kpi.name}')">View Charts</button>
+                        <button class="btn btn-small btn-danger" onclick="deleteKPI('${kpi.name}')">Delete</button>
+                    </div>`;
+                grid.appendChild(card);
+            });
+            container.appendChild(grid);
+        }
+
+        init();
+    </script>
+</body>
+</html>
