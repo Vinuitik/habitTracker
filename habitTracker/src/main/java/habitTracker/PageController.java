@@ -7,6 +7,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 @Controller
 public class PageController {
 
+    @GetMapping("/landing")
+    public String landing() { return "forward:/landing.html"; }
+
     @GetMapping({"/", "/habit"})
     public String today() { return "forward:/index.html"; }
 

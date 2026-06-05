@@ -1,26 +1,44 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create account — HabitTracker</title>
-    <link rel="stylesheet" th:href="@{/css/auth.css}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create account — HabitTracker</title>
+  <link rel="stylesheet" th:href="@{/css/auth.css}">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
 <div class="auth-card">
-    <a href="/" class="auth-logo">HabitTracker</a>
-    <h2>Create account</h2>
-    <div class="auth-error" th:if="${error}" th:text="${error}"></div>
-    <form th:action="@{/register}" method="post">
-        <label for="name">Name</label>
-        <input id="name" type="text" name="name">
-        <label for="email">Email</label>
-        <input id="email" type="email" name="email" required autofocus>
-        <label for="password">Password</label>
-        <input id="password" type="password" name="password" required>
-        <button type="submit">Create account</button>
-    </form>
-    <div class="auth-links"><a th:href="@{/login}">Already have an account?</a></div>
+  <a href="/landing" class="auth-logo">HabitTracker</a>
+
+  <h2>Create account</h2>
+
+  <div class="auth-error" th:if="${error}" th:text="${error}"></div>
+
+  <form th:action="@{/register}" method="post">
+    <div>
+      <label for="name">Name</label>
+      <input id="name" type="text" name="name" autocomplete="name">
+    </div>
+    <div>
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" required autofocus autocomplete="email">
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input id="password" type="password" name="password" required autocomplete="new-password">
+    </div>
+    <button type="submit">Create account</button>
+  </form>
+
+  <div class="auth-links">
+    <a th:href="@{/login}">Already have an account? Sign in</a>
+  </div>
+
+  <a href="/landing" class="auth-back">← Back to home</a>
 </div>
 </body>
 </html>
