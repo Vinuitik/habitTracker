@@ -49,10 +49,42 @@
   <!-- FAB: add habit -->
   <a href="/habits/add" class="dashboard__fab" title="Add habit">+</a>
 
+  <!-- All-done banner -->
+  <div class="all-done-banner" id="all-done-banner">all habits done for today ✦</div>
+
   <!-- Scripts -->
   <script src="/js/env.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <script>
+    let allDoneFired = false;
+
+    function checkAllComplete() {
+      const cards = document.querySelectorAll('.habit-card');
+      if (!cards.length) return;
+      const allDone = [...cards].every(c => c.classList.contains('completed'));
+      if (allDone && !allDoneFired) {
+        allDoneFired = true;
+        celebrateAllDone();
+      }
+    }
+
+    function celebrateAllDone() {
+      if (window.confetti) {
+        confetti({ particleCount: 90, spread: 80, origin: { x: 0.5, y: 0.55 },
+          colors: ['#6c86f5', '#4caf85', '#d4a017', '#e8eaf0'], ticks: 200 });
+        setTimeout(() => confetti({ particleCount: 45, spread: 60,
+          origin: { x: 0.25, y: 0.5 }, colors: ['#6c86f5', '#4caf85'], ticks: 160 }), 260);
+        setTimeout(() => confetti({ particleCount: 45, spread: 60,
+          origin: { x: 0.75, y: 0.5 }, colors: ['#d4a017', '#e8eaf0'], ticks: 160 }), 420);
+      }
+      const banner = document.getElementById('all-done-banner');
+      if (banner) {
+        banner.classList.add('visible');
+        setTimeout(() => banner.classList.remove('visible'), 3500);
+      }
+    }
+
     const RING_R  = 22;
     const RING_C  = RING_R * 2 * Math.PI; // circumference
 
@@ -166,6 +198,8 @@
         }
         tickStreak(streakEl, base, display);
         moveCard(card, nowChecked);
+        if (nowChecked) checkAllComplete();
+        else allDoneFired = false;
       });
     }
 

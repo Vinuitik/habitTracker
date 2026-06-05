@@ -237,6 +237,33 @@
   }
 }
 
+/* ── All-done celebration banner ── */
+.all-done-banner {
+  position: fixed;
+  top: calc(var(--topbar-height) + var(--space-4));
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-mono);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 200;
+  opacity: 0;
+  transition: opacity 220ms ease, transform 220ms ease;
+  box-shadow: 0 0 32px rgba(108, 134, 245, 0.18);
+}
+
+.all-done-banner.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* Mobile */
 @media (max-width: 600px) {
   .dashboard {
