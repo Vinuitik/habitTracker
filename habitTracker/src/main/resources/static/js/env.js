@@ -1,0 +1,32 @@
+window.ENV = {
+  ENDPOINTS: {
+    AUTH_ME:         '/auth/me',
+    LOGOUT:          '/logout',
+    TODAY:           '/api/today',
+    HABITS_LIST:     '/api/habits',
+    HABITS_TABLE:    '/api/habits/table',
+    HABITS_RULES:    '/api/habits/rules',
+    HABITS_STREAKS:  '/habits/streaks',
+    HABIT_UPDATE:    (id) => `/habits/update/${id}`,
+    HABIT_INFO:      (id) => `/api/habits/${id}`,
+    KPI_LIST:        '/api/kpis',
+    KPI_DASHBOARD:   '/api/kpis/dashboard',
+  },
+  ROUTES: {
+    HOME:            '/',
+    LOGIN:           '/login',
+    REGISTER:        '/register',
+    HABITS_ADD:      '/habits/add',
+    HABITS_LIST:     '/habits/list',
+    HABITS_TABLE:    '/habits/table',
+    HABITS_RULES:    '/habits/rules',
+    HABIT_EDIT:      (id) => `/habits/edit/${id}`,
+    HABIT_INFO:      (id) => `/habits/info/${id}`,
+    KPI_LIST:        '/kpis',
+    KPI_CREATE:      '/kpis/create',
+    KPI_DASHBOARD:   '/kpis/dashboard',
+  },
+  FEATURES: {
+    ANIMATIONS: true,
+  },
+};

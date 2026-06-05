@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Backgrounds */
+  --color-bg-page:        #0d0f14;
+  --color-bg-surface:     #161920;
+  --color-bg-card:        #1e2128;
+  --color-bg-card-hover:  #252931;
+
+  /* Text */
+  --color-text-primary:   #e8eaf0;
+  --color-text-secondary: #8b90a0;
+  --color-text-muted:     #555a6a;
+
+  /* Accent — indigo */
+  --color-accent:         #6c86f5;
+  --color-accent-hover:   #5a72e0;
+  --color-accent-dim:     rgba(108, 134, 245, 0.12);
+  --color-accent-dim-hover: rgba(108, 134, 245, 0.20);
+
+  /* Semantic */
+  --color-danger:         #e05c5c;
+  --color-danger-dim:     rgba(224, 92, 92, 0.12);
+  --color-success:        #4caf85;
+  --color-success-dim:    rgba(76, 175, 133, 0.12);
+  --color-warning:        #d4a017;
+
+  /* Borders */
+  --color-border:         rgba(255, 255, 255, 0.07);
+  --color-border-hover:   rgba(255, 255, 255, 0.13);
+
+  /* Typography */
+  --font-heading: 'Space Grotesk', sans-serif;
+  --font-body:    'DM Sans', sans-serif;
+  --font-mono:    'IBM Plex Mono', monospace;
+
+  /* Font sizes */
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-md:   15px;
+  --text-lg:   18px;
+  --text-xl:   20px;
+  --text-2xl:  24px;
+  --text-3xl:  28px;
+
+  /* Letter spacing */
+  --tracking-heading: -0.02em;
+  --tracking-mono:     0.03em;
+
+  /* Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Border radius */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px  rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+
+  /* Layout */
+  --content-width:  1100px;
+  --topbar-height:  56px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+}
