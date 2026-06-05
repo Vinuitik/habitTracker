@@ -53,7 +53,7 @@ public class SecurityConfig {
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
-                    "/login", "/register", "/error", "/landing",
+                    "/", "/landing", "/login", "/register", "/error",
                     "/auth/me",
                     "/css/**", "/js/**", "/styles/**",
                     "/inputView/**", "/listView/**", "/editView/**",
@@ -64,12 +64,12 @@ public class SecurityConfig {
             )
             .formLogin(form -> form
                 .loginPage("/login")
-                .defaultSuccessUrl("/", true)
+                .defaultSuccessUrl("/today", true)
                 .permitAll()
             )
             .oauth2Login(oauth -> oauth
                 .loginPage("/login")
-                .defaultSuccessUrl("/", true)
+                .defaultSuccessUrl("/today", true)
                 .userInfoEndpoint(ui -> ui.oidcUserService(this::loadOidcUser))
             )
             .logout(logout -> logout

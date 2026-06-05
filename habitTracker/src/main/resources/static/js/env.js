@@ -13,7 +13,7 @@ window.ENV = {
     KPI_DASHBOARD:   '/api/kpis/dashboard',
   },
   ROUTES: {
-    HOME:            '/',
+    HOME:            '/today',
     LOGIN:           '/login',
     REGISTER:        '/register',
     HABITS_ADD:      '/habits/add',

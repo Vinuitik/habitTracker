@@ -7,10 +7,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 @Controller
 public class PageController {
 
-    @GetMapping("/landing")
+    @GetMapping({"/", "/landing"})
     public String landing() { return "forward:/landing.html"; }
 
-    @GetMapping({"/", "/habit"})
+    @GetMapping({"/today", "/habit"})
     public String today() { return "forward:/index.html"; }
 
     @GetMapping("/habits/list")
