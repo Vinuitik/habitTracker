@@ -114,7 +114,7 @@
       if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
       initTopbar('/kpis');
 
-      const kpis      = await fetch('/kpis', { credentials: 'include' }).then(r => r.json());
+      const kpis      = await fetch('/api/kpis', { credentials: 'include' }).then(r => r.json());
       const container = document.getElementById('kpi-container');
 
       if (!kpis || kpis.length === 0) {

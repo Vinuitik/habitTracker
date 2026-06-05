@@ -56,7 +56,7 @@ async function loadAllCharts() {
 
 async function loadKPIChart(kpiName) {
     try {
-        const response = await fetch(`/kpis/${encodeURIComponent(kpiName)}/data?period=${currentPeriod}`);
+        const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/data?period=${currentPeriod}`);
         const data = await response.json();
 
         console.log('=== LOADING CHART ===');
@@ -440,7 +440,7 @@ async function handleFormSubmit(event) {
     const value = formData.get('value');
 
     try {
-        const response = await fetch(`/kpis/${encodeURIComponent(kpiName)}/data`, {
+        const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/data`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',

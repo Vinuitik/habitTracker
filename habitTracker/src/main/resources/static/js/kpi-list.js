@@ -64,7 +64,7 @@ async function handleFormSubmit(event) {
     const value = formData.get('value');
 
     try {
-        const response = await fetch(`/kpis/${encodeURIComponent(kpiName)}/data`, {
+        const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/data`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -101,7 +101,7 @@ async function deleteKPI(kpiName) {
     }
 
     try {
-        const response = await fetch(`/kpis/${encodeURIComponent(kpiName)}`, {
+        const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}`, {
             method: 'DELETE',
             headers: { 'X-XSRF-TOKEN': getCsrfToken() }
         });

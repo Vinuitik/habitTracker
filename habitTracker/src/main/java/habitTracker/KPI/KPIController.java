@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/kpis")
+@RequestMapping("/api/kpis")
 public class KPIController {
 
     private final KPIService kpiService;

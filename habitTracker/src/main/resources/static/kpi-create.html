@@ -101,7 +101,7 @@
       if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
       initTopbar('/kpis');
 
-      const habits    = await fetch('/kpis/available-habits', { credentials: 'include' }).then(r => r.json());
+      const habits    = await fetch('/api/kpis/available-habits', { credentials: 'include' }).then(r => r.json());
       const container = document.getElementById('habits-list');
 
       if (!habits || habits.length === 0) {
@@ -134,7 +134,7 @@
         habitIds:       checkedHabits.length > 0 ? checkedHabits : null
       };
 
-      const res = await fetch('/kpis/create', {
+      const res = await fetch('/api/kpis/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -130,7 +130,7 @@
       if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
       initTopbar('/kpis/dashboard');
 
-      kpis = await fetch('/kpis/dashboard', { credentials: 'include' }).then(r => r.json());
+      kpis = await fetch('/api/kpis/dashboard', { credentials: 'include' }).then(r => r.json());
       const container = document.getElementById('dashboard-container');
 
       if (!kpis || kpis.length === 0) {
