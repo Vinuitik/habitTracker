@@ -1,0 +1,37 @@
+.seg-tabs {
+  display: flex;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg-tab {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  min-height: 32px;
+}
+
+.seg-tab:hover {
+  color: var(--color-text-primary);
+}
+
+.seg-tab.active {
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 768px) {
+  .seg-tab {
+    min-height: 36px;
+    padding: var(--space-2) var(--space-3);
+  }
+}

@@ -374,7 +374,7 @@ function scrollToKPI(kpiName) {
     if (card) {
         setTimeout(() => {
             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            card.style.border = '2px solid #2eaadc';
+            card.style.border = '2px solid var(--color-accent)';
             setTimeout(() => {
                 card.style.border = '';
             }, 3000);
