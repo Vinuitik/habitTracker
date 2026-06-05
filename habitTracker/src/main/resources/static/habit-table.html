@@ -1,107 +1,196 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Habit Overview</title>
-    <link rel="stylesheet" href="/tableView/habit-table.css">
-    <link rel="stylesheet" href="/css/navigation.css">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitTracker — Overview</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/atoms/input.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/pages/overview.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
-    <nav class="nav-bar">
-        <div class="nav-container">
-            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
-            <ul class="nav-links">
-                <li><a href="/" class="nav-item">Today</a></li>
-                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
-                <li><a href="/habits/table" class="nav-item active">Overview</a></li>
-                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
-                <li><a href="/kpis" class="nav-item">KPIs</a></li>
-                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
-                <li>
-                    <form id="logout-form" action="/logout" method="post" style="margin:0">
-                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
-                        <button type="submit" class="nav-item">Sign out</button>
-                    </form>
-                </li>
-            </ul>
-        </div>
-    </nav>
 
-    <div class="container">
-        <h1 class="table-header">
-            Habit Overview
-            <span class="date-range" id="date-range"></span>
-        </h1>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav">
+        <a href="/"               class="topbar__link">Today</a>
+        <a href="/habits/list"    class="topbar__link">My Habits</a>
+        <a href="/habits/table"   class="topbar__link active">Overview</a>
+        <a href="/habits/rules"   class="topbar__link">Rules</a>
+        <a href="/kpis"           class="topbar__link">KPIs</a>
+        <a href="/kpis/dashboard" class="topbar__link">KPI Dashboard</a>
+      </nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
 
-        <div class="date-picker-container">
-            <label for="start-date">Start Date:</label>
-            <input type="date" id="start-date">
-            <label for="end-date">End Date:</label>
-            <input type="date" id="end-date">
-            <button id="update-table" onclick="fetchUpdatedTable()">Update</button>
-        </div>
-
-        <div class="table-container">
-            <table class="habit-table">
-                <thead>
-                    <tr id="table-header-row">
-                        <th class="date-column">Date</th>
-                    </tr>
-                </thead>
-                <tbody id="table-body"></tbody>
-            </table>
-        </div>
+  <main class="overview-page">
+    <div class="overview-page__header">
+      <h1 class="overview-page__title">Overview</h1>
+      <span class="overview-page__range" id="date-range"></span>
     </div>
 
-    <script src="/tableView/habit-table.js"></script>
-    <script>
-        function getCsrfCookie() {
-            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
-            return match ? decodeURIComponent(match.split('=')[1]) : '';
-        }
+    <div class="overview-datepicker" id="datepicker-row">
+      <label for="start-date">From</label>
+      <input class="input" style="width:160px;height:36px;" type="date" id="start-date">
+      <label for="end-date">To</label>
+      <input class="input" style="width:160px;height:36px;" type="date" id="end-date">
+      <button class="btn btn--ghost btn--sm" onclick="fetchUpdatedTable()">Update</button>
+    </div>
 
-        async function init() {
-            const authRes = await fetch('/auth/me', { credentials: 'include' });
-            if (!authRes.ok) { window.location.href = '/login'; return; }
+    <div id="table-area">
+      <div class="overview-table-wrap">
+        <table class="overview-table">
+          <thead>
+            <tr id="table-header-row">
+              <th class="date-col">Date</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
 
-            document.getElementById('logout-csrf').value = getCsrfCookie();
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script>
+    function csrf() {
+      const m = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+      return m ? decodeURIComponent(m.split('=')[1]) : '';
+    }
 
-            const data = await fetch('/api/habits/table', { credentials: 'include' }).then(r => r.json());
+    function getHabitOrder() {
+      return Array.from(document.querySelectorAll('.overview-table thead th'))
+        .slice(1)
+        .map(th => th.textContent.trim());
+    }
 
-            if (!data.habitNames || data.habitNames.length === 0) {
-                document.querySelector('.date-picker-container').style.display = 'none';
-                document.querySelector('.table-container').innerHTML = `
-                    <div class="empty-state">
-                        <h2>No habits to track yet</h2>
-                        <p>Create your first habit and it will appear here in the overview table.</p>
-                        <a href="/habits/add" class="empty-state-btn">Create your first habit</a>
-                    </div>
-                `;
-                return;
+    function findKey(habits, name) {
+      return Object.keys(habits).find(k => {
+        const m = k.match(/Pair\(key=(.*), value=(-?\d+)\)/);
+        return m && m[1] === name;
+      });
+    }
+
+    function updateHabitStatus(cb) {
+      if (cb.getAttribute('data-habit-status') === 'INACTIVE') { cb.checked = false; return; }
+      const id        = cb.getAttribute('data-habit-id');
+      const completed = cb.checked;
+      fetch(ENV.ENDPOINTS.HABIT_UPDATE(id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRF-TOKEN': csrf() },
+        body: new URLSearchParams({ completed, date: cb.getAttribute('data-date') })
+      }).then(r => { if (!r.ok) cb.checked = !completed; });
+    }
+
+    function buildRows(data) {
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = '';
+      const order = getHabitOrder();
+
+      data.forEach(entry => {
+        const tr = document.createElement('tr');
+        const dateCell = document.createElement('td');
+        dateCell.className = 'date-cell';
+        dateCell.textContent = entry.date;
+        tr.appendChild(dateCell);
+
+        order.forEach(habitName => {
+          const td = document.createElement('td');
+          td.className = 'habit-cell';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.className = 'habit-toggle';
+          cb.setAttribute('data-date', entry.date);
+
+          const key = findKey(entry.habits, habitName);
+          if (key) {
+            const val = entry.habits[key];
+            cb.checked = val;
+            const m = key.match(/Pair\(key=(.*), value=(-?\d+)\)/);
+            if (m) {
+              cb.setAttribute('data-habit-name', m[1]);
+              cb.setAttribute('data-habit-id', m[2]);
+              const status = entry.habitStatuses && entry.habitStatuses[key];
+              if (status === 'INACTIVE') {
+                cb.classList.add('inactive');
+                cb.disabled = true;
+                cb.setAttribute('data-habit-status', 'INACTIVE');
+              } else {
+                cb.setAttribute('data-habit-status', status || 'ACTIVE_INCOMPLETE');
+              }
             }
+          } else {
+            cb.checked = false;
+            cb.setAttribute('data-habit-name', habitName);
+            cb.setAttribute('data-habit-id', '');
+            cb.setAttribute('data-habit-status', 'ACTIVE_INCOMPLETE');
+          }
 
-            document.getElementById('start-date').value = data.startDate;
-            document.getElementById('end-date').value = data.endDate;
-            document.getElementById('date-range').textContent = data.startDate + ' - ' + data.endDate;
+          cb.onchange = () => updateHabitStatus(cb);
+          td.appendChild(cb);
+          tr.appendChild(td);
+        });
 
-            // build header columns
-            const headerRow = document.getElementById('table-header-row');
-            data.habitNames.forEach(pair => {
-                const th = document.createElement('th');
-                th.textContent = pair.key;
-                headerRow.appendChild(th);
-            });
+        tbody.appendChild(tr);
+      });
+    }
 
-            // render initial rows using existing updateTable from habit-table.js
-            updateTable(data.tableData);
-        }
+    function fetchUpdatedTable() {
+      const start = document.getElementById('start-date').value;
+      const end   = document.getElementById('end-date').value;
+      if (!start || !end) { alert('Please select both dates.'); return; }
+      fetch(`/habits/tableAsync?startDate=${start}&endDate=${end}`, {
+        headers: { Accept: 'application/json' }
+      }).then(r => r.json()).then(buildRows)
+        .catch(() => alert('Failed to update table.'));
+    }
 
-        init();
-    </script>
+    async function init() {
+      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
+      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      initTopbar('/habits/table');
+
+      const data = await fetch(ENV.ENDPOINTS.HABITS_TABLE, { credentials: 'include' }).then(r => r.json());
+
+      if (!data.habitNames || data.habitNames.length === 0) {
+        document.getElementById('datepicker-row').style.display = 'none';
+        document.getElementById('table-area').innerHTML = `
+          <div class="overview-empty">
+            <h2>No habits to track yet</h2>
+            <p>Create your first habit and it will appear here.</p>
+            <a href="/habits/add" class="btn btn--primary">Create your first habit</a>
+          </div>`;
+        return;
+      }
+
+      document.getElementById('start-date').value = data.startDate;
+      document.getElementById('end-date').value   = data.endDate;
+      document.getElementById('date-range').textContent = data.startDate + ' – ' + data.endDate;
+
+      const headerRow = document.getElementById('table-header-row');
+      data.habitNames.forEach(pair => {
+        const th = document.createElement('th');
+        th.textContent = pair.key;
+        headerRow.appendChild(th);
+      });
+
+      buildRows(data.tableData);
+    }
+
+    init();
+  </script>
 </body>
 </html>

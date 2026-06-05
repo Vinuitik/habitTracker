@@ -1,113 +1,226 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Set Habit Rules</title>
-    <link rel="stylesheet" href="/css/rule-setting.css">
-    <link rel="stylesheet" href="/css/navigation.css">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitTracker — Rules</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/atoms/input.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/pages/rules.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
-    <nav class="nav-bar">
-        <div class="nav-container">
-            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
-            <ul class="nav-links">
-                <li><a href="/" class="nav-item">Today</a></li>
-                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
-                <li><a href="/habits/table" class="nav-item">Overview</a></li>
-                <li><a href="/habits/rules" class="nav-item active">Rules</a></li>
-                <li><a href="/kpis" class="nav-item">KPIs</a></li>
-                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
-                <li>
-                    <form id="logout-form" action="/logout" method="post" style="margin:0">
-                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
-                        <button type="submit" class="nav-item">Sign out</button>
-                    </form>
-                </li>
-            </ul>
-        </div>
-    </nav>
 
-    <div class="rule-setting-container">
-        <h1>Set Habit Combination Rule</h1>
-        <div class="rule-setting-main">
-            <div class="habit-list-panel">
-                <h2>All Habits (Active)</h2>
-                <ul class="habit-list left-habit-list" id="left-habits"></ul>
-                <a href="/habits/add" class="new-habit-btn">+ Create New Habit</a>
-            </div>
-            <div class="habit-combo-panel">
-                <h2>Combine With</h2>
-                <ul class="habit-list right-habit-list" id="right-habits"></ul>
-            </div>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav">
+        <a href="/"               class="topbar__link">Today</a>
+        <a href="/habits/list"    class="topbar__link">My Habits</a>
+        <a href="/habits/table"   class="topbar__link">Overview</a>
+        <a href="/habits/rules"   class="topbar__link active">Rules</a>
+        <a href="/kpis"           class="topbar__link">KPIs</a>
+        <a href="/kpis/dashboard" class="topbar__link">KPI Dashboard</a>
+      </nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="rules-page">
+    <h1 class="rules-page__title">Habit Combination Rules</h1>
+    <p class="rules-page__subtitle">Pick a main habit, combine it with others, and generate a merged frequency.</p>
+
+    <div class="rules-panels">
+      <div class="rules-panel">
+        <div>
+          <div class="rules-panel__title">Main Habit</div>
+          <div class="rules-panel__hint">Select one — single select</div>
         </div>
-        <div class="frequency-section">
-            <h3>Frequency Selection</h3>
-            <div class="frequency-options" style="display:flex;justify-content:space-around;align-items:center;">
-                <div>
-                    <label><input type="radio" name="freq" value="average" checked> Average of selected habits</label>
-                    <label><input type="radio" name="freq" value="gcd"> GCD of selected habits</label>
-                    <label><input type="radio" name="freq" value="custom"> Custom:
-                        <input type="number" min="1" id="custom-freq" placeholder="Enter frequency" disabled>
-                    </label>
-                </div>
-                <div>
-                    <span style="font-weight:600;">Resulting Frequency:</span>
-                    <span id="result-frequency" style="display:inline-block;min-width:40px;margin-left:10px;font-size:1.2em;background:#e6f7fb;padding:6px 16px;border-radius:6px;color:#2eaadc;">-</span>
-                </div>
-            </div>
+        <div class="rules-habit-list" id="left-habits"></div>
+        <a href="/habits/add" class="btn btn--ghost btn--sm">+ New Habit</a>
+      </div>
+
+      <div class="rules-panel">
+        <div>
+          <div class="rules-panel__title">Combine With</div>
+          <div class="rules-panel__hint">Select one or more — multi select</div>
         </div>
-        <button class="save-rule-btn">Save Rule</button>
+        <div class="rules-habit-list" id="right-habits"></div>
+      </div>
     </div>
 
-    <script src="/js/rule-setting.js"></script>
-    <script>
-        function getCsrfCookie() {
-            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
-            return match ? decodeURIComponent(match.split('=')[1]) : '';
-        }
+    <div class="rules-freq">
+      <div class="rules-freq__options">
+        <span style="font-size:var(--text-sm);color:var(--color-text-secondary);font-weight:600;margin-bottom:var(--space-1);">Frequency strategy</span>
+        <label class="rules-radio">
+          <input type="radio" name="freq" value="average" checked>
+          Average of selected habits
+        </label>
+        <label class="rules-radio">
+          <input type="radio" name="freq" value="gcd">
+          GCD of selected habits
+        </label>
+        <label class="rules-radio">
+          <input type="radio" name="freq" value="custom">
+          Custom:&nbsp;
+          <input class="input" type="number" min="1" id="custom-freq"
+            style="width:90px;height:32px;display:inline-block;" placeholder="days" disabled>
+        </label>
+      </div>
 
-        async function init() {
-            const authRes = await fetch('/auth/me', { credentials: 'include' });
-            if (!authRes.ok) { window.location.href = '/login'; return; }
+      <div class="rules-freq__result">
+        <span class="rules-freq__result-label">Resulting frequency</span>
+        <span class="rules-freq__result-value" id="result-frequency">—</span>
+      </div>
+    </div>
 
-            document.getElementById('logout-csrf').value = getCsrfCookie();
+    <div class="rules-actions">
+      <button class="btn btn--primary btn--lg" id="save-rule-btn">Save Rule</button>
+      <a href="/habits/list" class="btn btn--ghost">Cancel</a>
+    </div>
+  </main>
 
-            const habits = await fetch('/api/habits/rules', { credentials: 'include' }).then(r => r.json());
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script>
+    function csrf() {
+      const m = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+      return m ? decodeURIComponent(m.split('=')[1]) : '';
+    }
 
-            function buildItem(h) {
-                const li = document.createElement('li');
-                li.className = 'habit-item left-habit';
-                li.setAttribute('data-id', h.id);
-                li.setAttribute('data-frequency', h.frequency);
-                li.setAttribute('data-streak', h.streak);
-                li.innerHTML = `<span class="habit-name">${h.name}</span>`;
-                return li;
-            }
+    // ── Frequency math ────────────────────────────────────────────
+    function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+    function gcdArr(arr) { return arr.length === 0 ? 0 : arr.reduce((a, b) => gcd(a, b)); }
 
-            const left = document.getElementById('left-habits');
-            const right = document.getElementById('right-habits');
+    function getSelectedFreqs() {
+      const left  = document.querySelector('#left-habits .rules-habit-item.active');
+      const right = Array.from(document.querySelectorAll('#right-habits .rules-habit-item.active'));
+      if (!left || right.length === 0) return [];
+      return [left, ...right].map(el => Number(el.dataset.frequency)).filter(f => !isNaN(f));
+    }
 
-            if (!habits || habits.length === 0) {
-                const emptyMsg = '<li class="empty-habits-msg">No active habits yet.</li>';
-                left.innerHTML = emptyMsg;
-                right.innerHTML = '<li class="empty-habits-msg">No habits to combine.</li>';
-                return;
-            }
+    function updateResult() {
+      const strategy = document.querySelector('input[name="freq"]:checked').value;
+      const box      = document.getElementById('result-frequency');
+      const freqs    = getSelectedFreqs();
 
-            habits.forEach(h => {
-                left.appendChild(buildItem(h));
-                const ri = buildItem(h);
-                ri.className = 'habit-item right-habit';
-                right.appendChild(ri);
-            });
-        }
+      if (strategy === 'average') {
+        box.textContent = freqs.length ? Math.round(freqs.reduce((a, b) => a + b, 0) / freqs.length) : '—';
+      } else if (strategy === 'gcd') {
+        box.textContent = freqs.length ? gcdArr(freqs) : '—';
+      } else {
+        const v = document.getElementById('custom-freq').value;
+        box.textContent = v || '—';
+      }
+    }
 
-        init();
-    </script>
+    // ── Build items ───────────────────────────────────────────────
+    function buildItem(h, side) {
+      const div = document.createElement('div');
+      div.className = 'rules-habit-item';
+      div.dataset.id        = h.id;
+      div.dataset.frequency = h.frequency;
+      div.dataset.streak    = h.streak;
+      div.textContent       = h.name;
+
+      if (side === 'left') {
+        div.addEventListener('click', () => {
+          // single-select
+          document.querySelectorAll('#left-habits .rules-habit-item').forEach(el => el.classList.remove('active'));
+          div.classList.toggle('active');
+          // sync right deselect if left deselected
+          if (!div.classList.contains('active')) {
+            const mirror = document.querySelector(`#right-habits .rules-habit-item[data-id="${h.id}"]`);
+            if (mirror) mirror.classList.remove('active');
+          }
+          updateResult();
+        });
+      } else {
+        div.addEventListener('click', () => {
+          div.classList.toggle('active');
+          if (!div.classList.contains('active')) {
+            const mirror = document.querySelector(`#left-habits .rules-habit-item[data-id="${h.id}"]`);
+            if (mirror) mirror.classList.remove('active');
+          }
+          updateResult();
+        });
+      }
+
+      return div;
+    }
+
+    // ── Save rule ─────────────────────────────────────────────────
+    function saveRule() {
+      const left  = document.querySelector('#left-habits .rules-habit-item.active');
+      const right = Array.from(document.querySelectorAll('#right-habits .rules-habit-item.active'));
+      if (!left || right.length === 0) {
+        alert('Select one main habit and at least one habit to combine with.');
+        return;
+      }
+      const frequency = Number(document.getElementById('result-frequency').textContent) || 0;
+      if (!frequency) { alert('Resulting frequency is invalid.'); return; }
+
+      const streak = Math.max(
+        Number(left.dataset.streak),
+        ...right.map(el => Number(el.dataset.streak))
+      );
+
+      fetch('/habits/addRule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+        body: JSON.stringify({
+          mainId:    Number(left.dataset.id),
+          subIds:    right.map(el => Number(el.dataset.id)),
+          frequency,
+          streak
+        })
+      }).then(r => r.ok ? (window.location.href = ENV.ROUTES.HABITS_LIST) : alert('Failed to save rule.'))
+        .catch(() => alert('Failed to save rule.'));
+    }
+
+    // ── Init ──────────────────────────────────────────────────────
+    async function init() {
+      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
+      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      initTopbar('/habits/rules');
+
+      const habits = await fetch(ENV.ENDPOINTS.HABITS_RULES, { credentials: 'include' }).then(r => r.json());
+
+      const leftEl  = document.getElementById('left-habits');
+      const rightEl = document.getElementById('right-habits');
+
+      if (!habits || habits.length === 0) {
+        leftEl.innerHTML  = '<div class="rules-empty-msg">No active habits yet.</div>';
+        rightEl.innerHTML = '<div class="rules-empty-msg">No habits to combine.</div>';
+        return;
+      }
+
+      habits.forEach(h => {
+        leftEl.appendChild(buildItem(h, 'left'));
+        rightEl.appendChild(buildItem(h, 'right'));
+      });
+
+      // Frequency controls
+      document.querySelectorAll('input[name="freq"]').forEach(r => {
+        r.addEventListener('change', () => {
+          document.getElementById('custom-freq').disabled = r.value !== 'custom';
+          updateResult();
+        });
+      });
+      document.getElementById('custom-freq').addEventListener('input', updateResult);
+      document.getElementById('save-rule-btn').addEventListener('click', saveRule);
+    }
+
+    init();
+  </script>
 </body>
 </html>

@@ -1,0 +1,179 @@
+.overview-page {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+}
+
+/* ── Header ── */
+.overview-page__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.overview-page__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+}
+
+.overview-page__range {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-muted);
+}
+
+/* ── Date picker ── */
+.overview-datepicker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.overview-datepicker label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* ── Table wrapper ── */
+.overview-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+}
+
+/* ── Table ── */
+.overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 480px;
+}
+
+.overview-table th,
+.overview-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: center;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.overview-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.overview-table th {
+  background: var(--color-bg-card);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+}
+
+.overview-table td.date-cell {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  min-width: 110px;
+}
+
+.overview-table th.date-col {
+  text-align: left;
+  min-width: 110px;
+}
+
+.overview-table tbody tr:hover {
+  background: var(--color-bg-card);
+}
+
+/* ── Habit toggle cell ── */
+.habit-cell {
+  position: relative;
+}
+
+.habit-toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--color-border-hover);
+  border-radius: 5px;
+  cursor: pointer;
+  position: relative;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  vertical-align: middle;
+}
+
+.habit-toggle:checked {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.habit-toggle:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.habit-toggle.inactive {
+  background: var(--color-bg-card);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.habit-toggle.inactive:checked {
+  background: var(--color-bg-card);
+  border-color: var(--color-border);
+}
+
+.habit-toggle.inactive:checked::after {
+  content: none;
+}
+
+/* ── Empty state ── */
+.overview-empty {
+  text-align: center;
+  padding: var(--space-16) var(--space-8);
+  color: var(--color-text-muted);
+}
+
+.overview-empty h2 {
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+  letter-spacing: var(--tracking-heading);
+}
+
+.overview-empty p {
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 600px) {
+  .overview-page {
+    padding: calc(var(--topbar-height) + var(--space-4)) var(--space-4) var(--space-12);
+  }
+}

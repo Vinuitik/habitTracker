@@ -1,0 +1,181 @@
+.rules-page {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+}
+
+.rules-page__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.rules-page__subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-8);
+}
+
+/* ── Two-column panels ── */
+.rules-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.rules-panel {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.rules-panel__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-secondary);
+}
+
+.rules-panel__hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-muted);
+}
+
+/* ── Selectable habit items ── */
+.rules-habit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 80px;
+}
+
+.rules-habit-item {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  user-select: none;
+}
+
+.rules-habit-item:hover {
+  border-color: var(--color-border-hover);
+  color: var(--color-text-primary);
+}
+
+.rules-habit-item.active {
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.rules-empty-msg {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-6) 0;
+  font-style: italic;
+}
+
+/* ── Frequency section ── */
+.rules-freq {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.rules-freq__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rules-radio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.rules-radio input[type="radio"] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rules-freq__result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.rules-freq__result-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
+.rules-freq__result-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  color: var(--color-accent);
+  min-width: 64px;
+  text-align: center;
+  background: var(--color-accent-dim);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-sm);
+  letter-spacing: var(--tracking-mono);
+}
+
+/* ── Actions ── */
+.rules-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+@media (max-width: 700px) {
+  .rules-page {
+    padding: calc(var(--topbar-height) + var(--space-4)) var(--space-4) var(--space-12);
+  }
+
+  .rules-panels {
+    grid-template-columns: 1fr;
+  }
+
+  .rules-freq {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
