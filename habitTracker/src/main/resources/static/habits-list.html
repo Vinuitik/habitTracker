@@ -1,110 +1,169 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Habits</title>
-    <link rel="stylesheet" href="/listView/habits-list.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/navigation.css">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitTracker — My Habits</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/pages/habits-list.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
-    <nav class="nav-bar">
-        <div class="nav-container">
-            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
-            <ul class="nav-links">
-                <li><a href="/" class="nav-item">Today</a></li>
-                <li><a href="/habits/list" class="nav-item active">My Habits</a></li>
-                <li><a href="/habits/table" class="nav-item">Overview</a></li>
-                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
-                <li><a href="/kpis" class="nav-item">KPIs</a></li>
-                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
-                <li>
-                    <form id="logout-form" action="/logout" method="post" style="margin:0">
-                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
-                        <button type="submit" class="nav-item">Sign out</button>
-                    </form>
-                </li>
-            </ul>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav">
+        <a href="/"               class="topbar__link">Today</a>
+        <a href="/habits/list"    class="topbar__link active">My Habits</a>
+        <a href="/habits/table"   class="topbar__link">Overview</a>
+        <a href="/habits/rules"   class="topbar__link">Rules</a>
+        <a href="/kpis"           class="topbar__link">KPIs</a>
+        <a href="/kpis/dashboard" class="topbar__link">KPI Dashboard</a>
+      </nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="list-page">
+    <div class="list-page__header">
+      <h1 class="list-page__title">My Habits</h1>
+      <div style="display:flex;gap:var(--space-3);align-items:center;">
+        <div class="seg-tabs">
+          <button class="seg-tab active" id="tab-active">Active</button>
+          <button class="seg-tab"        id="tab-inactive">Inactive</button>
         </div>
-    </nav>
-
-    <div class="container">
-        <h1 class="date-header">
-            My Habits
-            <span class="date-tooltip">Manage your habits here</span>
-        </h1>
-
-        <div class="toggle-btn-group">
-            <button id="activeBtn" class="toggle-btn active">Active</button>
-            <button id="inactiveBtn" class="toggle-btn">Inactive</button>
-        </div>
-
-        <ul class="habits-list" id="habits-list"></ul>
+        <a href="/habits/add" class="btn btn--primary">+ New Habit</a>
+      </div>
     </div>
 
-    <script src="/listView/habits-list.js"></script>
-    <script>
-        function getCsrfCookie() {
-            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
-            return match ? decodeURIComponent(match.split('=')[1]) : '';
-        }
+    <div class="habit-list-cards" id="habit-list-cards"></div>
+  </main>
 
-        async function init() {
-            const authRes = await fetch('/auth/me', { credentials: 'include' });
-            if (!authRes.ok) { window.location.href = '/login'; return; }
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script>
+    function csrf() {
+      const m = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+      return m ? decodeURIComponent(m.split('=')[1]) : '';
+    }
 
-            document.getElementById('logout-csrf').value = getCsrfCookie();
+    function freqLabel(f) {
+      if (f === 1)  return 'Daily';
+      if (f === 7)  return 'Weekly';
+      if (f === 30) return 'Monthly';
+      return `Every ${f} days`;
+    }
 
-            const habits = await fetch('/api/habits', { credentials: 'include' }).then(r => r.json());
+    function renderHabits(habits, container) {
+      container.innerHTML = '';
 
-            const list = document.getElementById('habits-list');
-            habits.forEach(h => {
-                const li = document.createElement('li');
-                li.className = 'habit-item';
-                li.innerHTML = `
-                    <span class="habit-name">${h.name}</span>
-                    <div class="habit-actions">
-                        <div class="dropdown">
-                            <button class="dropdown-btn"><i class="fas fa-ellipsis-v"></i></button>
-                            <div class="dropdown-content">
-                                <a href="/habits/edit/${h.id}">Edit</a>
-                                <a href="/habits/info/${h.id}">Info</a>
-                                <a href="#" class="delete-btn" data-habit="${h.name}" data-habit-id="${h.id}">Delete</a>
-                            </div>
-                        </div>
-                    </div>`;
-                list.appendChild(li);
-            });
+      if (!habits || habits.length === 0) {
+        container.innerHTML = `
+          <div class="list-empty">
+            <h2>Nothing here yet</h2>
+            <p>No habits in this category.</p>
+            <a href="/habits/add" class="btn btn--primary">Create a habit</a>
+          </div>`;
+        return;
+      }
 
-            // habits-list.js DOMContentLoaded already ran (before habits loaded);
-            // re-attach handlers to the freshly rendered items
-            document.querySelectorAll('.dropdown-btn').forEach(btn => {
-                btn.addEventListener('click', e => {
-                    e.stopPropagation();
-                    const d = btn.closest('.dropdown');
-                    document.querySelectorAll('.dropdown').forEach(x => { if (x !== d) x.classList.remove('active'); });
-                    d.classList.toggle('active');
-                });
-            });
-            document.querySelectorAll('.delete-btn').forEach(btn => {
-                btn.addEventListener('click', e => {
-                    e.preventDefault(); e.stopPropagation();
-                    const id = btn.getAttribute('data-habit-id');
-                    const name = btn.getAttribute('data-habit');
-                    if (confirm(`Are you sure you want to delete "${name}"?`)) {
-                        fetch(`/habits/delete/${id}`, { method: 'DELETE', headers: { 'X-XSRF-TOKEN': getCsrfCookie() } })
-                            .then(r => { if (r.ok) btn.closest('.habit-item').remove(); else alert('Failed to delete habit'); });
-                    }
-                });
-            });
-        }
+      habits.forEach(h => {
+        const row = document.createElement('div');
+        row.className = 'habit-row';
+        row.innerHTML = `
+          <div class="habit-row__info">
+            <div class="habit-row__name">${h.name}</div>
+            <div class="habit-row__meta">
+              <span class="badge badge--accent">${freqLabel(h.frequency)}</span>
+              ${h.defaultMade ? '<span class="badge">Default success</span>' : ''}
+            </div>
+          </div>
+          <div class="habit-row__actions">
+            <a href="${ENV.ROUTES.HABIT_EDIT(h.id)}" class="row-action">Edit</a>
+            <a href="${ENV.ROUTES.HABIT_INFO(h.id)}" class="row-action">Info</a>
+            <button class="row-action row-action--danger delete-btn"
+              data-id="${h.id}" data-name="${h.name}">Delete</button>
+          </div>`;
+        container.appendChild(row);
+      });
 
-        init();
-    </script>
+      // Stagger in
+      if (window.gsap) {
+        gsap.to('.habit-row', { opacity: 1, y: 0, duration: 0.2, stagger: 0.04, ease: 'power2.out' });
+      } else {
+        document.querySelectorAll('.habit-row').forEach(r => { r.style.opacity = '1'; r.style.transform = 'none'; });
+      }
+
+      // Delete handlers
+      container.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const name = btn.dataset.name;
+          const id   = btn.dataset.id;
+          if (!confirm(`Delete "${name}"?`)) return;
+          const res = await fetch(`/habits/delete/${id}`, {
+            method: 'DELETE',
+            headers: { 'X-XSRF-TOKEN': csrf() }
+          });
+          if (res.ok) {
+            btn.closest('.habit-row').remove();
+          } else {
+            alert('Failed to delete habit.');
+          }
+        });
+      });
+    }
+
+    let activeHabits   = null;
+    let inactiveHabits = null;
+    let currentTab     = 'active';
+
+    async function init() {
+      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
+      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      initTopbar('/habits/list');
+
+      const container = document.getElementById('habit-list-cards');
+
+      // Fetch both in parallel
+      const [active, inactive] = await Promise.all([
+        fetch(ENV.ENDPOINTS.HABITS_LIST, { credentials: 'include' }).then(r => r.json()),
+        fetch('/habits/inactive', { credentials: 'include' }).then(r => r.json()).catch(() => [])
+      ]);
+
+      activeHabits   = active;
+      inactiveHabits = inactive;
+
+      renderHabits(activeHabits, container);
+
+      document.getElementById('tab-active').addEventListener('click', () => {
+        if (currentTab === 'active') return;
+        currentTab = 'active';
+        document.getElementById('tab-active').classList.add('active');
+        document.getElementById('tab-inactive').classList.remove('active');
+        renderHabits(activeHabits, container);
+      });
+
+      document.getElementById('tab-inactive').addEventListener('click', () => {
+        if (currentTab === 'inactive') return;
+        currentTab = 'inactive';
+        document.getElementById('tab-inactive').classList.add('active');
+        document.getElementById('tab-active').classList.remove('active');
+        renderHabits(inactiveHabits, container);
+      });
+    }
+
+    init();
+  </script>
 </body>
 </html>
