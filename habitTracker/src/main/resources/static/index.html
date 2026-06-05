@@ -1,121 +1,279 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Habit Tracker</title>
-    <link rel="stylesheet" href="/inputView/style.css">
-    <link rel="stylesheet" href="/css/navigation.css">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitTracker — Today</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/pages/dashboard.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
-    <nav class="nav-bar">
-        <div class="nav-container">
-            <div class="nav-brand"><a href="/" class="nav-logo">HabitTracker</a></div>
-            <ul class="nav-links">
-                <li><a href="/" class="nav-item active">Today</a></li>
-                <li><a href="/habits/list" class="nav-item">My Habits</a></li>
-                <li><a href="/habits/table" class="nav-item">Overview</a></li>
-                <li><a href="/habits/rules" class="nav-item">Rules</a></li>
-                <li><a href="/kpis" class="nav-item">KPIs</a></li>
-                <li><a href="/kpis/dashboard" class="nav-item">KPI Dashboard</a></li>
-                <li>
-                    <form id="logout-form" action="/logout" method="post" style="margin:0">
-                        <input type="hidden" id="logout-csrf" name="_csrf" value="">
-                        <button type="submit" class="nav-item">Sign out</button>
-                    </form>
-                </li>
-            </ul>
-        </div>
-    </nav>
 
-    <div class="container">
-        <h1 class="date-header">
-            TODAY
-            <span class="date-tooltip" id="today-date"></span>
-        </h1>
-        <ul class="habit-list" id="habit-list"></ul>
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav">
+        <a href="/"              class="topbar__link active">Today</a>
+        <a href="/habits/list"   class="topbar__link">My Habits</a>
+        <a href="/habits/table"  class="topbar__link">Overview</a>
+        <a href="/habits/rules"  class="topbar__link">Rules</a>
+        <a href="/kpis"          class="topbar__link">KPIs</a>
+        <a href="/kpis/dashboard" class="topbar__link">KPI Dashboard</a>
+      </nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="dashboard">
+    <div class="dashboard__header">
+      <div class="dashboard__label">Today</div>
+      <div class="dashboard__date" id="today-date">—</div>
+      <div class="dashboard__summary" id="today-summary"></div>
     </div>
 
-    <button class="habit-add-button">
-        <a href="/habits/add" class="habit-add-link">Go to New Habit View</a>
-    </button>
+    <div class="habit-grid" id="habit-grid"></div>
+  </main>
 
-    <script src="/inputView/input.js"></script>
-    <script>
-        function getCsrfCookie() {
-            const match = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
-            return match ? decodeURIComponent(match.split('=')[1]) : '';
+  <!-- FAB: add habit -->
+  <a href="/habits/add" class="dashboard__fab" title="Add habit">+</a>
+
+  <!-- Scripts -->
+  <script src="/js/env.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script>
+    const RING_R  = 22;
+    const RING_C  = RING_R * 2 * Math.PI; // circumference
+
+    function csrf() {
+      const m = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+      return m ? decodeURIComponent(m.split('=')[1]) : '';
+    }
+
+    function makeSVGRing(filled) {
+      const offset = filled ? 0 : RING_C;
+      return `
+        <svg width="52" height="52" viewBox="0 0 52 52">
+          <circle class="ring-track" cx="26" cy="26" r="${RING_R}" stroke-width="4"/>
+          <circle class="ring-fill" cx="26" cy="26" r="${RING_R}" stroke-width="4"
+            stroke-dasharray="${RING_C}"
+            stroke-dashoffset="${offset}"/>
+        </svg>
+        <span class="ring-check">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3,9 7,13 15,5"/>
+          </svg>
+        </span>`;
+    }
+
+    function makeCard(h) {
+      const card = document.createElement('div');
+      card.className = 'habit-card' + (h.completed ? ' completed' : '');
+      card.dataset.id = h.id;
+      card.dataset.defaultMade = h.defaultMade;
+
+      card.innerHTML = `
+        <div class="habit-card__top">
+          <div class="habit-card__ring">${makeSVGRing(h.completed)}</div>
+          <div class="habit-card__info">
+            <div class="habit-card__name">${h.name}</div>
+            <div class="habit-card__streak" data-habit-id="${h.id}">— day streak</div>
+          </div>
+        </div>
+        <input type="checkbox" class="habit-card__checkbox"
+          data-habit-id="${h.id}"
+          data-default-made="${h.defaultMade}"
+          ${h.completed ? 'checked' : ''}>`;
+
+      card.addEventListener('click', () => toggleCard(card));
+      return card;
+    }
+
+    function setRing(card, filled) {
+      const circle = card.querySelector('.ring-fill');
+      if (circle) circle.style.strokeDashoffset = filled ? 0 : RING_C;
+    }
+
+    function applyStreakColor(el, val) {
+      if (val < 0) {
+        el.classList.add('negative');
+        el.style.color = `hsl(0, 88%, ${Math.max(22, 50 - Math.min(Math.abs(val), 24))}%)`;
+      } else {
+        el.classList.remove('negative');
+        el.style.color = '';
+      }
+    }
+
+    function tickStreak(el, fromVal, toVal) {
+      if (!window.gsap) { el.textContent = toVal + ' day streak'; return; }
+      const obj = { v: fromVal };
+      gsap.to(obj, {
+        v: toVal,
+        duration: 0.4,
+        ease: 'power2.out',
+        onUpdate() { el.textContent = Math.round(obj.v) + ' day streak'; },
+        onComplete() { applyStreakColor(el, toVal); }
+      });
+    }
+
+    function toggleCard(card) {
+      const checkbox  = card.querySelector('.habit-card__checkbox');
+      const isDefaultMade = card.dataset.defaultMade === 'true';
+      const nowChecked = !checkbox.checked;
+
+      // Shame case: unchecking a defaultMade habit
+      if (!nowChecked && isDefaultMade) {
+        shameRemove(card);
+        return;
+      }
+
+      checkbox.checked = nowChecked;
+      card.classList.toggle('completed', nowChecked);
+      setRing(card, nowChecked);
+
+      if (nowChecked && window.gsap) {
+        gsap.fromTo(card, { scale: 0.97 }, { scale: 1, duration: 0.15, ease: 'back.out(2)' });
+      }
+
+      const streakEl = card.querySelector('.habit-card__streak');
+      const base = parseInt(streakEl.dataset.base || '0', 10);
+      const display = nowChecked ? (base <= 0 ? 1 : base + 1) : base;
+
+      fetch(ENV.ENDPOINTS.HABIT_UPDATE(card.dataset.id), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-XSRF-TOKEN': csrf()
+        },
+        body: new URLSearchParams({ completed: nowChecked })
+      }).then(r => {
+        if (!r.ok) {
+          checkbox.checked = !nowChecked;
+          card.classList.toggle('completed', !nowChecked);
+          setRing(card, !nowChecked);
+          return;
         }
+        tickStreak(streakEl, base, display);
+        moveCard(card, nowChecked);
+      });
+    }
 
-        async function init() {
-            const authRes = await fetch('/auth/me', { credentials: 'include' });
-            if (!authRes.ok) { window.location.href = '/login'; return; }
+    function moveCard(card, completed) {
+      const grid = document.getElementById('habit-grid');
+      if (completed) {
+        grid.appendChild(card);
+      } else {
+        const first = grid.querySelector('.habit-card');
+        grid.insertBefore(card, first);
+      }
+    }
 
-            document.getElementById('logout-csrf').value = getCsrfCookie();
+    function shameRemove(card) {
+      const checkbox = card.querySelector('.habit-card__checkbox');
+      checkbox.disabled = true;
+      card.classList.add('shame');
 
-            const data = await fetch('/api/today', { credentials: 'include' }).then(r => r.json());
-
-            document.getElementById('today-date').textContent =
-                new Date(data.date + 'T00:00:00').toLocaleDateString('en-US',
-                    { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-            const list = document.getElementById('habit-list');
-            data.habits.forEach(h => {
-                const li = document.createElement('li');
-                li.className = 'habit-item';
-                li.innerHTML = `
-                    <div class="habit-item-content">
-                        <div class="habit-left">
-                            <input type="checkbox" class="habit-checkbox"
-                                id="habit-${h.name}-${h.id}"
-                                ${h.completed ? 'checked' : ''}
-                                data-habit-name="${h.name}"
-                                data-habit-id="${h.id}"
-                                data-default-made="${h.defaultMade}"
-                                onchange="updateHabitStatus(this)">
-                            <span class="habit-name">${h.name}</span>
-                        </div>
-                        <div class="habit-right">
-                            <span class="habit-streak" data-habit-id="${h.id}">0 day streak</span>
-                        </div>
-                    </div>`;
-                list.appendChild(li);
-            });
-
-            organizeHabitsOnLoad();
-
-            // load streaks (mirrors input.js DOMContentLoaded logic which ran before habits were rendered)
-            const checkboxes = document.querySelectorAll('.habit-checkbox[data-habit-id]');
-            totalHabits = checkboxes.length;
-            checkedHabits = Array.from(checkboxes).filter(cb => cb.checked).length;
-            const habitIds = Array.from(checkboxes).map(cb => cb.getAttribute('data-habit-id'));
-
-            fetch('/habits/streaks', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfCookie() },
-                body: JSON.stringify(habitIds)
-            })
-            .then(r => r.json())
-            .then(streaks => {
-                streaks.forEach(({ key, value }) => {
-                    const habitId = String(key);
-                    const streakSpan = document.querySelector(`.habit-streak[data-habit-id="${habitId}"]`);
-                    const checkbox = document.querySelector(`.habit-checkbox[data-habit-id="${habitId}"]`);
-                    if (streakSpan && checkbox) {
-                        const displayStreak = checkbox.checked ? (value <= 0 ? 1 : value + 1) : value;
-                        streakSpan.textContent = displayStreak + ' day streak';
-                        streakSpan.dataset.baseStreak = value;
-                        applyStreakColor(streakSpan, displayStreak);
-                    }
-                });
-            });
+      fetch(ENV.ENDPOINTS.HABIT_UPDATE(card.dataset.id), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-XSRF-TOKEN': csrf()
+        },
+        body: new URLSearchParams({ completed: false })
+      }).then(r => {
+        if (!r.ok) {
+          card.classList.remove('shame');
+          checkbox.disabled = false;
+          return;
         }
+        setTimeout(() => {
+          card.classList.add('shame-out');
+          card.addEventListener('animationend', () => card.remove(), { once: true });
+        }, 420);
+      });
+    }
 
-        init();
-    </script>
+    async function init() {
+      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
+      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+
+      document.getElementById('logout-csrf').value = csrf();
+
+      const data = await fetch(ENV.ENDPOINTS.TODAY, { credentials: 'include' }).then(r => r.json());
+
+      document.getElementById('today-date').textContent =
+        new Date(data.date + 'T00:00:00').toLocaleDateString('en-US',
+          { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+      const grid = document.getElementById('habit-grid');
+
+      if (!data.habits || data.habits.length === 0) {
+        grid.innerHTML = `
+          <div class="dashboard__empty">
+            <h2>Nothing due today</h2>
+            <p>All caught up, or no habits created yet.</p>
+            <a href="/habits/add" class="btn btn--primary btn--lg">Create your first habit</a>
+          </div>`;
+        document.getElementById('today-summary').textContent = 'No habits scheduled for today.';
+        return;
+      }
+
+      // Sort: unchecked first
+      const sorted = [...data.habits].sort((a, b) => a.completed - b.completed);
+      sorted.forEach(h => grid.appendChild(makeCard(h)));
+
+      const total    = data.habits.length;
+      const done     = data.habits.filter(h => h.completed).length;
+      document.getElementById('today-summary').textContent = `${done} of ${total} completed`;
+
+      // Stagger-in
+      if (window.gsap) {
+        gsap.to('.habit-card', {
+          opacity: 1,
+          y: 0,
+          duration: 0.25,
+          stagger: 0.05,
+          ease: 'power2.out'
+        });
+      } else {
+        document.querySelectorAll('.habit-card').forEach(c => {
+          c.style.opacity = '1';
+          c.style.transform = 'none';
+        });
+      }
+
+      // Load streaks
+      const ids = data.habits.map(h => String(h.id));
+      fetch(ENV.ENDPOINTS.HABITS_STREAKS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+        body: JSON.stringify(ids)
+      }).then(r => r.json()).then(streaks => {
+        streaks.forEach(({ key, value }) => {
+          const card = document.querySelector(`.habit-card[data-id="${key}"]`);
+          if (!card) return;
+          const checkbox = card.querySelector('.habit-card__checkbox');
+          const streakEl = card.querySelector('.habit-card__streak');
+          const display  = checkbox.checked ? (value <= 0 ? 1 : value + 1) : value;
+          streakEl.dataset.base = value;
+          streakEl.textContent  = display + ' day streak';
+          applyStreakColor(streakEl, display);
+        });
+      });
+    }
+
+    init();
+  </script>
 </body>
 </html>

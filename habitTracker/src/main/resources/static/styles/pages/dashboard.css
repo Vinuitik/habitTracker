@@ -1,0 +1,259 @@
+.dashboard {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+}
+
+/* ── Header ── */
+.dashboard__header {
+  margin-bottom: var(--space-8);
+}
+
+.dashboard__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  margin-bottom: var(--space-2);
+}
+
+.dashboard__date {
+  font-family: var(--font-heading);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+
+.dashboard__summary {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-2);
+}
+
+/* ── Habit grid ── */
+.habit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+/* ── Habit card ── */
+.habit-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.habit-card:hover {
+  border-color: var(--color-border-hover);
+  background: var(--color-bg-card-hover);
+}
+
+.habit-card.completed {
+  border-color: rgba(76, 175, 133, 0.25);
+}
+
+.habit-card.completed .habit-card__name {
+  color: var(--color-text-muted);
+}
+
+/* Shame state */
+.habit-card.shame {
+  border-color: rgba(224, 92, 92, 0.4);
+  animation: shameShake 0.4s ease-in-out;
+}
+
+.habit-card.shame-out {
+  animation: shameSlide 0.5s ease-in forwards;
+}
+
+/* ── Ring area ── */
+.habit-card__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.habit-card__ring {
+  flex-shrink: 0;
+  position: relative;
+  width: 52px;
+  height: 52px;
+}
+
+.habit-card__ring svg {
+  transform: rotate(-90deg);
+}
+
+.ring-track {
+  stroke: var(--color-bg-surface);
+  fill: none;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--transition-slow);
+}
+
+.habit-card.completed .ring-fill {
+  stroke: var(--color-success);
+}
+
+.ring-check {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.habit-card.completed .ring-check {
+  opacity: 1;
+}
+
+.ring-check svg {
+  transform: none;
+  stroke: var(--color-success);
+}
+
+/* ── Name + streak ── */
+.habit-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.habit-card__name {
+  font-family: var(--font-heading);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--transition-fast);
+}
+
+.habit-card__streak {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-accent);
+  margin-top: var(--space-1);
+}
+
+.habit-card__streak.negative {
+  color: var(--color-danger);
+}
+
+/* ── Hidden real checkbox (for form submit) ── */
+.habit-card__checkbox {
+  display: none;
+}
+
+/* ── Empty state ── */
+.dashboard__empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: var(--space-16) var(--space-8);
+  color: var(--color-text-muted);
+}
+
+.dashboard__empty h2 {
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+  letter-spacing: var(--tracking-heading);
+}
+
+.dashboard__empty p {
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-6);
+}
+
+/* ── FAB (add habit) ── */
+.dashboard__fab {
+  position: fixed;
+  bottom: var(--space-8);
+  right: var(--space-8);
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  box-shadow: var(--shadow-lg);
+  transition: background var(--transition-fast), transform 100ms ease;
+  text-decoration: none;
+  z-index: 50;
+}
+
+.dashboard__fab:hover {
+  background: var(--color-accent-hover);
+}
+
+.dashboard__fab:active {
+  transform: scale(0.93);
+}
+
+/* Animations */
+@keyframes shameShake {
+  0%, 100% { transform: translateX(0); }
+  15%, 45%, 75% { transform: translateX(-6px); }
+  30%, 60%, 90% { transform: translateX(6px); }
+}
+
+@keyframes shameSlide {
+  to {
+    opacity: 0;
+    transform: translateX(40px) scaleY(0);
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .dashboard {
+    padding: calc(var(--topbar-height) + var(--space-6)) var(--space-4) var(--space-12);
+  }
+
+  .habit-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .dashboard__date {
+    font-size: var(--text-2xl);
+  }
+
+  .dashboard__fab {
+    bottom: var(--space-6);
+    right: var(--space-4);
+  }
+}
