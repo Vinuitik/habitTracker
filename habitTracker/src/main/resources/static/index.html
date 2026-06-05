@@ -47,6 +47,7 @@
 
   <!-- Scripts -->
   <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <script>
@@ -233,6 +234,7 @@
 
     async function init() {
       const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
+      console.log('[auth/me]', auth.status, document.cookie);
       if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
 
       initTopbar(ENV.ROUTES.HOME);

@@ -14,18 +14,22 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.Map;
 
 @Controller
 @RequiredArgsConstructor
 public class RegisterController {
 
+    private static final Logger log = LoggerFactory.getLogger(RegisterController.class);
     private final UserService userService;
 
     @GetMapping("/auth/me")
     @ResponseBody
     public ResponseEntity<?> me() {
         String userId = SecurityUtils.getCurrentUserId();
+        log.info("[/auth/me] userId={}", userId);
         if (userId == null) return ResponseEntity.status(401).build();
         return ResponseEntity.ok(Map.of("userId", userId));
     }

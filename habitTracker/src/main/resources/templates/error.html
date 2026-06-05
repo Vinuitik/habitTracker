@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="${status} + ' — HabitTracker'">Error — HabitTracker</title>
+  <link rel="stylesheet" th:href="@{/css/auth.css}">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+<div class="auth-card">
+  <a href="/landing" class="auth-logo">HabitTracker</a>
+
+  <h2 th:text="${status}">Error</h2>
+
+  <div class="auth-error" th:text="${error}">Something went wrong.</div>
+
+  <p style="font-size:13px; color:#8b90a0;" th:if="${path}">
+    Path: <span th:text="${path}" style="color:#555a6a;"></span>
+  </p>
+
+  <div class="auth-links">
+    <a href="/today">Go to app</a> &nbsp;·&nbsp; <a href="/landing">Home</a>
+  </div>
+</div>
+</body>
+</html>
