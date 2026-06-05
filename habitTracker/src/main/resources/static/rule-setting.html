@@ -91,6 +91,14 @@
 
             const left = document.getElementById('left-habits');
             const right = document.getElementById('right-habits');
+
+            if (!habits || habits.length === 0) {
+                const emptyMsg = '<li class="empty-habits-msg">No active habits yet.</li>';
+                left.innerHTML = emptyMsg;
+                right.innerHTML = '<li class="empty-habits-msg">No habits to combine.</li>';
+                return;
+            }
+
             habits.forEach(h => {
                 left.appendChild(buildItem(h));
                 const ri = buildItem(h);

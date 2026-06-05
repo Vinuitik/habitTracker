@@ -116,6 +116,40 @@ tr:hover {
     background-color: #f9f9f9;
 }
 
+.empty-state {
+    padding: 60px 40px;
+    text-align: center;
+    color: #888;
+}
+
+.empty-state h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #555;
+    margin: 0 0 8px 0;
+}
+
+.empty-state p {
+    font-size: 0.95rem;
+    margin: 0 0 24px 0;
+}
+
+.empty-state-btn {
+    display: inline-block;
+    padding: 10px 24px;
+    background-color: #2eaadc;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: background-color 0.2s ease;
+}
+
+.empty-state-btn:hover {
+    background-color: #1d8bb8;
+}
+
 .date-picker-container {
     margin-bottom: 20px;
     display: flex;

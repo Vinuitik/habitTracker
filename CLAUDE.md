@@ -105,3 +105,113 @@ Key routing rules:
 - Ship/deploy/PR → invoke /ship or /land-and-deploy
 - Save progress → invoke /context-save
 - Resume context → invoke /context-restore
+
+-------
+
+
+    
+
+## UI Design System
+
+### Aesthetic: Focused Dark
+Dark, muted surfaces. Think a well-designed dev tool or CLI dashboard — calm,
+purposeful, never flashy. Not pure black — use deep slate (#0f1117 range).
+Accent color: a single muted amber or cool indigo. One accent only.
+No purple gradients. No glassmorphism. No hero sections.
+
+### Typography
+Load from Google Fonts. Use Space Grotesk or Syne for headings,
+IBM Plex Mono or DM Mono for labels, metrics, timestamps.
+Body copy: Inter is the fallback only — prefer DM Sans or Outfit.
+Font sizes: headings 20-28px / body 14-15px / labels/meta 12px.
+No font below 12px. Letter-spacing: -0.02em on headings.
+
+### Color Rules
+- Background stack: page #0d0f14 → surface #161920 → card #1e2128
+- Text: primary #e8eaf0 / secondary #8b90a0 / muted #555a6a
+- Accent: use ONE of — amber #d4a017 OR indigo #6c86f5. Pick at project start, stick to it.
+- Borders: 1px solid rgba(255,255,255,0.07) — subtle, not invisible
+- Danger: #e05c5c / Success: #4caf85
+- All values in CSS custom properties in a single :root block in styles/tokens.css
+
+### Motion & Transitions
+- Page load: stagger-in elements with opacity 0→1 + translateY(8px→0),
+  delay 50ms per element, duration 200ms, ease-out. No bounce.
+- Hover states: 150ms ease on bg/border color. No scale transforms on cards.
+- Button click: scale(0.97) for 100ms only.
+- Route/section change: 180ms fade-out → swap content → 180ms fade-in.
+- NO: parallax, scroll-triggered explosions, infinite looping animations.
+- Performance rule: if it runs on scroll, it must use CSS only or requestAnimationFrame.
+
+### Layout
+- Max content width: 1100px, centered.
+- Sidebar (if present): 220px fixed, same surface color as page.
+- Cards: border-radius 10px, padding 20px 24px.
+- Spacing scale (use only these): 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64px.
+- No full-viewport hero sections in a productivity app. Content starts high.
+
+### Component Architecture (Atomic Design)
+Structure every feature from atoms up. Never write one-off styles in page files.
+
+styles/
+  tokens.css          # ALL CSS vars: colors, spacing, fonts, radii
+  reset.css           # box-sizing, margin reset, base font
+  atoms/
+    button.css        # .btn, .btn--primary, .btn--ghost
+    input.css         # .input, .input--error
+    badge.css
+    icon.css
+  molecules/
+    card.css          # .card, .card__header, .card__body
+    form-group.css    # .form-group, label + input combo
+    nav-item.css
+  organisms/
+    sidebar.css
+    topbar.css
+    data-table.css
+  pages/
+    dashboard.css
+    settings.css
+
+js/
+  env.js              # single source of truth for all config
+  atoms/
+    toast.js
+    modal.js
+  molecules/
+    nav.js
+  organisms/
+    sidebar.js
+    table.js
+  pages/
+    dashboard.js
+
+### env.js — Config Single Source of Truth
+ALL hardcoded values live here. Never hardcode URLs, keys, or feature flags
+anywhere else. If it might change, it goes in env.js.
+
+Example structure:
+const ENV = {
+  API_BASE:     'https://api.yourapp.com/v1',
+  WS_BASE:      'wss://ws.yourapp.com',
+  AUTH_URL:     '/auth/login',
+  REDIRECT_URI: 'http://localhost:3000/callback',
+  FEATURES: {
+    DARK_MODE:    true,
+    BETA_WIDGET:  false,
+  },
+  LIMITS: {
+    MAX_UPLOAD_MB: 10,
+    ITEMS_PER_PAGE: 25,
+  }
+};
+export default ENV;  # or window.ENV = ENV if no bundler
+
+### What to NEVER do
+- inline style="" on page-level elements (atoms/molecules handle it)
+- hardcode any URL or config value outside env.js
+- use !important
+- write CSS without a corresponding atom/molecule/organism file
+- add animations that trigger on every scroll event without throttling
+- build a new component without checking if an atom/molecule already covers it
+  

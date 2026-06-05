@@ -3,12 +3,11 @@ body {
     line-height: 1.6;
     color: #37352f;
     background-color: #ffffff;
-    max-width: 900px;
     margin: 0 auto;
-    padding: 80px 20px 20px 20px; /* Updated padding to account for fixed nav */
+    padding: 80px 32px 20px 32px;
 }
 .rule-setting-container {
-    max-width: 900px;
+    max-width: 1100px;
     margin: 40px auto;
     padding: 24px;
     background: #fff;
@@ -132,4 +131,12 @@ body {
 .save-rule-btn:hover {
     background: #1d8bb8;
     transform: scale(1.05);
+}
+
+.empty-habits-msg {
+    color: #aaa;
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 24px 0;
+    font-style: italic;
 }

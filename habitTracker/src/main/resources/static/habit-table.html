@@ -73,6 +73,18 @@
 
             const data = await fetch('/api/habits/table', { credentials: 'include' }).then(r => r.json());
 
+            if (!data.habitNames || data.habitNames.length === 0) {
+                document.querySelector('.date-picker-container').style.display = 'none';
+                document.querySelector('.table-container').innerHTML = `
+                    <div class="empty-state">
+                        <h2>No habits to track yet</h2>
+                        <p>Create your first habit and it will appear here in the overview table.</p>
+                        <a href="/habits/add" class="empty-state-btn">Create your first habit</a>
+                    </div>
+                `;
+                return;
+            }
+
             document.getElementById('start-date').value = data.startDate;
             document.getElementById('end-date').value = data.endDate;
             document.getElementById('date-range').textContent = data.startDate + ' - ' + data.endDate;
