@@ -1,0 +1,103 @@
+.input {
+  width: 100%;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  padding: var(--space-3) var(--space-4);
+  height: 42px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input--error {
+  border-color: var(--color-danger);
+}
+
+.input--error:focus {
+  box-shadow: 0 0 0 3px var(--color-danger-dim);
+}
+
+select.input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b90a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+select.input option {
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+}
+
+/* Toggle checkbox */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle__track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: var(--color-bg-card-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.toggle__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.toggle__input {
+  display: none;
+}
+
+.toggle__input:checked + .toggle__track {
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
+}
+
+.toggle__input:checked + .toggle__track .toggle__thumb {
+  transform: translateX(18px);
+  background: var(--color-accent);
+}
+
+.toggle__label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+@media (max-width: 768px) {
+  .input {
+    height: 48px;
+    font-size: var(--text-md);
+  }
+}
