@@ -70,12 +70,17 @@ Call this first in any session to resolve human-readable names to IDs before cre
 Returns `{card_id, card_url, title}`.
 
 ### update_card
-Sparse — only processes keys present in `fields`:
+Explicit named parameters — only provided (non-None) params are sent to Trello.
+**Bug history:** the previous `fields: dict` signature caused silent no-ops when LLMs passed
+Trello field names (`idList`, `due`) instead of MCP names (`list_id`, `due_date`), and `updated_fields`
+always echoed back what the caller passed regardless of what was actually sent. Both fixed 2026-06-08.
+
 - `title` / `description` / `due_date` / `list_id`: batched into one `PUT /cards/{id}`
 - `labels`: fetch board labels → remap names → `PUT /cards/{id}` with new `idLabels` (replaces all)
 - `checklist_items`: delete all existing checklists → create fresh "Tasks" checklist → add items
 
-`due_date: null` clears the due date (sent as string `"null"` to Trello API).
+`due_date="null"` (the string) clears the due date. `due_date=None` (Python default) means "don't touch".
+`updated_fields` in the response reflects only what was actually applied, not what was passed in.
 
 ### get_urgent_cards
 1. `GET /boards/{board_id}/lists` → build target list ID set

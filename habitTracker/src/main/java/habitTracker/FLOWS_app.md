@@ -171,6 +171,9 @@ and sends as `X-XSRF-TOKEN` header. Logout form reads same cookie into a hidden 
 
 All server-side data queries go through `SecurityUtils.getCurrentUserId()` → `findByUserId(id)`. If userId is null (should not reach here — `anyRequest().authenticated()` blocks it): `List.of()`.
 
+KPI-specific: `KPIService.getAllActiveKPIs()` returns `List.of()` when userId is null (defensive guard added 2026-06-08 — previously fell back to an unscoped query returning all users' data).
+To change this fallback: `KPIService.getAllActiveKPIs()` — the `if (userId == null) return List.of()` guard.
+
 ---
 
 ## Public vs Protected Routes
@@ -195,6 +198,7 @@ All server-side data queries go through `SecurityUtils.getCurrentUserId()` → `
 - **Edit/Info page ID**: Habit ID extracted from URL path via `window.location.pathname.split('/').pop()` — no query string needed.
 - **Nav is copy-pasted**: All 10 static HTML files have their own `<nav>`. Changes must be applied to all 10 files.
 - **Legacy JS reuse**: `input.js`, `habits-list.js`, `habit-table.js`, `edit-habit.js`, `info.js`, `rule-setting.js`, `kpi-list.js`, `kpi-dashboard.js` are all kept. Their `DOMContentLoaded` handlers fire before async `init()` populates the DOM, so each page's `init()` re-runs any DOM-dependent setup after data loads.
+- **Integration tests**: All tests use Testcontainers `@ServiceConnection` (a fresh `mongo:7` container per test class). Do NOT use `@WithMockUser` — it injects a `String` principal which causes `SecurityUtils.getCurrentUserId()` to return null, breaking all userId-scoped assertions. Use `AuthTestHelper` (in `src/test/java/habitTracker/auth/`) which creates real `User` docs and `UserPrincipal` objects. JWT tokens for `/api/**` tests: `auth.bearer(principal)` → `Authorization: Bearer <token>` header.
 
 ---
 
