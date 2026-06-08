@@ -17,7 +17,7 @@ function initializeModal() {
     const form = document.getElementById('addDataForm');
 
     // Close modal when clicking X
-    closeBtn.addEventListener('click', closeModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
 
     // Close modal when clicking outside
     window.addEventListener('click', function(event) {
@@ -27,7 +27,7 @@ function initializeModal() {
     });
 
     // Handle form submission
-    form.addEventListener('submit', handleFormSubmit);
+    if (form) form.addEventListener('submit', handleFormSubmit);
 }
 
 function addData(kpiName) {

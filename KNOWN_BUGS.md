@@ -25,9 +25,15 @@ Plain `@SpringBootTest` with no Testcontainers Mongo → same missing URI cause.
 
 ### Creating a KPI with no habits linked → whitelabel error
 Cannot reproduce via API. `KPIIntegrationTest.createKPI_withNoHabitsLinked_returns200_notWhitelabel`
-and `createKPI_withNullHabitIds_returns200_notWhitelabel` both return 200. If the whitelabel was
-observed in the browser, likely cause is a JS crash in `kpi-create.html` when
-`GET /kpis/available-habits` returns `[]` — investigate the frontend.
+and `createKPI_withNullHabitIds_returns200_notWhitelabel` both return 200.
+Frontend investigated (2026-06-08): `kpi-create.html` handles empty habits array gracefully.
+Likely historical — bug no longer present in current code.
+
+### "Add Data" in KPI list page silently fails (FIXED 2026-06-08)
+`kpi-list.js::initializeModal()` crashed on `document.querySelector('.close')` returning null
+(close button class is `modal-box__close`, not `.close`). No null guard → crash →
+`form.addEventListener('submit', handleFormSubmit)` never reached → form did a native browser
+GET submit (page reload) instead of the JSON POST. Fixed by adding null checks on `closeBtn` and `form`.
 
 ### Add-habit form auth (userId not set on saved Habit)
 Cannot reproduce. `KPIIntegrationTest.addHabit_persistsUserId_onSavedHabit` passes —

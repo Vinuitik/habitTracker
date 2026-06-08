@@ -83,12 +83,12 @@ Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop
   └── save rule → POST /habits/addRule (JSON)
 
 /kpis (KPI List)
-  ├── JS fetches /kpis (JSON) → renders KPI cards
-  └── delete → DELETE /kpis/{name}
+  ├── JS fetches /api/kpis (JSON) → renders KPI cards
+  └── delete → DELETE /api/kpis/{name}
 
 /kpis/create
-  ├── JS fetches /kpis/available-habits → renders habit checkboxes
-  └── POST /kpis/create (JSON body) → redirect /kpis
+  ├── JS fetches /api/kpis/available-habits → renders habit checkboxes
+  └── POST /api/kpis/create (JSON body) → redirect /kpis
 
 /kpis/dashboard
   ├── JS fetches /api/kpis/dashboard (JSON) → renders chart cards
@@ -136,10 +136,10 @@ JS on each page calls this on load; 401 → `window.location.href = '/login'`
 | `GET /habits/inactive` | same (legacy path kept for habits-list.js) |
 | `GET /habits/tableAsync?startDate&endDate` | `List<StructureDTO>` (kept for habit-table.js) |
 | `POST /habits/streaks` | `List<Pair<Integer,Integer>>` body: `[habitId,...]` |
-| `GET /kpis` | `List<KPIDTO>` |
-| `GET /kpis/available-habits` | `List<Habit>` (active habits for KPI create) |
-| `GET /kpis/dashboard` | `List<KPIDTO>` |
-| `GET /kpis/{name}/data?period=weekly\|monthly\|alltime\|custom[&startDate=&endDate=]` | `List<KPIDataDTO>` |
+| `GET /api/kpis` | `List<KPIDTO>` |
+| `GET /api/kpis/available-habits` | `List<Habit>` (active habits for KPI create) |
+| `GET /api/kpis/dashboard` | `List<KPIDTO>` |
+| `GET /api/kpis/{name}/data?period=weekly\|monthly\|alltime\|custom[&startDate=&endDate=]` | `List<KPIDataDTO>` |
 | `GET /auth/me` | `{userId}` or 401 |
 
 ### Write endpoints (unchanged)
@@ -151,9 +151,9 @@ JS on each page calls this on load; 401 → `window.location.href = '/login'`
 | `POST /habits/info/save` | JSON `Habit` | partial update |
 | `POST /habits/addRule` | JSON `UpdateDTO` | |
 | `DELETE /habits/delete/{id}` | — | marks active=false |
-| `POST /kpis/create` | JSON `{name,description,higherIsBetter,habitIds}` | |
-| `POST /kpis/{name}/data?date=&value=` | form params | |
-| `DELETE /kpis/{name}` | — | |
+| `POST /api/kpis/create` | JSON `{name,description,higherIsBetter,habitIds}` | |
+| `POST /api/kpis/{name}/data?date=&value=` | form params | |
+| `DELETE /api/kpis/{name}` | — | |
 
 ---
 

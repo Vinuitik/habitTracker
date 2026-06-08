@@ -89,6 +89,11 @@
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
   <script>
+    function getCsrfToken() {
+      const m = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+      return m ? decodeURIComponent(m.split('=')[1]) : '';
+    }
+
     async function init() {
       const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
       if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
@@ -131,7 +136,7 @@
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-XSRF-TOKEN': document.getElementById('logout-csrf').value
+          'X-XSRF-TOKEN': getCsrfToken()
         },
         body: JSON.stringify(body)
       });
