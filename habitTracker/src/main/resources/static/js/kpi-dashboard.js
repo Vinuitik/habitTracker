@@ -15,6 +15,7 @@ var currentPeriod     = (typeof currentPeriod     !== 'undefined') ? currentPeri
 var customRangeStart  = (typeof customRangeStart  !== 'undefined') ? customRangeStart  : null;
 var customRangeEnd    = (typeof customRangeEnd    !== 'undefined') ? customRangeEnd    : null;
 var charts            = (typeof charts            !== 'undefined') ? charts            : {};
+var kpiMeta           = (typeof kpiMeta           !== 'undefined') ? kpiMeta           : {}; // name → {higherIsBetter}
 
 function initializeDashboard() {
     loadAllCharts();
@@ -88,7 +89,8 @@ function renderChart(kpiName, data) {
     const emaValues = data.map(d => d.exponentialMovingAverage);
     
     // Determine colors based on trend
-    const borderColors = data.map(d => getTrendColor(d, data[0]));
+    const higherIsBetter = kpiMeta[kpiName] != null ? kpiMeta[kpiName].higherIsBetter : (data[0] ? data[0].higherIsBetter : true);
+    const borderColors = data.map(d => getTrendColor(d, higherIsBetter));
     
     // Shift colors so that each segment uses the destination point's color
     // This means the line from point[i] to point[i+1] will have the color of point[i+1]
@@ -208,19 +210,22 @@ function updateKPIStats(kpiName, data) {
     if (trendElement) {
         const trendText = getTrendText(latest);
         trendElement.textContent = trendText;
-        // Pass the KPI info (from data[0]) to getTrendClass
-        trendElement.className = `trend-badge ${getTrendClass(latest, data[0])}`;
+        const hib = kpiMeta[kpiName] != null ? kpiMeta[kpiName].higherIsBetter : (data[0] ? data[0].higherIsBetter : true);
+        trendElement.className = `trend-badge ${getTrendClass(latest, hib)}`;
     }
 }
 
-function getTrendColor(dataPoint, kpi) {
+function getTrendColor(dataPoint, higherIsBetter) {
     if (!dataPoint.value || !dataPoint.exponentialMovingAverage) {
         return '#6c757d';
     }
 
     const diff = dataPoint.value - dataPoint.exponentialMovingAverage;
+    const percentChange = Math.abs(diff / dataPoint.exponentialMovingAverage) * 100;
+    if (percentChange < 1) return '#6c757d';
+
     const isPositiveTrend = diff > 0;
-    const isGoodTrend = (kpi.higherIsBetter && isPositiveTrend) || (!kpi.higherIsBetter && !isPositiveTrend);
+    const isGoodTrend = (higherIsBetter && isPositiveTrend) || (!higherIsBetter && !isPositiveTrend);
     const intensity = getColorIntensity(dataPoint.colorIntensity);
 
     let color;
@@ -236,8 +241,8 @@ function getTrendColor(dataPoint, kpi) {
         // Red shades for bad trends
         switch (intensity) {
             case 'high': color = '#dc3545'; break;
-            case 'medium': color = '#e74c3c'; break;
-            case 'low': color = '#f8d7da'; break;
+            case 'medium': color = '#e05c5c'; break;
+            case 'low': color = '#c44d4d'; break;
             default: color = '#6c757d';
         }
     }
@@ -265,24 +270,17 @@ function getTrendText(dataPoint) {
     return `${direction} ${percentChange.toFixed(1)}%`;
 }
 
-function getTrendClass(dataPoint, kpi) {
+function getTrendClass(dataPoint, higherIsBetter) {
     if (!dataPoint.value || !dataPoint.exponentialMovingAverage) {
         return 'neutral';
     }
-    
+
     const diff = dataPoint.value - dataPoint.exponentialMovingAverage;
     const percentChange = Math.abs(diff / dataPoint.exponentialMovingAverage) * 100;
-    
-    if (percentChange < 1) {
-        return 'neutral';
-    }
-    
-    const isPositiveTrend = diff > 0; // Value went up
-    
-    // Determine if this trend is good or bad based on KPI direction
-    // Same logic as getTrendColor
-    const isGoodTrend = (kpi.higherIsBetter && isPositiveTrend) || (!kpi.higherIsBetter && !isPositiveTrend);
-    
+    if (percentChange < 1) return 'neutral';
+
+    const isPositiveTrend = diff > 0;
+    const isGoodTrend = (higherIsBetter && isPositiveTrend) || (!higherIsBetter && !isPositiveTrend);
     return isGoodTrend ? 'positive' : 'negative';
 }
 

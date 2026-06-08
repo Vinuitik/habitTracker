@@ -144,6 +144,7 @@
       initTopbar('/kpis/dashboard');
 
       kpis = await fetch('/api/kpis/dashboard', { credentials: 'include' }).then(r => r.json());
+      kpis.forEach(k => { kpiMeta[k.name] = { higherIsBetter: k.higherIsBetter }; });
       const container = document.getElementById('dashboard-container');
 
       if (!kpis || kpis.length === 0) {
