@@ -93,35 +93,52 @@ async def create_card(
 
 
 @mcp.tool()
-async def update_card(card_id: str, fields: dict) -> dict:
-    """Updates fields on an existing Trello card. Pass only the fields to change."""
+async def update_card(
+    card_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    due_date: str | None = None,
+    list_id: str | None = None,
+    labels: list[str] | None = None,
+    checklist_items: list[str] | None = None,
+) -> dict:
+    """Updates fields on an existing Trello card. Pass only the fields to change.
+    due_date: ISO 8601 timestamp to set, or the string "null" to clear it.
+    list_id: move the card to this list ID."""
+    applied: list[str] = []
+
     async with httpx.AsyncClient() as client:
         scalar: dict = {**_auth()}
-        if "title" in fields:
-            scalar["name"] = fields["title"]
-        if "description" in fields:
-            scalar["desc"] = fields["description"]
-        if "due_date" in fields:
-            scalar["due"] = "null" if fields["due_date"] is None else fields["due_date"]
-        if "list_id" in fields:
-            scalar["idList"] = fields["list_id"]
+        if title is not None:
+            scalar["name"] = title
+            applied.append("title")
+        if description is not None:
+            scalar["desc"] = description
+            applied.append("description")
+        if due_date is not None:
+            scalar["due"] = due_date
+            applied.append("due_date")
+        if list_id is not None:
+            scalar["idList"] = list_id
+            applied.append("list_id")
 
         if len(scalar) > 2:
             r = await client.put(f"{TRELLO_BASE}/cards/{card_id}", params=scalar)
             r.raise_for_status()
 
-        if "labels" in fields:
+        if labels is not None:
             cr = await client.get(f"{TRELLO_BASE}/cards/{card_id}", params={**_auth(), "fields": "idBoard"})
             cr.raise_for_status()
             board_id = cr.json()["idBoard"]
             lbr = await client.get(f"{TRELLO_BASE}/boards/{board_id}/labels", params=_auth())
             lbr.raise_for_status()
             name_to_id = {l["name"]: l["id"] for l in lbr.json()}
-            ids = [name_to_id[n] for n in fields["labels"] if n in name_to_id]
+            ids = [name_to_id[n] for n in labels if n in name_to_id]
             r = await client.put(f"{TRELLO_BASE}/cards/{card_id}", params={**_auth(), "idLabels": ",".join(ids)})
             r.raise_for_status()
+            applied.append("labels")
 
-        if "checklist_items" in fields:
+        if checklist_items is not None:
             existing = await client.get(f"{TRELLO_BASE}/cards/{card_id}/checklists", params=_auth())
             existing.raise_for_status()
             for cl in existing.json():
@@ -133,13 +150,14 @@ async def update_card(card_id: str, fields: dict) -> dict:
             )
             clr.raise_for_status()
             cl_id = clr.json()["id"]
-            for item in fields["checklist_items"]:
+            for item in checklist_items:
                 await client.post(
                     f"{TRELLO_BASE}/checklists/{cl_id}/checkItems",
                     params={**_auth(), "name": item},
                 )
+            applied.append("checklist_items")
 
-    return {"card_id": card_id, "updated_fields": list(fields.keys())}
+    return {"card_id": card_id, "updated_fields": applied}
 
 
 @mcp.tool()

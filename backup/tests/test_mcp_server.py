@@ -190,7 +190,7 @@ async def test_update_card_title_only():
     ctx, client = make_async_ctx(put_data=async_resp({}))
 
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _update_card("card-1", {"title": "New Title"})
+        result = await _update_card("card-1", title="New Title")
 
     assert result == {"card_id": "card-1", "updated_fields": ["title"]}
     client.put.assert_called_once()
@@ -201,7 +201,7 @@ async def test_update_card_clears_due_date():
     ctx, client = make_async_ctx(put_data=async_resp({}))
 
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        await _update_card("card-1", {"due_date": None})
+        await _update_card("card-1", due_date="null")
 
     assert client.put.call_args[1]["params"]["due"] == "null"
 
@@ -210,7 +210,7 @@ async def test_update_card_moves_list():
     ctx, client = make_async_ctx(put_data=async_resp({}))
 
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _update_card("card-1", {"list_id": "l-done"})
+        result = await _update_card("card-1", list_id="l-done")
 
     assert client.put.call_args[1]["params"]["idList"] == "l-done"
     assert "list_id" in result["updated_fields"]
@@ -227,7 +227,7 @@ async def test_update_card_replaces_labels():
     )
 
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        await _update_card("card-1", {"labels": ["bug"]})
+        await _update_card("card-1", labels=["bug"])
 
     label_put_params = client.put.call_args[1]["params"]
     assert "lbl-bug" in label_put_params["idLabels"]
@@ -246,7 +246,7 @@ async def test_update_card_replaces_checklist():
     )
 
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _update_card("card-1", {"checklist_items": ["New step"]})
+        result = await _update_card("card-1", checklist_items=["New step"])
 
     client.delete.assert_called_once()  # old checklist deleted
     assert client.post.call_count == 2  # new checklist + 1 item
@@ -257,9 +257,20 @@ async def test_update_card_no_fields_no_put():
     ctx, client = make_async_ctx(put_data=async_resp({}))
 
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        await _update_card("card-1", {})
+        await _update_card("card-1")
 
     client.put.assert_not_called()
+
+
+async def test_update_card_only_reports_applied_fields():
+    """updated_fields must reflect what was actually sent, not caller intent."""
+    ctx, client = make_async_ctx(put_data=async_resp({}))
+
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await _update_card("card-1", title="T", list_id="l-new")
+
+    assert set(result["updated_fields"]) == {"title", "list_id"}
+    assert client.put.call_args[1]["params"]["idList"] == "l-new"
 
 
 # ── get_urgent_cards ─────────────────────────────────────────────────────────
