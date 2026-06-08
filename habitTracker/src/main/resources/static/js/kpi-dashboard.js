@@ -47,11 +47,7 @@ function setPeriod(period) {
 
 async function loadAllCharts() {
     const kpiCards = document.querySelectorAll('.kpi-chart-card');
-    
-    for (const card of kpiCards) {
-        const kpiName = card.getAttribute('data-kpi-name');
-        await loadKPIChart(kpiName);
-    }
+    await Promise.all([...kpiCards].map(card => loadKPIChart(card.getAttribute('data-kpi-name'))));
 }
 
 async function loadKPIChart(kpiName) {
@@ -59,9 +55,6 @@ async function loadKPIChart(kpiName) {
         const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/data?period=${currentPeriod}`);
         const data = await response.json();
 
-        console.log('=== LOADING CHART ===');
-        console.log(data);
-        
         if (response.ok) {
             renderChart(kpiName, data);
             updateKPIStats(kpiName, data);
@@ -85,31 +78,10 @@ function renderChart(kpiName, data) {
     
     const ctx = canvas.getContext('2d');
     
-    // DEBUG: Log KPI name and data structure
-    console.log('=== RENDERING CHART ===');
-    console.log('KPI Name:', kpiName);
-    console.log('Total data points:', data.length);
-    console.log('Raw data:', data);
-    
     // Prepare data
     const labels = data.map(d => formatDate(d.date));
     const values = data.map(d => d.value);
     const emaValues = data.map(d => d.exponentialMovingAverage);
-    
-    // DEBUG: Log extracted values
-    console.log('Dates:', labels);
-    console.log('Values:', values);
-    console.log('EMA Values:', emaValues);
-    
-    // DEBUG: Log KPI properties (from first data point if available)
-    if (data.length > 0 && data[0]) {
-        console.log('KPI Properties from data[0]:', {
-            name: data[0].name,
-            higherIsBetter: data[0].higherIsBetter,
-            description: data[0].description,
-            active: data[0].active
-        });
-    }
     
     // Determine colors based on trend
     const borderColors = data.map(d => getTrendColor(d, data[0]));
@@ -121,11 +93,6 @@ function renderChart(kpiName, data) {
         : borderColors;
     
     const backgroundColors = shiftedBorderColors.map(color => color + '20'); // Add transparency
-    
-    // DEBUG: Log color assignments
-    console.log('Border colors (original):', borderColors);
-    console.log('Border colors (shifted for segments):', shiftedBorderColors);
-    console.log('===========================');
     
     const config = {
         type: 'line',
@@ -243,41 +210,15 @@ function updateKPIStats(kpiName, data) {
 }
 
 function getTrendColor(dataPoint, kpi) {
-    // DEBUG: Log color decision for this data point
-    console.log('--- getTrendColor ---');
-    console.log('Data point:', {
-        date: dataPoint.date,
-        value: dataPoint.value,
-        exponentialMovingAverage: dataPoint.exponentialMovingAverage,
-        colorIntensity: dataPoint.colorIntensity
-    });
-    console.log('KPI:', {
-        name: kpi.name,
-        higherIsBetter: kpi.higherIsBetter
-    });
-    
     if (!dataPoint.value || !dataPoint.exponentialMovingAverage) {
-        console.log('-> Returning gray (no data)');
-        return '#6c757d'; // Gray for no data
+        return '#6c757d';
     }
-    
+
     const diff = dataPoint.value - dataPoint.exponentialMovingAverage;
     const isPositiveTrend = diff > 0;
-    
-    console.log('Difference (value - EMA):', diff.toFixed(2));
-    console.log('Is positive trend:', isPositiveTrend);
-    console.log('KPI higherIsBetter:', kpi.higherIsBetter);
-    
-    // Determine if positive trend is good or bad based on KPI direction
     const isGoodTrend = (kpi.higherIsBetter && isPositiveTrend) || (!kpi.higherIsBetter && !isPositiveTrend);
-    
-    console.log('Is good trend:', isGoodTrend);
-    
-    // Color intensity based on change magnitude
     const intensity = getColorIntensity(dataPoint.colorIntensity);
-    
-    console.log('Color intensity:', intensity);
-    
+
     let color;
     if (isGoodTrend) {
         // Green shades for good trends
@@ -296,8 +237,7 @@ function getTrendColor(dataPoint, kpi) {
             default: color = '#6c757d';
         }
     }
-    
-    console.log('-> Returning color:', color);
+
     return color;
 }
 
@@ -406,19 +346,13 @@ function initializeModal() {
 }
 
 function addDataToKPI(kpiName) {
-    const modal = document.getElementById('addDataModal');
-    const kpiNameInput = document.getElementById('kpiName');
-    
-    kpiNameInput.value = kpiName;
-    modal.style.display = 'block';
+    document.getElementById('kpiName').value = kpiName;
+    document.getElementById('addDataModal').classList.add('open');
 }
 
 function closeModal() {
-    const modal = document.getElementById('addDataModal');
-    const form = document.getElementById('addDataForm');
-    
-    modal.style.display = 'none';
-    form.reset();
+    document.getElementById('addDataModal').classList.remove('open');
+    document.getElementById('addDataForm').reset();
     setTodayAsDefault();
 }
 
