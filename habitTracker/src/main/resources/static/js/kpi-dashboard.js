@@ -11,9 +11,10 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeModal();
 });
 
-// Use guarded globals so reloading the script doesn't throw when variables are already declared
-var currentPeriod = (typeof currentPeriod !== 'undefined') ? currentPeriod : 'weekly';
-var charts = (typeof charts !== 'undefined') ? charts : {};
+var currentPeriod     = (typeof currentPeriod     !== 'undefined') ? currentPeriod     : 'weekly';
+var customRangeStart  = (typeof customRangeStart  !== 'undefined') ? customRangeStart  : null;
+var customRangeEnd    = (typeof customRangeEnd    !== 'undefined') ? customRangeEnd    : null;
+var charts            = (typeof charts            !== 'undefined') ? charts            : {};
 
 function initializeDashboard() {
     loadAllCharts();
@@ -28,20 +29,19 @@ function initializeDashboard() {
 }
 
 function setupPeriodButtons() {
-    document.getElementById('weeklyBtn').addEventListener('click', () => setPeriod('weekly'));
-    document.getElementById('monthlyBtn').addEventListener('click', () => setPeriod('monthly'));
+    ['weekly', 'monthly', 'alltime', 'custom'].forEach(p =>
+        document.getElementById(p + 'Btn').addEventListener('click', () => setPeriod(p))
+    );
 }
 
 function setPeriod(period) {
     currentPeriod = period;
-    
-    // Update button states
-    document.querySelectorAll('.period-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.getElementById(period + 'Btn').classList.add('active');
-    
-    // Reload all charts
+    if (period !== 'custom') loadAllCharts();
+}
+
+function setCustomRange(start, end) {
+    customRangeStart = start;
+    customRangeEnd   = end;
     loadAllCharts();
 }
 
@@ -52,7 +52,11 @@ async function loadAllCharts() {
 
 async function loadKPIChart(kpiName) {
     try {
-        const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/data?period=${currentPeriod}`);
+        let url = `/api/kpis/${encodeURIComponent(kpiName)}/data?period=${currentPeriod}`;
+        if (currentPeriod === 'custom' && customRangeStart && customRangeEnd) {
+            url += `&startDate=${customRangeStart}&endDate=${customRangeEnd}`;
+        }
+        const response = await fetch(url);
         const data = await response.json();
 
         if (response.ok) {

@@ -54,12 +54,22 @@ public class KPIController {
     }
 
     @GetMapping("/{name}/data")
-    public List<KPIDataDTO> getKPIData(@PathVariable String name,
-                                       @RequestParam(defaultValue = "weekly") String period) {
-        return switch (period.toLowerCase()) {
-            case "monthly" -> kpiService.getMonthlyKPIData(name);
-            default -> kpiService.getWeeklyKPIData(name);
+    public ResponseEntity<?> getKPIData(@PathVariable String name,
+                                        @RequestParam(defaultValue = "weekly") String period,
+                                        @RequestParam(required = false) LocalDate startDate,
+                                        @RequestParam(required = false) LocalDate endDate) {
+        List<KPIDataDTO> result = switch (period.toLowerCase()) {
+            case "monthly"  -> kpiService.getMonthlyKPIData(name);
+            case "alltime"  -> kpiService.getAllTimeKPIData(name);
+            case "custom"   -> {
+                if (startDate == null || endDate == null) {
+                    yield List.of();
+                }
+                yield kpiService.getKPIDataForDateRange(name, startDate, endDate);
+            }
+            default         -> kpiService.getWeeklyKPIData(name);
         };
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/{name}/data")

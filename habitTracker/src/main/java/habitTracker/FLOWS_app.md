@@ -91,8 +91,10 @@ Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop
   └── POST /kpis/create (JSON body) → redirect /kpis
 
 /kpis/dashboard
-  ├── JS fetches /kpis/dashboard (JSON) → renders chart cards
-  └── chart data → GET /kpis/{name}/data
+  ├── JS fetches /api/kpis/dashboard (JSON) → renders chart cards
+  ├── chart data → GET /api/kpis/{name}/data?period=weekly|monthly|alltime|custom
+  ├── period tabs: Weekly / Monthly / All Time / Custom
+  └── Custom tab reveals date-range pickers → Apply → GET ...?period=custom&startDate=&endDate=
 
 POST /logout (all pages via nav "Sign out" button)
   └── CSRF token from XSRF-TOKEN cookie → Spring Security invalidates session → redirect /login?logout
@@ -137,7 +139,7 @@ JS on each page calls this on load; 401 → `window.location.href = '/login'`
 | `GET /kpis` | `List<KPIDTO>` |
 | `GET /kpis/available-habits` | `List<Habit>` (active habits for KPI create) |
 | `GET /kpis/dashboard` | `List<KPIDTO>` |
-| `GET /kpis/{name}/data?period=weekly|monthly` | `List<KPIDataDTO>` |
+| `GET /kpis/{name}/data?period=weekly\|monthly\|alltime\|custom[&startDate=&endDate=]` | `List<KPIDataDTO>` |
 | `GET /auth/me` | `{userId}` or 401 |
 
 ### Write endpoints (unchanged)
@@ -212,7 +214,10 @@ All server-side data queries go through `SecurityUtils.getCurrentUserId()` → `
 | Table data | `HabitReadController.getHabitTable()` → `GET /api/habits/table` |
 | Rules data | `HabitReadController.getRulesHabits()` → `GET /api/habits/rules` |
 | Single habit fetch | `HabitReadController.getHabit()` → `GET /api/habits/{id}` |
-| KPI list data | `KPIController.listKPIs()` → `GET /kpis` |
-| KPI create | `KPIController.createKPI()` → `POST /kpis/create` |
+| KPI list data | `KPIController.listKPIs()` → `GET /api/kpis` |
+| KPI create | `KPIController.createKPI()` → `POST /api/kpis/create` |
+| KPI chart data (period) | `KPIController.getKPIData()` → `GET /api/kpis/{name}/data` — add period case in switch + service method |
+| KPI all-time data | `KPIService.getAllTimeKPIData()` → `DynamicKPIDataRepository.findAllOrderByDateAsc()` |
+| KPI custom range | `KPIService.getKPIDataForDateRange()` → `DynamicKPIDataRepository.findByDateBetweenOrderByDateAsc()` |
 | Auth guard (JS) | Each HTML file's inline `init()` script |
 | Public/protected routes | `SecurityConfig.webFilterChain()` → `authorizeHttpRequests(...)` |

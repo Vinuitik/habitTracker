@@ -128,11 +128,22 @@ public class KPIService {
         LocalDate startDate = endDate.minusDays(7);
         return getKPIDataForDateRange(kpiName, startDate, endDate);
     }
-    
+
     public List<KPIDataDTO> getMonthlyKPIData(String kpiName) {
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusDays(30);
         return getKPIDataForDateRange(kpiName, startDate, endDate);
+    }
+
+    public List<KPIDataDTO> getAllTimeKPIData(String kpiName) {
+        String collectionName = collectionNameUtil.toCollectionName(kpiName);
+        List<KPIData> data = dynamicKPIDataRepository.findAllOrderByDateAsc(collectionName);
+        Optional<KPI> kpi = kpiRepository.findByName(kpiName);
+        if (kpi.isEmpty()) return new ArrayList<>();
+        boolean higherIsBetter = kpi.get().getHigherIsBetter();
+        return data.stream()
+                .map(d -> convertToDataDTO(d, kpiName, higherIsBetter))
+                .collect(Collectors.toList());
     }
     
     public List<KPIDTO> getKPIsByHabitId(Integer habitId) {

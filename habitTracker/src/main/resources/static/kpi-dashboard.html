@@ -42,10 +42,22 @@
 
     <div class="dashboard-controls">
       <div class="seg-tabs">
-        <button id="weeklyBtn" class="seg-tab active" onclick="setPeriod('weekly')">Weekly</button>
-        <button id="monthlyBtn" class="seg-tab" onclick="setPeriod('monthly')">Monthly</button>
+        <button id="weeklyBtn"  class="seg-tab active" onclick="setPeriod('weekly')">Weekly</button>
+        <button id="monthlyBtn" class="seg-tab"        onclick="setPeriod('monthly')">Monthly</button>
+        <button id="alltimeBtn" class="seg-tab"        onclick="setPeriod('alltime')">All Time</button>
+        <button id="customBtn"  class="seg-tab"        onclick="setPeriod('custom')">Custom</button>
       </div>
       <button class="btn btn--ghost btn--sm" onclick="refreshDashboard()">Refresh</button>
+    </div>
+
+    <div class="dashboard-custom-range" id="customRangeRow" style="display:none;">
+      <div class="form-group" style="flex-direction:row;align-items:center;gap:var(--space-3);flex-wrap:wrap;">
+        <label class="form-group__label" for="customStart">From</label>
+        <input class="input" type="date" id="customStart">
+        <label class="form-group__label" for="customEnd">To</label>
+        <input class="input" type="date" id="customEnd">
+        <button class="btn btn--primary btn--sm" onclick="applyCustomRange()">Apply</button>
+      </div>
     </div>
 
     <div class="kpi-grid" id="dashboard-container"></div>
@@ -115,8 +127,16 @@
     window.setPeriod = function(period) {
       document.querySelectorAll('.seg-tab').forEach(b => b.classList.remove('active'));
       document.getElementById(period + 'Btn').classList.add('active');
+      document.getElementById('customRangeRow').style.display = period === 'custom' ? 'block' : 'none';
       if (_origSetPeriod) _origSetPeriod(period);
     };
+
+    function applyCustomRange() {
+      const start = document.getElementById('customStart').value;
+      const end   = document.getElementById('customEnd').value;
+      if (!start || !end) return;
+      if (typeof setCustomRange === 'function') setCustomRange(start, end);
+    }
 
     async function init() {
       const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });

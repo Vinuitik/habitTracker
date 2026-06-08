@@ -308,6 +308,16 @@
   margin-bottom: var(--space-6);
 }
 
+/* ── Custom date-range row ── */
+.dashboard-custom-range {
+  margin-bottom: var(--space-6);
+}
+
+.dashboard-custom-range .form-group {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 /* ── Empty state ── */
 .kpi-empty {
   text-align: center;
