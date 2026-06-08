@@ -64,9 +64,8 @@ public class KPIService {
     
     public List<KPIDTO> getAllActiveKPIs() {
         String userId = SecurityUtils.getCurrentUserId();
-        List<KPI> kpis = userId != null
-                ? kpiRepository.findByActiveAndUserId(true, userId)
-                : kpiRepository.findByActive(true);
+        if (userId == null) return List.of();
+        List<KPI> kpis = kpiRepository.findByActiveAndUserId(true, userId);
         return kpis.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
