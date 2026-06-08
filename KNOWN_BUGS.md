@@ -1,14 +1,44 @@
 # Known Bugs
 
-## KPI list not scoped to current user
-`KPIService.getAllActiveKPIs()` has the same null-userId fallback as habits did — returns all users' KPIs when userId is null. `/kpis` page shows every KPI in the database.
-**Fix:** same pattern as habits — change null branch to `List.of()`, remove the unscoped fallback.
+## Pre-existing test infrastructure failures (not production bugs)
 
-## KPI dashboard shows all users' graphs
-Root cause same as above. Dashboard fetches KPI data for all KPIs returned by `getAllActiveKPIs()`, so graphs from other users appear.
+### DynamicKPIDataRepositoryTest — all 9 tests error
+`@DataMongoTest` + `activeProfiles={"test"}` with no `application-test.properties`.
+`MONGO_URI` env var is unset → invalid connection string → ApplicationContext fails.
+**Fix:** add `src/test/resources/application-test.properties` with a Testcontainers URI
+or migrate the test to `@SpringBootTest` + `@ServiceConnection` like the others.
 
-## Creating a KPI with no habits linked → whitelabel error
-Reproduced when no habits exist for the user and a KPI creation is attempted. Likely a null/empty list not handled in `KPIController` or `KPIService.createKPI()`. Stack trace not yet captured.
+### HabitTrackerApplicationTests.contextLoads — errors
+Plain `@SpringBootTest` with no Testcontainers Mongo → same missing URI cause.
+**Fix:** add `@ServiceConnection` Testcontainers container or a test properties file.
 
-## Add-habit form auth (partially fixed)
-Static `/addHabitView/new-habit.html` was outside the auth layer — no CSRF token, no session context. Converted to Thymeleaf template in this session. Needs rebuild + manual verification to confirm habits now save with correct userId.
+---
+
+## Previously reported — investigated and closed
+
+### KPI list / dashboard not scoped to current user
+`KPIService.getAllActiveKPIs()` had a `null`-userId fallback to `kpiRepository.findByActive(true)`.
+- With real `UserPrincipal` (production auth path) the bug never triggered — scoping worked correctly.
+- The fallback was reachable only when `@WithMockUser` was used in tests (String principal → `SecurityUtils` returns null).
+**Fixed:** fallback changed to `List.of()` (2026-06-08). Covered by `KPIIntegrationTest`:
+`listKPIs_doesNotReturnOtherUsersKPIs`, `listKPIs_returnsOnlyOwnKPIs`, `dashboardKPIs_doesNotReturnOtherUsersKPIs`.
+
+### Creating a KPI with no habits linked → whitelabel error
+Cannot reproduce via API. `KPIIntegrationTest.createKPI_withNoHabitsLinked_returns200_notWhitelabel`
+and `createKPI_withNullHabitIds_returns200_notWhitelabel` both return 200. If the whitelabel was
+observed in the browser, likely cause is a JS crash in `kpi-create.html` when
+`GET /kpis/available-habits` returns `[]` — investigate the frontend.
+
+### Add-habit form auth (userId not set on saved Habit)
+Cannot reproduce. `KPIIntegrationTest.addHabit_persistsUserId_onSavedHabit` passes —
+`Habit.userId` is correctly set to the authenticated user's id via `SecurityUtils.getCurrentUserId()`
+when a real `UserPrincipal` is in the security context.
+
+---
+
+## Test hygiene fixed (2026-06-08)
+
+`HabitCompletionSystemTest` was using `@WithMockUser` which injects a `String` principal,
+causing `SecurityUtils.getCurrentUserId()` to always return `null`. Replaced with
+`AuthTestHelper` which creates real `User` documents and `UserPrincipal` objects.
+Tests now exercise the actual auth stack end-to-end.

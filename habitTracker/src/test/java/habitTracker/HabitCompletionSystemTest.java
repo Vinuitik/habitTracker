@@ -2,6 +2,10 @@ package habitTracker;
 
 import habitTracker.Habit.Habit;
 import habitTracker.Structure.HabitStructure;
+import habitTracker.auth.AuthTestHelper;
+import habitTracker.auth.JwtUtil;
+import habitTracker.auth.User;
+import habitTracker.auth.UserPrincipal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,7 +15,6 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -33,11 +36,11 @@ class HabitCompletionSystemTest {
     @ServiceConnection
     static MongoDBContainer mongo = new MongoDBContainer("mongo:7");
 
-    @Autowired
-    MockMvc mockMvc;
+    @Autowired MockMvc mockMvc;
+    @Autowired MongoTemplate mongoTemplate;
+    @Autowired JwtUtil jwtUtil;
 
-    @Autowired
-    MongoTemplate mongoTemplate;
+    AuthTestHelper auth;
 
     @BeforeEach
     void clearCollections() {
@@ -45,21 +48,25 @@ class HabitCompletionSystemTest {
         mongoTemplate.dropCollection(HabitStructure.class);
         mongoTemplate.dropCollection("last_run_date");
         mongoTemplate.dropCollection("_migration");
+        mongoTemplate.dropCollection(User.class);
+        auth = new AuthTestHelper(mongoTemplate, jwtUtil);
     }
 
     @Test
-    @WithMockUser
     void completingHabit_returns200_andPersistsStructure() throws Exception {
+        UserPrincipal alice = auth.register("alice@habits.test");
+
         mongoTemplate.save(Habit.builder()
                 .id(42).name("exercise").frequency(1)
                 .startDate(LocalDate.now()).streak(0).longestStreak(0)
-                .defaultMade(false).active(true).build());
+                .defaultMade(false).active(true).userId(alice.getId()).build());
         mongoTemplate.save(HabitStructure.builder()
                 .habitId(42).structureDate(LocalDate.now()).completed(false).build());
 
         mockMvc.perform(post("/habits/update/42")
-                .param("completed", "true")
-                .with(csrf()))
+                        .param("completed", "true")
+                        .with(auth.session(alice))
+                        .with(csrf()))
                 .andExpect(status().isOk());
 
         HabitStructure structure = mongoTemplate.findOne(
@@ -71,18 +78,20 @@ class HabitCompletionSystemTest {
     }
 
     @Test
-    @WithMockUser
     void uncompletingHabit_withLastNegativeStreak_restoresStreakInDb() throws Exception {
+        UserPrincipal alice = auth.register("alice2@habits.test");
+
         mongoTemplate.save(Habit.builder()
                 .id(43).name("meditate").frequency(1)
                 .startDate(LocalDate.now()).streak(1).longestStreak(1)
-                .defaultMade(false).lastNegativeStreak(-27).active(true).build());
+                .defaultMade(false).lastNegativeStreak(-27).active(true).userId(alice.getId()).build());
         mongoTemplate.save(HabitStructure.builder()
                 .habitId(43).structureDate(LocalDate.now()).completed(true).build());
 
         mockMvc.perform(post("/habits/update/43")
-                .param("completed", "false")
-                .with(csrf()))
+                        .param("completed", "false")
+                        .with(auth.session(alice))
+                        .with(csrf()))
                 .andExpect(status().isOk());
 
         Habit updated = mongoTemplate.findById(43, Habit.class);
