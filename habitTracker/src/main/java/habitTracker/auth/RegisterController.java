@@ -57,7 +57,10 @@ public class RegisterController {
             var auth = new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
             SecurityContextHolder.getContext().setAuthentication(auth);
             new HttpSessionSecurityContextRepository().saveContext(SecurityContextHolder.getContext(), request, response);
-            return "redirect:/";
+            // Land on the authenticated home (habit list), matching formLogin's defaultSuccessUrl.
+            // "/" forwards to landing.html (the signed-out marketing page), which is why sign-up
+            // appeared to "not log you in" — you were auto-authenticated but dropped on the landing page.
+            return "redirect:/today";
         } catch (IllegalArgumentException e) {
             model.addAttribute("error", e.getMessage());
             return "register";

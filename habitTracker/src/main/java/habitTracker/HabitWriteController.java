@@ -8,6 +8,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.Valid;
+import jakarta.validation.groups.Default;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -15,6 +19,7 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 
 import habitTracker.Habit.Habit;
+import habitTracker.Habit.Habit.OnCreate;
 import habitTracker.Habit.HabitService;
 import habitTracker.Rules.RuleService;
 import habitTracker.Rules.UpdateDTO;
@@ -43,7 +48,7 @@ public class HabitWriteController {
     }
 
     @PostMapping("/new-habit")
-    public ResponseEntity<String> processHabitForm(@RequestBody Habit habit) {
+    public ResponseEntity<String> processHabitForm(@Validated({Default.class, OnCreate.class}) @RequestBody Habit habit) {
         habit.setCurDate(habit.getStartDate());
         habit.setActive(true);
         habit.setStreak(0);
@@ -53,7 +58,7 @@ public class HabitWriteController {
     }
 
     @PostMapping("/habits/edit/{id}")
-    public ResponseEntity<String> updateHabit(@PathVariable Integer id, @RequestBody Habit updatedHabit) {
+    public ResponseEntity<String> updateHabit(@PathVariable Integer id, @Valid @RequestBody Habit updatedHabit) {
         habitService.updateHabit(id, updatedHabit);
         return ResponseEntity.ok("Habit updated successfully");
     }
@@ -67,7 +72,7 @@ public class HabitWriteController {
     }
 
     @PostMapping("/habits/info/save")
-    public ResponseEntity<String> saveHabit(@RequestBody Habit habit) {
+    public ResponseEntity<String> saveHabit(@Valid @RequestBody Habit habit) {
         try {
             Habit existing = habitService.getHabitById(habit.getId());
             if (existing == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Habit not found");

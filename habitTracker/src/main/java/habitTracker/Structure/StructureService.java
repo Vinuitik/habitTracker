@@ -46,33 +46,25 @@ public class StructureService {
             .map(HabitStructure::getHabitId)
             .distinct()
             .collect(Collectors.toList());
-        List<Habit> habits = habitService.getHabitsByIds(habitIds);
-        Map<Integer, Boolean> habitIdToActive = habits.stream()
-            .collect(Collectors.toMap(Habit::getId, Habit::getActive));
+        // Single fetch of the day's habits. This set was previously queried three times per
+        // request (here, in getHabitIdToNameMap, and again in populateStructureDTO).
+        Map<Integer, Habit> habitMap = habitService.getHabitsByIds(habitIds).stream()
+            .collect(Collectors.toMap(Habit::getId, habit -> habit));
 
         habitStructures = habitStructures.stream()
-            .filter(habitStructure -> habitIdToActive.getOrDefault(habitStructure.getHabitId(), false))
+            .filter(hs -> {
+                Habit h = habitMap.get(hs.getHabitId());
+                return h != null && Boolean.TRUE.equals(h.getActive());
+            })
             .collect(Collectors.toList());
-        Map<Integer, String> habitIdToNameMap = getHabitIdToNameMap(habitStructures);
-        return populateStructureDTO(date, habitStructures, habitIdToNameMap);
+        return populateStructureDTO(date, habitStructures, habitMap);
     }
-    
+
     private boolean isHabitActiveOnDate(Habit habit, LocalDate date) {
         if (habit.getActive() == null || !habit.getActive()) {
             return false;
         }
         return habitDateCalculator.shouldTrackHabitOnDate(habit, date);
-    }
-
-    private Map<Integer, String> getHabitIdToNameMap(List<HabitStructure> habitStructures) {
-        List<Integer> habitIds = habitStructures.stream()
-            .map(HabitStructure::getHabitId)
-            .distinct()
-            .collect(Collectors.toList());
-
-        List<Habit> habits = habitService.getHabitsByIds(habitIds);
-        return habits.stream()
-            .collect(Collectors.toMap(Habit::getId, Habit::getName));
     }
 
     private Map<Integer, String> getHabitIdToNameMapFromIds(List<Pair<String, Integer>> habitNames) {
@@ -86,32 +78,18 @@ public class StructureService {
             .collect(Collectors.toMap(Habit::getId, Habit::getName));
     }
 
-    private StructureDTO populateStructureDTO(LocalDate date, List<HabitStructure> habitStructures, Map<Integer, String> habitIdToNameMap) {
+    private StructureDTO populateStructureDTO(LocalDate date, List<HabitStructure> habitStructures, Map<Integer, Habit> habitMap) {
         StructureDTO structure = new StructureDTO();
         structure.setDate(date);
         structure.setHabits(new HashMap<>());
         structure.setHabitDetails(new HashMap<>());
 
-        // Get habit IDs and fetch full habit objects
-        List<Integer> habitIds = habitStructures.stream()
-            .map(HabitStructure::getHabitId)
-            .distinct()
-            .collect(Collectors.toList());
-        List<Habit> habits = habitService.getHabitsByIds(habitIds);
-        Map<Integer, Habit> habitMap = habits.stream()
-            .collect(Collectors.toMap(Habit::getId, habit -> habit));
-
         for (HabitStructure habitStructure : habitStructures) {
-            String habitName = habitIdToNameMap.get(habitStructure.getHabitId());
-            if (habitName != null) {
-                Pair<String, Integer> habitKey = new Pair<>(habitName, habitStructure.getHabitId());
+            Habit habit = habitMap.get(habitStructure.getHabitId());
+            if (habit != null && habit.getName() != null) {
+                Pair<String, Integer> habitKey = new Pair<>(habit.getName(), habitStructure.getHabitId());
                 structure.getHabits().put(habitKey, habitStructure.getCompleted());
-                
-                // Add habit details for template access
-                Habit habit = habitMap.get(habitStructure.getHabitId());
-                if (habit != null) {
-                    structure.getHabitDetails().put(habitKey, habit);
-                }
+                structure.getHabitDetails().put(habitKey, habit); // habit details for template access
             }
         }
 
@@ -268,6 +246,11 @@ public class StructureService {
 
     @Transactional
     public void updateHabitCompletion(Integer habitId, Boolean completed, LocalDate date) {
+        // Ownership guard: getHabitById is scoped to the current user, so this rejects
+        // attempts to toggle a habit the caller doesn't own (IDOR on /habits/update/{id}).
+        if (habitService.getHabitById(habitId) == null) {
+            throw new IllegalArgumentException("Habit not found with ID: " + habitId);
+        }
         if(date == null) {
             date = LocalDate.now();
         }

@@ -30,6 +30,16 @@ public class HabitService {
         this.habitStructureRepository = habitStructureRepository;
     }
 
+    /**
+     * Ownership guard for by-id access. Habits are addressed by small sequential-ish Integer ids,
+     * so without this any authenticated user could read/modify another user's habit by guessing ids
+     * (IDOR). getAllHabits()/findByUserId already scope list queries; this covers the by-id paths.
+     */
+    private boolean ownedByCurrentUser(Habit habit) {
+        String userId = SecurityUtils.getCurrentUserId();
+        return habit != null && userId != null && userId.equals(habit.getUserId());
+    }
+
     public void saveHabit(Habit habit) {
         if (habit.getDefaultMade() == null) {
             habit.setDefaultMade(false);
@@ -67,13 +77,14 @@ public class HabitService {
         return habitRepository.findByCurDate(utcDate);
     }
     
-    @Transactional(readOnly = true)
+    @Transactional
     public void deleteHabit(Integer id) {
         Habit habit = habitRepository.findById(id).orElse(null);
-        if (habit != null) {
-            habit.setActive(false); // Mark as inactive instead of deleting
-            habitRepository.save(habit);
+        if (!ownedByCurrentUser(habit)) {
+            throw new IllegalArgumentException("Habit not found with ID: " + id);
         }
+        habit.setActive(false); // Mark as inactive instead of deleting
+        habitRepository.save(habit);
     }
 
     @Transactional(readOnly = true)
@@ -86,6 +97,9 @@ public class HabitService {
     public void updateHabit(Integer id, Habit updatedHabit) {
         Habit existingHabit = habitRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("Habit not found with ID: " + id));
+        if (!ownedByCurrentUser(existingHabit)) {
+            throw new IllegalArgumentException("Habit not found with ID: " + id);
+        }
 
         // Update the fields
         if(updatedHabit.getName() != null) {
@@ -138,7 +152,8 @@ public class HabitService {
     }
 
     public Habit getHabitById(Integer id) {
-        return habitRepository.findById(id).orElse(null);
+        Habit habit = habitRepository.findById(id).orElse(null);
+        return ownedByCurrentUser(habit) ? habit : null;
     }
 
     public List<Habit> getHabitsByIds(List<Integer> ids) {
@@ -164,16 +179,15 @@ public class HabitService {
     }
 
     public HabitDTO getHabitDTOById(Integer id) {
-        Habit habit = habitRepository.findById(id).orElse(null);
+        Habit habit = getHabitById(id); // ownership-scoped
         return habit != null ? HabitDTO.fromHabit(habit) : null;
     }
     public List<Pair<Integer,Integer> > getStreaks(List<Integer> ids){
-        List<Pair<Integer,Integer> > streaks;
         List<Habit> habits = habitRepository.findAllById(ids);
-        streaks = habits.stream()
+        return habits.stream()
+            .filter(this::ownedByCurrentUser) // never reveal another user's streaks
             .map(habit -> ( new Pair<Integer,Integer>(habit.getId(), habit.getStreak())))
             .collect(Collectors.toList());
-        return streaks;
     }
 
     public void updateHabitFrequency(List<Integer> ids, Integer frequency) {
@@ -209,9 +223,15 @@ public class HabitService {
     }
 
     public void updateRule(UpdateDTO updateDTO){
-        List<Habit> subHabits = habitRepository.findAllById(updateDTO.getSubIds());
         Habit mainHabit = habitRepository.findById(updateDTO.getMainId())
             .orElseThrow(() -> new IllegalArgumentException("Main habit not found with ID: " + updateDTO.getMainId()));
+        if (!ownedByCurrentUser(mainHabit)) {
+            throw new IllegalArgumentException("Main habit not found with ID: " + updateDTO.getMainId());
+        }
+        // Only operate on sub-habits the caller actually owns.
+        List<Habit> subHabits = habitRepository.findAllById(updateDTO.getSubIds()).stream()
+            .filter(this::ownedByCurrentUser)
+            .collect(Collectors.toList());
         for(Habit subHabit : subHabits) {
             subHabit.setActive(false);
             subHabit.setFrequency(updateDTO.getFrequency());

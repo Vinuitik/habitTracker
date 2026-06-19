@@ -192,6 +192,7 @@
         }
         tickStreak(streakEl, base, display);
         moveCard(card, nowChecked);
+        updateSummary();
         if (nowChecked) checkAllComplete();
         else allDoneFired = false;
       });
@@ -205,6 +206,21 @@
         const first = grid.querySelector('.habit-card');
         grid.insertBefore(card, first);
       }
+    }
+
+    // Recompute "X of Y completed" from the current DOM state.
+    // Called after every toggle and shame-removal so the count stays live.
+    function updateSummary() {
+      const summaryEl = document.getElementById('today-summary');
+      if (!summaryEl) return;
+      const cards = document.querySelectorAll('#habit-grid .habit-card');
+      const total = cards.length;
+      if (total === 0) {
+        summaryEl.textContent = 'No habits scheduled for today.';
+        return;
+      }
+      const done = document.querySelectorAll('#habit-grid .habit-card.completed').length;
+      summaryEl.textContent = `${done} of ${total} completed`;
     }
 
     function shameRemove(card) {
@@ -227,7 +243,7 @@
         }
         setTimeout(() => {
           card.classList.add('shame-out');
-          card.addEventListener('animationend', () => card.remove(), { once: true });
+          card.addEventListener('animationend', () => { card.remove(); updateSummary(); }, { once: true });
         }, 420);
       });
     }
@@ -262,9 +278,7 @@
       const sorted = [...data.habits].sort((a, b) => a.completed - b.completed);
       sorted.forEach(h => grid.appendChild(makeCard(h)));
 
-      const total    = data.habits.length;
-      const done     = data.habits.filter(h => h.completed).length;
-      document.getElementById('today-summary').textContent = `${done} of ${total} completed`;
+      updateSummary();
 
       // Stagger-in
       if (window.gsap) {

@@ -27,7 +27,7 @@ services:
       JAVA_TOOL_OPTIONS: -Xmx256m -Xms64m
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-disabled}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-disabled}
-      JWT_SECRET: ${JWT_SECRET:-changeme-at-least-32-chars-long-secret}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (see .env / .env.example)}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089"]
       interval: 5s
