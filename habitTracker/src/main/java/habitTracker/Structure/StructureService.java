@@ -37,27 +37,53 @@ public class StructureService {
         return structure;
     }
 
+    // Habit/window-driven: a habit belongs on the given day when that day falls inside its current
+    // grace window [curDate, curDate + frequency). Completion is resolved across the whole window,
+    // not just the single day, so a long-period habit stays visible (and catchable) for its whole period.
     private StructureDTO getStructureForDate(LocalDate date) {
-        String userId = SecurityUtils.getCurrentUserId();
-        List<HabitStructure> habitStructures = userId != null
-                ? habitStructureRepository.findByStructureDateAndUserId(date, userId)
-                : List.of();
-        List<Integer> habitIds = habitStructures.stream()
-            .map(HabitStructure::getHabitId)
-            .distinct()
-            .collect(Collectors.toList());
-        // Single fetch of the day's habits. This set was previously queried three times per
-        // request (here, in getHabitIdToNameMap, and again in populateStructureDTO).
-        Map<Integer, Habit> habitMap = habitService.getHabitsByIds(habitIds).stream()
-            .collect(Collectors.toMap(Habit::getId, habit -> habit));
+        StructureDTO structure = new StructureDTO();
+        structure.setDate(date);
+        structure.setHabits(new HashMap<>());
+        structure.setHabitDetails(new HashMap<>());
 
-        habitStructures = habitStructures.stream()
-            .filter(hs -> {
-                Habit h = habitMap.get(hs.getHabitId());
-                return h != null && Boolean.TRUE.equals(h.getActive());
-            })
-            .collect(Collectors.toList());
-        return populateStructureDTO(date, habitStructures, habitMap);
+        for (Habit habit : habitService.getAllHabits()) {
+            if (!Boolean.TRUE.equals(habit.getActive()) || habit.getName() == null) {
+                continue;
+            }
+            LocalDate anchor = habit.getCurDate();
+            if (anchor == null) {
+                continue;
+            }
+            int freq = habit.getFrequency() != null && habit.getFrequency() > 0 ? habit.getFrequency() : 1;
+            boolean windowCoversDate = !date.isBefore(anchor) && date.isBefore(anchor.plusDays(freq));
+            boolean withinEndDate = habit.getEndDate() == null || !date.isAfter(habit.getEndDate());
+            if (!windowCoversDate || !withinEndDate) {
+                continue;
+            }
+
+            Pair<String, Integer> habitKey = new Pair<>(habit.getName(), habit.getId());
+            structure.getHabits().put(habitKey, isOccurrenceComplete(habit, anchor, freq));
+            structure.getHabitDetails().put(habitKey, habit);
+        }
+
+        // Sort by habit name for a stable order.
+        structure.setHabits(structure.getHabits().entrySet().stream()
+            .sorted((e1, e2) -> e1.getKey().getKey().compareTo(e2.getKey().getKey()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new)));
+        return structure;
+    }
+
+    // Mirrors the resolution used by the daily engine (HabitUpdateService): a defaultMade habit is
+    // "done" for the window unless there is a relapse in it; a normal habit is "done" when it was
+    // completed anywhere in the window.
+    private boolean isOccurrenceComplete(Habit habit, LocalDate anchor, int freq) {
+        LocalDate windowLastDay = anchor.plusDays(freq - 1);
+        if (Boolean.TRUE.equals(habit.getDefaultMade())) {
+            return !habitStructureRepository.existsByHabitIdAndCompletedAndStructureDateBetween(
+                    habit.getId(), Boolean.FALSE, anchor, windowLastDay);
+        }
+        return habitStructureRepository.existsByHabitIdAndCompletedAndStructureDateBetween(
+                habit.getId(), Boolean.TRUE, anchor, windowLastDay);
     }
 
     private boolean isHabitActiveOnDate(Habit habit, LocalDate date) {
@@ -76,34 +102,6 @@ public class StructureService {
         List<Habit> habits = habitService.getHabitsByIds(habitIds);
         return habits.stream()
             .collect(Collectors.toMap(Habit::getId, Habit::getName));
-    }
-
-    private StructureDTO populateStructureDTO(LocalDate date, List<HabitStructure> habitStructures, Map<Integer, Habit> habitMap) {
-        StructureDTO structure = new StructureDTO();
-        structure.setDate(date);
-        structure.setHabits(new HashMap<>());
-        structure.setHabitDetails(new HashMap<>());
-
-        for (HabitStructure habitStructure : habitStructures) {
-            Habit habit = habitMap.get(habitStructure.getHabitId());
-            if (habit != null && habit.getName() != null) {
-                Pair<String, Integer> habitKey = new Pair<>(habit.getName(), habitStructure.getHabitId());
-                structure.getHabits().put(habitKey, habitStructure.getCompleted());
-                structure.getHabitDetails().put(habitKey, habit); // habit details for template access
-            }
-        }
-
-        // Sort the habits by habit name to maintain consistent order
-        structure.setHabits(structure.getHabits().entrySet().stream()
-            .sorted((entry1, entry2) -> entry1.getKey().getKey().compareTo(entry2.getKey().getKey())) // Sort by habit name
-            .collect(Collectors.toMap(
-                Map.Entry::getKey,
-                Map.Entry::getValue,
-                (e1, e2) -> e1,
-                LinkedHashMap::new // Maintain sorted order
-            )));
-
-        return structure;
     }
 
     @Transactional(readOnly = true)

@@ -17,4 +17,7 @@ public interface HabitStructureRepository extends MongoRepository<HabitStructure
     Optional<HabitStructure> findByHabitIdAndStructureDate(Integer habitName, LocalDate date);
     void deleteByHabitIdAndStructureDate(Integer habitName, LocalDate date);
     boolean existsByHabitIdAndStructureDate(Integer habitName, LocalDate date);
+    // Grace-window resolution: is there a completed occurrence anywhere in [start, end] (inclusive bounds)?
+    boolean existsByHabitIdAndCompletedAndStructureDateBetween(Integer habitId, Boolean completed,
+                                                               LocalDate startDate, LocalDate endDate);
 }

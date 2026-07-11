@@ -1,6 +1,6 @@
 # Daily Cron Flows
 
-Files: `UpdateScheduler.java`, `LastRunDateService.java`, `HabitUpdateService.java`, `HabitDateCalculator.java`, `HabitStructureManager.java`, `StreakCalculationService.java`
+Files: `UpdateScheduler.java`, `LastRunDateService.java`, `HabitUpdateService.java`, `HabitDateCalculator.java`, `HabitStructureManager.java`
 
 ## Triggers
 
@@ -25,55 +25,44 @@ One document per run is inserted; never updated. The collection grows unbounded 
 
 ---
 
-## Habit Update
+## Unified Daily Engine (rolling grace window)
 
-`HabitUpdateService.updateAllHabits()`
+`HabitUpdateService.updateAllHabits()` → `processHabit(habit, today)` is now the **single** pass:
+it advances the schedule, seeds structures, AND credits/docks the streak. (The former
+`StreakCalculationService` day-by-day walk was folded in here and deleted — the two passes had to
+agree on exactly when a window closes, so unifying them removed that coupling.)
 
-1. Load all habits from `habits` collection
-2. Load today's existing `HabitStructure` docs → build set of already-processed habit IDs (skip duplicates)
-3. For each remaining habit: `HabitUpdateService.processHabit(habit, today)`
-   - `active=false` or `endDate` passed → skip
-   - `curDate == today` → `HabitStructureManager.createHabitStructure(id, today, defaultMade, userId)`
-   - `curDate < today` → `HabitDateCalculator.calculateNextOccurrence()` → update `curDate` in DB; if new date == today → create structure
-   - `curDate > today` → skip (habit not due yet)
+### Model
+Each habit's current occurrence spans a **window** `[curDate, curDate + frequency)`. `curDate` is
+the window anchor and only advances when the occurrence resolves. The habit stays visible/catchable
+for the whole window. At `frequency=1` the window is a single day → identical to the old model
+(a miss is docked on the next run).
 
-`HabitDateCalculator.calculateNextOccurrence()`:
-- Next scheduled day = today if `(today - startDate) % frequency == 0`, else next aligned future day
-- To change scheduling math: this method only
+### `processHabit` roll-forward
+Skip if `active=false` or `curDate == null`. Then loop:
+- Stop if `endDate` passed (`anchor > endDate`) or window not open yet (`today < anchor`).
+- Seed the anchor's `HabitStructure` if missing (`completed = defaultMade`) — keeps it on the Today page + table.
+- Resolve the occurrence:
+  - **normal**: SUCCESS if completed anywhere in `[anchor, anchor+freq)` (resolves even mid-window); else LAPSE once `today >= anchor+freq`; else OPEN → stop.
+  - **defaultMade**: never resolved early — once `today >= anchor+freq`, SUCCESS if no relapse (`completed=false`) in the window, else LAPSE; while open → stop.
+- Apply the streak transition, then `anchor += frequency` and continue.
 
-`HabitStructureManager.createHabitStructure()`:
-- Initial `completed` value = `defaultMade` (true = assumed done, false = assumed not done)
+Persist `streak`, `longestStreak`, `curDate`, and `lastNegativeStreak` (set/unset) via `MongoTemplate.updateFirst()`.
 
----
+### Streak transitions (per resolved occurrence)
+| Outcome | Prior streak | Result |
+|---|---|---|
+| SUCCESS | > 0 | `streak++` |
+| SUCCESS | ≤ 0 | save `lastNegativeStreak`, `streak = 1` |
+| LAPSE | > 0 | `streak = 0`, clear `lastNegativeStreak` |
+| LAPSE | ≤ 0 | `streak--` |
 
-## Streak Calculation
+Negative magnitude = number of consecutive fully-lapsed windows. Multi-day downtime is caught up
+naturally by the loop (one dock per elapsed window).
 
-`StreakCalculationService.updateAllStreaks(previousRunDate)`
-
-Window processed: `[previousRunDate, today)` — today excluded (user may still complete habits today).
-
-1. Fetch all active habits
-2. Fetch `HabitStructure` docs in window for all habit IDs: `StreakCalculationService.fetchHabitStructures()`
-3. For each habit: `StreakCalculationService.updateHabitStreak()`
-
-**Fast path** (no structures found in window — habit had no activity):
-- Count scheduled days via `StreakCalculationService.countScheduledDays()`
-- `defaultMade=true` → `streak += delta`
-- `defaultMade=false`, prior streak positive → `streak = 1 - delta`
-- `defaultMade=false`, prior streak ≤ 0 → `streak -= delta`
-
-**Slow path** (structures exist — iterate day by day):
-- `HabitDateCalculator.shouldTrackHabitOnDate()` → skip non-scheduled days
-
-| Structure? | `completed` | Prior streak | Result |
-|---|---|---|---|
-| yes | true | > 0 | `streak++` |
-| yes | true | ≤ 0 | save `lastNegativeStreak`, `streak = 1` |
-| no (inferred) | — | any (`defaultMade=true`) | `streak++` |
-| yes or no | false | > 0 | `streak = 0`, clear `lastNegativeStreak` |
-| yes or no | false | ≤ 0 | `streak--` |
-
-4. Write `streak`, `longestStreak`, and optionally `lastNegativeStreak` back to `Habit` doc via `MongoTemplate.updateFirst()`
+`HabitStructureManager.createHabitStructure()`: initial `completed` = `defaultMade`.
+`HabitDateCalculator.shouldTrackHabitOnDate()` is still used by `StructureService` (Today window +
+completion table); `calculateNextOccurrence()` is used on habit creation/edit.
 
 ---
 
@@ -84,7 +73,7 @@ Window processed: `[previousRunDate, today)` — today excluded (user may still 
 | Cron schedule | `UpdateScheduler.scheduledUpdate()` cron expression | `0 5 0 * * ?` = 00:05 server time |
 | Startup run behavior | `UpdateScheduler.runOnStartup()` | fires on every container restart |
 | Idempotency collection | `LastRunDateService` — collection `last_run_date` | grows unbounded, no cleanup implemented |
-| Scheduling math (which days a habit is due) | `HabitDateCalculator.calculateNextOccurrence()`, `HabitDateCalculator.shouldTrackHabitOnDate()` | two callers: `HabitUpdateService` and `StreakCalculationService` |
+| Grace-window / streak logic | `HabitUpdateService.processHabit()` | window model + streak transitions live here |
+| Occurrence completion semantics | `HabitUpdateService.processHabit()` + `StructureService.isOccurrenceComplete()` | must stay in sync (normal = any completed; defaultMade = no relapse) |
 | Initial `completed` value on structure creation | `HabitStructureManager.createHabitStructure()` | currently = `defaultMade` |
-| Streak logic for explicit completions | `StreakCalculationService.updateHabitStreak()` slow path | |
-| Streak logic for missed days (bulk) | `StreakCalculationService.updateHabitStreak()` fast path + `countScheduledDays()` | |
+| Negative-streak color (period-aware) | `static/index.html` `applyStreakColor()` | `severity = |streak|*frequency/30` |

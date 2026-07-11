@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import habitTracker.Habit.Habit;
 import habitTracker.Habit.HabitDTO;
 import habitTracker.Habit.HabitService;
+import habitTracker.Habit.StreakDTO;
 import habitTracker.Rules.RuleDTO;
 import habitTracker.Structure.StructureDTO;
 import habitTracker.Structure.StructureService;
@@ -123,7 +124,7 @@ public class HabitReadController {
     }
 
     @PostMapping("/habits/streaks")
-    public List<Pair<Integer, Integer>> getStreaks(@RequestBody List<Integer> habitIds) {
+    public List<StreakDTO> getStreaks(@RequestBody List<Integer> habitIds) {
         return habitService.getStreaks(habitIds);
     }
 }

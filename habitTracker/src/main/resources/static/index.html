@@ -131,17 +131,22 @@
       if (circle) circle.style.strokeDashoffset = filled ? 0 : RING_C;
     }
 
-    function applyStreakColor(el, val) {
+    // Period-aware redness: one negative unit = one full missed period, so severity scales with
+    // |streak| * frequency (days of neglect). K = 30 days maps to deepest red, so a 30-day habit is
+    // fully red at -1 while a daily habit reddens gradually over ~a month. lightness: 50% -> 22%.
+    function applyStreakColor(el, val, frequency) {
       if (val < 0) {
+        const freq = (frequency && frequency > 0) ? frequency : parseInt(el.dataset.freq || '1', 10);
+        const severity = Math.min(1, (Math.abs(val) * freq) / 30);
         el.classList.add('negative');
-        el.style.color = `hsl(0, 88%, ${Math.max(22, 50 - Math.min(Math.abs(val), 24))}%)`;
+        el.style.color = `hsl(0, 88%, ${50 - 28 * severity}%)`;
       } else {
         el.classList.remove('negative');
         el.style.color = '';
       }
     }
 
-    function tickStreak(el, fromVal, toVal) {
+    function tickStreak(el, fromVal, toVal, frequency) {
       if (!window.gsap) { el.textContent = toVal + ' day streak'; return; }
       const obj = { v: fromVal };
       gsap.to(obj, {
@@ -149,7 +154,7 @@
         duration: 0.4,
         ease: 'power2.out',
         onUpdate() { el.textContent = Math.round(obj.v) + ' day streak'; },
-        onComplete() { applyStreakColor(el, toVal); }
+        onComplete() { applyStreakColor(el, toVal, frequency); }
       });
     }
 
@@ -190,7 +195,7 @@
           setRing(card, !nowChecked);
           return;
         }
-        tickStreak(streakEl, base, display);
+        tickStreak(streakEl, base, display, parseInt(streakEl.dataset.freq || '1', 10));
         moveCard(card, nowChecked);
         updateSummary();
         if (nowChecked) checkAllComplete();
@@ -303,15 +308,17 @@
         headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
         body: JSON.stringify(ids)
       }).then(r => r.json()).then(streaks => {
-        streaks.forEach(({ key, value }) => {
+        streaks.forEach(({ key, value, frequency }) => {
           const card = document.querySelector(`.habit-card[data-id="${key}"]`);
           if (!card) return;
           const checkbox = card.querySelector('.habit-card__checkbox');
           const streakEl = card.querySelector('.habit-card__streak');
+          const freq     = (frequency && frequency > 0) ? frequency : 1;
           const display  = checkbox.checked ? (value <= 0 ? 1 : value + 1) : value;
           streakEl.dataset.base = value;
+          streakEl.dataset.freq = freq;
           streakEl.textContent  = display + ' day streak';
-          applyStreakColor(streakEl, display);
+          applyStreakColor(streakEl, display, freq);
         });
       });
     }

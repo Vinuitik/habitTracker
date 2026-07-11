@@ -11,14 +11,11 @@ public class UpdateScheduler {
 
     private final LastRunDateService lastRunDateService;
     private final HabitUpdateService habitUpdateService;
-    private final StreakCalculationService streakCalculationService;
 
     public UpdateScheduler(LastRunDateService lastRunDateService,
-                           HabitUpdateService habitUpdateService,
-                           StreakCalculationService streakCalculationService) {
+                           HabitUpdateService habitUpdateService) {
         this.lastRunDateService = lastRunDateService;
         this.habitUpdateService = habitUpdateService;
-        this.streakCalculationService = streakCalculationService;
     }
 
     @PostConstruct
@@ -39,10 +36,10 @@ public class UpdateScheduler {
                 System.out.println("Updater already ran today. Skipping.");
                 return;
             }
-            java.time.LocalDate previousRunDate = lastRunDateService.getLastRunDate();
             lastRunDateService.markRunToday();
+            // Single unified pass: rolls each habit's grace window forward, crediting/docking the
+            // streak and advancing curDate as occurrences resolve.
             habitUpdateService.updateAllHabits();
-            streakCalculationService.updateAllStreaks(previousRunDate);
             System.out.println("Updater ran successfully for " + java.time.LocalDate.now());
         } catch (Exception e) {
             System.err.println("Error during daily update: " + e.getMessage());

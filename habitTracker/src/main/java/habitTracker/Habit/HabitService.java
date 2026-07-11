@@ -182,11 +182,14 @@ public class HabitService {
         Habit habit = getHabitById(id); // ownership-scoped
         return habit != null ? HabitDTO.fromHabit(habit) : null;
     }
-    public List<Pair<Integer,Integer> > getStreaks(List<Integer> ids){
+    public List<StreakDTO> getStreaks(List<Integer> ids){
         List<Habit> habits = habitRepository.findAllById(ids);
         return habits.stream()
             .filter(this::ownedByCurrentUser) // never reveal another user's streaks
-            .map(habit -> ( new Pair<Integer,Integer>(habit.getId(), habit.getStreak())))
+            .map(habit -> new StreakDTO(
+                    habit.getId(),
+                    habit.getStreak() != null ? habit.getStreak() : 0,
+                    habit.getFrequency() != null && habit.getFrequency() > 0 ? habit.getFrequency() : 1))
             .collect(Collectors.toList());
     }
 
