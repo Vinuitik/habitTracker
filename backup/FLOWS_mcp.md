@@ -1,6 +1,6 @@
 # Trello MCP Server Flow
 
-Files: `mcp_server.py`
+Files: `mcp_server.py`, `tests/test_mcp_server.py`
 
 ## Overall Architecture
 
@@ -8,18 +8,15 @@ Files: `mcp_server.py`
 You ──► Claude / ChatGPT (with MCP connected)
            │
            ▼
-  MCP SSE endpoint (HTTPS)
-  habittrackerdima.me/mcp/sse
+  MCP endpoint (HTTPS)  habittrackerdima.me/mcp/...
            │
      Caddy strips /mcp
            │
            ▼
-  mongo-backup:8091 (FastMCP SSE)
+  mongo-backup:8091 (FastMCP streamable-http)
            │
            ▼
-     Trello REST API
-
-Claude Code ──► same MCP endpoint ──► reads cards ──► executes tasks
+     Trello REST API   ← single source of truth
 
 Background thread (every 1h) ──► labels overdue / due-today cards
 ```
@@ -30,10 +27,7 @@ Background thread (every 1h) ──► labels overdue / due-today cards
 Cloudflare → cloudflared → Caddy:80 → handle_path /mcp/* → mongo-backup:8091
 ```
 
-Caddy `handle_path /mcp/*` strips the `/mcp` prefix before proxying:
-- Client connects to `https://habittrackerdima.me/mcp/sse` → FastMCP sees `GET /sse`
-- Client POSTs to `https://habittrackerdima.me/mcp/messages` → FastMCP sees `POST /messages`
-
+Caddy `handle_path /mcp/*` strips the `/mcp` prefix before proxying.
 To change route prefix: `caddy/Caddyfile` handle_path directive + MCP client config URL.
 To change port: `mcp_server.py` `mcp.run(port=...)` + `caddy/Caddyfile` proxy target.
 
@@ -46,110 +40,137 @@ To change port: `mcp_server.py` `mcp.run(port=...)` + `caddy/Caddyfile` proxy ta
 | Process | How | Role |
 |---|---|---|
 | `backup.py` | background (`&`) | MongoDB → Google Drive every 12h |
-| `mcp_server.py` | foreground (`exec`) | FastMCP SSE server + hourly cron thread |
+| `mcp_server.py` | foreground (`exec`) | FastMCP server + hourly cron thread |
 
-If `mcp_server.py` exits, the container stops (it is PID 1 via `exec`).
-If `backup.py` exits, the container keeps running; backup failures are silent (caught by `try/except`).
+If `mcp_server.py` exits, the container stops (PID 1 via `exec`). `backup.py` failures are silent.
 
 ---
 
-## Tool Flows
+## Core idea: handles, not IDs (stateless)
 
-### list_boards_and_lists
-No input.
-`GET /members/me/boards?fields=name,id&lists=open` → returns all boards with nested lists (id + name).
-Call this first in any session to resolve human-readable names to IDs before creating/querying cards.
+A **handle** is `board/list/card` in kebab-case — `frm/auth/google-sso`. Every tool that used
+to take a Trello ID now takes a handle or a plain name; Trello IDs never leave the server.
 
-### create_card
-1. `GET /lists/{list_id}?fields=idBoard` → resolve `board_id` from the target list
-2. `GET /boards/{board_id}/labels` → map label names → label IDs (unknown names silently skipped)
-3. `POST /cards` with `idList`, `name`, `desc`, optional `due`, optional `idLabels`
-4. If `checklist_items` provided:
-   - `POST /checklists?idCard={card_id}&name=Tasks` → create checklist
-   - `POST /checklists/{cl_id}/checkItems?name={item}` × N → add each item
-Returns `{card_id, card_url, title}`.
+**No persistent store.** Handles are derived from live Trello names on every call and resolved
+back to IDs server-side. Trello is the only source of truth, so there is nothing to sync and
+nothing to invalidate. See `## Technology Notes` for why we chose this over a slug↔id mirror.
 
-### update_card
-Explicit named parameters — only provided (non-None) params are sent to Trello.
-**Bug history:** the previous `fields: dict` signature caused silent no-ops when LLMs passed
-Trello field names (`idList`, `due`) instead of MCP names (`list_id`, `due_date`), and `updated_fields`
-always echoed back what the caller passed regardless of what was actually sent. Both fixed 2026-06-08.
+Resolution chain (all in-memory, cached only for the duration of one tool call):
 
-- `title` / `description` / `due_date` / `list_id`: batched into one `PUT /cards/{id}`
-- `labels`: fetch board labels → remap names → `PUT /cards/{id}` with new `idLabels` (replaces all)
-- `checklist_items`: delete all existing checklists → create fresh "Tasks" checklist → add items
+```
+name/handle ──► _resolve_board() ──► _resolve_list() ──► _resolve_handle() ──► Trello id
+                 (slug match on           (slug match          (slug match on card name,
+                  /members/me/boards)      on board.lists)      ~id4 tiebreak on collision)
+```
 
-`due_date="null"` (the string) clears the due date. `due_date=None` (Python default) means "don't touch".
-`updated_fields` in the response reflects only what was actually applied, not what was passed in.
+- `_slug()` — `"Google SSO"` → `google-sso`. To change handle format: `_slug()` + `_build_handles()`.
+- `_build_handles()` — assigns a handle per card; appends `~<first4ofid>` **only** when two cards
+  in the same list slug-collide. Deterministic, so a handle is stable across calls without a store.
+- Miss → `ToolError` with `difflib` near-matches ("did you mean …?"). To change fuzziness: the
+  `difflib.get_close_matches(...)` calls in `_resolve_board` / `_resolve_list` / `_resolve_handle`.
 
-### get_urgent_cards
-1. `GET /boards/{board_id}/lists` → build target list ID set
-   - If `list_names` provided: include only those lists
-   - Otherwise: all lists except `{"Done", "Archive"}`
-2. `GET /boards/{board_id}/cards?checklists=all` → filter to target lists
-3. Sort key: `(0, due_date, not_urgent)` → `(1, _, _)` urgent/no-due → `(2, _, _)` rest
-4. Return top `limit` cards with full checklist item state
+---
 
-To change excluded lists: `get_urgent_cards` `exclude` set in `mcp_server.py`.
+## Tool Surface (6 tools)
 
-### get_all_cards
-1. If `exclude_lists` provided: `GET /boards/{board_id}/lists` → collect IDs to skip
-2. `GET /boards/{board_id}/cards?checklists=all` → filter out skipped list IDs
-3. Returns every remaining card with full fields (title, desc, due, labels, checklist items)
+All reads omit-empty (`_clean()` drops `None`/`""`/`[]`/`{}`, keeps `0`/`False`).
 
-Use when you need a full inventory of a board rather than a priority-sorted slice.
+### describe_board(board)
+`_resolve_board` → `_cards` → `Counter(idList)`.
+Returns `{board, slug, lists:[{list,cards}], total_cards}`. Cheap situational awareness — call
+first instead of dumping every card.
 
-### create_list
-1. `POST /lists` with `idBoard`, `name`, optional `pos` (default `"bottom"`)
-2. Returns `{list_id, list_name, board_id}`
+### get_cards(board, list_name?, label?, text?, due_before?, has_due?, limit=50)
+`_resolve_board` → `_cards(checklists=True)` → apply each filter only if passed (AND) → `_build_handles`.
+Returns **compact tab-delimited lines**, not JSON:
+```
+handle <TAB> title <TAB> list [<TAB> due:YYYY-MM-DD] [<TAB> [label,label]] [<TAB> check:done/total]
+```
+Empty meta tokens are omitted. `"No cards match."` when the filtered set is empty.
+- `due_before` / due compare on the `YYYY-MM-DD` prefix (lexicographic, ISO-safe).
+- Checklists are summarised to `check:done/total` here; full items only via `get_card`.
+To change columns/format: the line-building loop at the end of `get_cards`.
 
-Use to create new lists on a board before populating them with cards.
+### get_card(handle)
+`_resolve_handle(checklists=True)` → recompute canonical handle over all board cards → expand checklist.
+Returns full detail incl. `checklist:[{name,done}]`, omit-empty.
+
+### create_cards([NewCard]) — batch
+Per item: `_resolve_board` → `_resolve_list` → `_label_ids` → `POST /cards` → optional `_write_checklist`.
+`NewCard{board, list_name, title, description="", labels=[], due=None, checklist=[]}`.
+Returns `{created:[{handle,url}], errors?:[{index,title,error}]}`. One bad item doesn't abort the batch.
+
+### update_cards([CardUpdate]) — batch, partial
+Per item: `_resolve_handle` → only set fields are sent.
+`CardUpdate{handle, title?, description?, labels?, due?, checklist?}`.
+- `title`/`description`/`due` batched into one `PUT /cards/{id}` (guarded by `len(scalar) > 2`).
+- `labels` → `_label_ids` → separate `PUT` (replaces all).
+- `checklist` → delete existing checklists → `_write_checklist` (replaces).
+- `due="null"` (string) clears; `due=None` (default) leaves unchanged.
+Returns `{updated:[{handle,applied}], errors?}`.
+
+### move_cards([CardMove]) — batch
+Per item: `_resolve_handle` → `_resolve_list(to_list)` → `PUT /cards/{id}` with `idList`+`pos`.
+`CardMove{handle, to_list, pos="bottom"}`. Returns `{moved:[{from,to}], errors?}` (`to` is the new handle).
+
+To change the checklist name: `_write_checklist` → `POST /checklists name=Tasks`.
+Unknown label names are silently skipped (`_label_ids` keeps only slugs present on the board).
 
 ---
 
 ## Cron: Hourly Card Status Labels
 
-`_cron_loop()` runs in a `daemon=True` background thread, sleeping 1h between runs.
-`_cron_update_card_statuses()` does the actual work.
+`_cron_loop()` (daemon thread, `sleep(3600)`) → `_cron_update_card_statuses()`.
+Requires `TRELLO_CRON_BOARD_ID` (or resolves `TRELLO_CRON_BOARD_NAME`); skips silently otherwise.
 
-Requires `TRELLO_CRON_BOARD_ID` to be set; skips silently otherwise.
-
-**Logic per card (cards with a due date only):**
-
-| Condition | Action |
+| Condition (cards with a due date) | Action |
 |---|---|
-| `due_dt < now` | add `overdue` label, remove `due-today` label |
-| `due_dt.date() == today` | add `due-today` label, remove `overdue` label |
-| No due date | skipped |
+| `due < now` | add `overdue`, remove `due-today` |
+| `due.date() == today` | add `due-today`, remove `overdue` |
+| no due date | skipped |
 
-Labels `overdue` and `due-today` must be created manually on the board.
-Cards where the computed label set is unchanged are not touched (no unnecessary API calls).
+Labels `overdue` / `due-today` must exist on the board. Unchanged label sets → no PUT.
+**Note:** nothing in the tool read-path consumes these labels — they exist purely for the *visual*
+Trello board. If you only ever touch the board through the agent, this cron is optional dead weight
+(and deleting it removes the only process that writes to Trello behind the tools' back).
+To change interval: `time.sleep(3600)`. To extend logic: `_cron_update_card_statuses()`.
 
-To change interval: `time.sleep(3600)` in `_cron_loop()`.
-To extend cron logic (e.g. move cards between lists): `_cron_update_card_statuses()`.
+---
+
+## Technology Notes
+
+**Stateless / no slug↔id store — the core architectural decision.**
+A persistent slug↔id mirror would buy rename-stable handles and "what changed since last sync"
+diffs, but it introduces cache invalidation: the mirror drifts whenever Trello is edited from the
+web UI, mobile, *or this server's own hourly cron*. At this scale (one agent, one personal board,
+~tens of cards) that cost isn't worth it, so **Trello stays the sole source of truth** and handles
+are recomputed live each call. Consequences to know:
+- **Renaming a card changes its handle** (slug is derived from the current title). Fine here because
+  the agent re-reads the board each session anyway; would not be fine in a multi-user product.
+- **Collision handles (`~id4`) are only stable while the colliding cards exist.** Deterministic given
+  the card ids, but if you delete one of two "Deploy" cards, the survivor's base handle stops colliding.
+- **Every call hits Trello** (no cache). One board fetch per tool call (~100–300ms). Acceptable at
+  ~20 cards / 1 agent; would need Redis + TTL, not in-process dicts, to scale horizontally.
+- **Per-call caches are plain dicts**, discarded when the tool returns — correct for a single process,
+  structurally wrong for N app instances (each would hold a divergent copy).
+
+**FastMCP 3.x.** `requirements.txt` pins `fastmcp` unpinned → the image builds against latest 3.x.
+In v3 `@mcp.tool()` returns the original coroutine (and registers it as a side effect); there is no
+`.fn` wrapper, so tests call the tool functions directly. If a future fastmcp changes this, the test
+imports at the top of `tests/test_mcp_server.py` break first.
+
+**Auth.** `TRELLO_API_KEY` + `TRELLO_TOKEN` (query params on every request, from
+trello.com/power-ups/admin). No per-user scoping — single-tenant by design.
 
 ---
 
 ## Claude Code Integration
 
-Add to Claude Code MCP config (run once in the project):
 ```sh
-claude mcp add trello --transport sse https://habittrackerdima.me/mcp/sse
+claude mcp add trello --transport http https://habittrackerdima.me/mcp/mcp
 ```
-
-Or add to `.claude/mcp.json`:
-```json
-{
-  "mcpServers": {
-    "trello": {
-      "type": "sse",
-      "url": "https://habittrackerdima.me/mcp/sse"
-    }
-  }
-}
-```
-
-At the start of a coding session, call `get_urgent_cards` to know what to work on next.
+Start a session with `describe_board("<board>")` for a cheap overview, then `get_cards(...)` with
+filters. Write plans with `create_cards([...])` in one batched call.
 
 ---
 
@@ -157,12 +178,17 @@ At the start of a coding session, call `get_urgent_cards` to know what to work o
 
 | What to change | Where | Note |
 |---|---|---|
-| MCP server port | `mcp_server.py` `mcp.run(port=...)` + `caddy/Caddyfile` proxy target | currently 8091 |
-| Route prefix | `caddy/Caddyfile` `handle_path /mcp/*` + MCP client URL | currently /mcp |
-| Cron interval | `mcp_server.py` `_cron_loop()` `time.sleep(3600)` | currently 1h |
-| Cron board | `TRELLO_CRON_BOARD_ID` env var in `.env` / docker-compose | |
-| Cron label logic | `mcp_server.py` `_cron_update_card_statuses()` | labels must exist on board |
-| Checklist name | `create_card` / `update_card` → `POST /checklists name=Tasks` | currently "Tasks" |
-| Excluded lists (urgent query) | `get_urgent_cards` `exclude` set | currently `{"Done", "Archive"}` |
-| New list position | `create_list` `pos` param | `"top"`, `"bottom"`, or integer |
-| Trello credentials | `TRELLO_API_KEY`, `TRELLO_TOKEN` env vars | from trello.com/power-ups/admin |
+| Handle format / slug rules | `_slug()`, `_build_handles()` | kebab `board/list/card`, `~id4` on collision |
+| Collision tiebreak length | `_build_handles()` `cid[:4]` | 4 hex chars of the Trello id |
+| Fuzzy-suggestion behaviour | `difflib.get_close_matches` in the 3 resolvers | on any unresolved name/handle |
+| Compact read columns | `get_cards` formatting loop | tab-delimited `handle/title/list/meta` |
+| Omit-empty rules | `_clean()` | drops None/""/[]/{}, keeps 0/False |
+| Checklist summary vs detail | `get_cards` uses `_checklist_counts`; `get_card` expands | `check:done/total` vs full items |
+| Checklist name | `_write_checklist` → `POST /checklists name=Tasks` | currently "Tasks" |
+| Batch input schemas | `NewCard` / `CardUpdate` / `CardMove` | Pydantic, sensible defaults |
+| MCP server port | `mcp.run(port=...)` + `caddy/Caddyfile` | currently 8091 |
+| Route prefix | `caddy/Caddyfile` `handle_path /mcp/*` + client URL | currently /mcp |
+| Cron interval | `_cron_loop()` `time.sleep(3600)` | currently 1h |
+| Cron board | `TRELLO_CRON_BOARD_ID` / `TRELLO_CRON_BOARD_NAME` env | |
+| Cron label logic | `_cron_update_card_statuses()` | labels must exist on board |
+| Trello credentials | `TRELLO_API_KEY`, `TRELLO_TOKEN` env vars | single-tenant |

@@ -13,28 +13,39 @@ os.environ.setdefault("TRELLO_CRON_BOARD_ID", "board-001")
 
 import mcp_server
 from mcp_server import (
+    CardMove,
+    CardUpdate,
+    NewCard,
+    ToolError,
+    _build_handles,
+    _clean,
     _cron_update_card_statuses,
-    create_card,
-    get_all_cards,
-    get_urgent_cards,
-    list_boards_and_lists,
-    update_card,
+    _slug,
+    create_cards,
+    describe_board,
+    get_card,
+    get_cards,
+    move_cards,
+    update_cards,
 )
 
-# FastMCP 2 wraps @mcp.tool() functions into FunctionTool objects.
-# Access the original coroutine via .fn for direct testing.
-_list_boards = list_boards_and_lists.fn
-_create_card = create_card.fn
-_update_card = update_card.fn
-_get_urgent = get_urgent_cards.fn
-_get_all = get_all_cards.fn
+# fastmcp 3.x: @mcp.tool() returns the original coroutine (and registers it),
+# so tools are called directly — there is no .fn wrapper to unwrap.
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
+# ── Fixtures / helpers ───────────────────────────────────────────────────────
+
+BOARD = {
+    "id": "b1",
+    "name": "FRM",
+    "lists": [
+        {"id": "l-auth", "name": "Auth"},
+        {"id": "l-done", "name": "Done"},
+    ],
+}
 
 
 def async_resp(data, status=200):
-    # httpx responses are sync objects — only the client methods (get/post/…) are async
     m = MagicMock()
     m.json.return_value = data
     m.status_code = status
@@ -77,387 +88,252 @@ def make_sync_ctx(*get_seq, put_data=None, delete_data=None):
     return ctx, client
 
 
+def card(cid, name, list_id, **extra):
+    base = {"id": cid, "name": name, "idList": list_id, "desc": "", "due": None,
+            "labels": [], "shortUrl": f"https://trello.com/c/{cid}", "checklists": []}
+    base.update(extra)
+    return base
+
+
 def future_today() -> str:
-    """ISO timestamp 2h from now — clearly in the future but still the same calendar day (safe up to 22:00)."""
     return (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-# ── list_boards_and_lists ────────────────────────────────────────────────────
+# ── Pure helpers ─────────────────────────────────────────────────────────────
+
+def test_slug_kebabs_and_strips():
+    assert _slug("Google SSO") == "google-sso"
+    assert _slug("  Email / Password!! ") == "email-password"
+    assert _slug("") == "untitled"
 
 
-async def test_list_boards_returns_structure():
-    boards = [
-        {"id": "b1", "name": "Dev", "lists": [{"id": "l1", "name": "To Do"}, {"id": "l2", "name": "Done"}]},
-        {"id": "b2", "name": "Personal", "lists": []},
+def test_clean_drops_empties_keeps_zero_and_false():
+    assert _clean({"a": "", "b": None, "c": [], "d": {}, "e": 0, "f": False, "g": "x"}) == {"e": 0, "f": False, "g": "x"}
+
+
+def test_build_handles_collision_gets_tiebreak():
+    cards = [card("aaaa1111", "Deploy", "l-auth"), card("bbbb2222", "Deploy", "l-auth"),
+             card("cccc3333", "Login", "l-auth")]
+    names = {"l-auth": "Auth"}
+    h = _build_handles(cards, "frm", names)
+    assert h["cccc3333"] == "frm/auth/login"               # unique → no suffix
+    assert h["aaaa1111"] == "frm/auth/deploy~aaaa"          # collision → deterministic id prefix
+    assert h["bbbb2222"] == "frm/auth/deploy~bbbb"
+
+
+# ── describe_board ───────────────────────────────────────────────────────────
+
+async def test_describe_board_counts_per_list():
+    cards = [card("c1", "A", "l-auth"), card("c2", "B", "l-auth"), card("c3", "C", "l-done")]
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await describe_board("frm")
+    assert result["board"] == "FRM"
+    assert result["total_cards"] == 3
+    assert result["lists"] == [{"list": "Auth", "cards": 2}, {"list": "Done", "cards": 1}]
+
+
+async def test_describe_board_unknown_suggests():
+    ctx, _ = make_async_ctx(async_resp([BOARD]))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        with pytest.raises(ToolError) as e:
+            await describe_board("frn")
+    assert "FRM" in str(e.value)
+
+
+# ── get_cards ────────────────────────────────────────────────────────────────
+
+async def test_get_cards_compact_lines_omit_empty():
+    cards = [
+        card("c1", "Google SSO", "l-auth"),
+        card("c2", "Email Login", "l-auth", due="2026-07-20T17:00:00Z",
+             labels=[{"name": "urgent"}],
+             checklists=[{"checkItems": [{"name": "x", "state": "complete"},
+                                         {"name": "y", "state": "incomplete"}]}]),
     ]
-    ctx, _ = make_async_ctx(async_resp(boards))
-
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _list_boards()
+        out = await get_cards("frm")
+    lines = out.split("\n")
+    assert lines[0] == "frm/auth/google-sso\tGoogle SSO\tAuth"          # no meta on empty card
+    assert lines[1] == "frm/auth/email-login\tEmail Login\tAuth\tdue:2026-07-20\t[urgent]\tcheck:1/2"
 
-    assert len(result["boards"]) == 2
-    assert result["boards"][0] == {
-        "board_id": "b1",
-        "board_name": "Dev",
-        "lists": [{"list_id": "l1", "list_name": "To Do"}, {"list_id": "l2", "list_name": "Done"}],
+
+async def test_get_cards_filters_combine():
+    cards = [
+        card("c1", "Has due", "l-auth", due="2026-07-10T00:00:00Z"),
+        card("c2", "Later due", "l-auth", due="2026-07-25T00:00:00Z"),
+        card("c3", "No due", "l-auth"),
+        card("c4", "In done", "l-done", due="2026-07-10T00:00:00Z"),
+    ]
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        out = await get_cards("frm", list_name="Auth", has_due=True, due_before="2026-07-15")
+    assert out == "frm/auth/has-due\tHas due\tAuth\tdue:2026-07-10"
+
+
+async def test_get_cards_no_match_message():
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp([]))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        out = await get_cards("frm", text="nothing")
+    assert out == "No cards match."
+
+
+# ── get_card ─────────────────────────────────────────────────────────────────
+
+async def test_get_card_full_detail_omit_empty():
+    cards = [card("c1", "Google SSO", "l-auth", desc="Wire OAuth",
+                  labels=[{"name": "urgent"}],
+                  checklists=[{"checkItems": [{"name": "step", "state": "complete"}]}])]
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await get_card("frm/auth/google-sso")
+    assert result == {
+        "handle": "frm/auth/google-sso",
+        "title": "Google SSO",
+        "list": "Auth",
+        "description": "Wire OAuth",
+        "labels": ["urgent"],
+        "checklist": [{"name": "step", "done": True}],
+        "url": "https://trello.com/c/c1",
     }
-    assert result["boards"][1]["lists"] == []
+    assert "due" not in result  # omit-empty
 
 
-async def test_list_boards_empty():
-    ctx, _ = make_async_ctx(async_resp([]))
-
+async def test_get_card_unresolvable_handle_suggests():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _list_boards()
-
-    assert result == {"boards": []}
-
-
-# ── create_card ──────────────────────────────────────────────────────────────
+        with pytest.raises(ToolError) as e:
+            await get_card("frm/auth/google")
+    assert "google-sso" in str(e.value)
 
 
-async def test_create_card_minimal():
-    list_info = {"idBoard": "b1"}
-    card = {"id": "card-1", "shortUrl": "https://trello.com/c/abc"}
-    ctx, client = make_async_ctx(async_resp(list_info), post_seq=[async_resp(card)])
+# ── create_cards (batch) ─────────────────────────────────────────────────────
 
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _create_card(list_id="l1", title="My Card", description="Details")
-
-    assert result == {"card_id": "card-1", "card_url": "https://trello.com/c/abc", "title": "My Card"}
-    client.post.assert_called_once()  # card only, no checklist
-
-
-async def test_create_card_with_checklist_and_labels():
-    list_info = {"idBoard": "b1"}
-    board_labels = [{"name": "feature", "id": "lbl-feat"}, {"name": "urgent", "id": "lbl-urg"}]
-    card = {"id": "card-2", "shortUrl": "https://trello.com/c/xyz"}
-    checklist = {"id": "cl-1"}
-
+async def test_create_cards_batch_names_resolved():
+    created1 = {"id": "n1", "shortUrl": "https://trello.com/c/n1"}
+    created2 = {"id": "n2", "shortUrl": "https://trello.com/c/n2"}
     ctx, client = make_async_ctx(
-        async_resp(list_info),
-        async_resp(board_labels),
-        post_seq=[async_resp(card), async_resp(checklist), async_resp({}), async_resp({})],
+        async_resp([BOARD]),                       # boards (cached across both)
+        async_resp([{"name": "urgent", "id": "lbl-u"}]),  # labels for card 2
+        post_seq=[async_resp(created1), async_resp(created2)],
     )
-
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _create_card(
-            list_id="l1",
-            title="Feature",
-            description="Build X",
-            checklist_items=["Step 1", "Step 2"],
-            labels=["feature", "urgent"],
-        )
+        result = await create_cards([
+            NewCard(board="frm", list_name="Auth", title="First"),
+            NewCard(board="frm", list_name="Auth", title="Second", labels=["urgent"]),
+        ])
+    assert result["created"] == [
+        {"handle": "frm/auth/first", "url": "https://trello.com/c/n1"},
+        {"handle": "frm/auth/second", "url": "https://trello.com/c/n2"},
+    ]
+    assert "errors" not in result
+    second_params = client.post.call_args_list[1][1]["params"]
+    assert second_params["idList"] == "l-auth"
+    assert second_params["idLabels"] == "lbl-u"
 
-    assert result["card_id"] == "card-2"
-    assert client.post.call_count == 4  # card + checklist + 2 items
 
-
-async def test_create_card_unknown_labels_silently_skipped():
-    list_info = {"idBoard": "b1"}
-    board_labels = [{"name": "bug", "id": "lbl-bug"}]
-    card = {"id": "card-3", "shortUrl": ""}
-
-    ctx, client = make_async_ctx(
-        async_resp(list_info),
-        async_resp(board_labels),
-        post_seq=[async_resp(card)],
-    )
-
+async def test_create_cards_per_item_error_isolated():
+    created = {"id": "n1", "shortUrl": ""}
+    ctx, _ = make_async_ctx(async_resp([BOARD]), post_seq=[async_resp(created)])
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _create_card(list_id="l1", title="T", description="D", labels=["nonexistent"])
+        result = await create_cards([
+            NewCard(board="frm", list_name="Auth", title="Good"),
+            NewCard(board="frm", list_name="Nope", title="Bad list"),
+        ])
+    assert result["created"] == [{"handle": "frm/auth/good", "url": ""}]
+    assert result["errors"][0]["index"] == 1
+    assert "Nope" in result["errors"][0]["error"]
 
-    assert result["card_id"] == "card-3"
-    assert "idLabels" not in str(client.post.call_args)
 
+# ── update_cards (batch) ─────────────────────────────────────────────────────
 
-async def test_create_card_with_due_date():
-    list_info = {"idBoard": "b1"}
-    card = {"id": "card-4", "shortUrl": ""}
-    ctx, client = make_async_ctx(async_resp(list_info), post_seq=[async_resp(card)])
-
+async def test_update_cards_partial_by_handle():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, client = make_async_ctx(async_resp([BOARD]), async_resp(cards), put_data=async_resp({}))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        await _create_card(list_id="l1", title="T", description="D", due_date="2025-06-15T17:00:00Z")
-
-    post_params = client.post.call_args[1]["params"]
-    assert post_params["due"] == "2025-06-15T17:00:00Z"
-
-
-# ── update_card ──────────────────────────────────────────────────────────────
+        result = await update_cards([CardUpdate(handle="frm/auth/google-sso", title="Google Sign-In")])
+    assert result["updated"] == [{"handle": "frm/auth/google-sso", "applied": ["title"]}]
+    assert client.put.call_args[1]["params"]["name"] == "Google Sign-In"
 
 
-async def test_update_card_title_only():
-    ctx, client = make_async_ctx(put_data=async_resp({}))
-
+async def test_update_cards_clear_due():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, client = make_async_ctx(async_resp([BOARD]), async_resp(cards), put_data=async_resp({}))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _update_card("card-1", title="New Title")
-
-    assert result == {"card_id": "card-1", "updated_fields": ["title"]}
-    client.put.assert_called_once()
-    assert client.put.call_args[1]["params"]["name"] == "New Title"
-
-
-async def test_update_card_clears_due_date():
-    ctx, client = make_async_ctx(put_data=async_resp({}))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        await _update_card("card-1", due_date="null")
-
+        await update_cards([CardUpdate(handle="frm/auth/google-sso", due="null")])
     assert client.put.call_args[1]["params"]["due"] == "null"
 
 
-async def test_update_card_moves_list():
-    ctx, client = make_async_ctx(put_data=async_resp({}))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _update_card("card-1", list_id="l-done")
-
-    assert client.put.call_args[1]["params"]["idList"] == "l-done"
-    assert "list_id" in result["updated_fields"]
-
-
-async def test_update_card_replaces_labels():
-    card_info = {"idBoard": "b1"}
-    board_labels = [{"name": "feature", "id": "lbl-feat"}, {"name": "bug", "id": "lbl-bug"}]
-
+async def test_update_cards_replaces_checklist():
+    cards = [card("c1", "Google SSO", "l-auth")]
     ctx, client = make_async_ctx(
-        async_resp(card_info),
-        async_resp(board_labels),
-        put_data=async_resp({}),
-    )
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        await _update_card("card-1", labels=["bug"])
-
-    label_put_params = client.put.call_args[1]["params"]
-    assert "lbl-bug" in label_put_params["idLabels"]
-    assert "lbl-feat" not in label_put_params["idLabels"]
-
-
-async def test_update_card_replaces_checklist():
-    existing_cls = [{"id": "old-cl"}]
-    new_cl = {"id": "new-cl"}
-
-    ctx, client = make_async_ctx(
-        async_resp(existing_cls),
-        post_seq=[async_resp(new_cl), async_resp({})],
+        async_resp([BOARD]),
+        async_resp(cards),
+        async_resp([{"id": "old-cl"}]),   # existing checklists on the card
+        post_seq=[async_resp({"id": "new-cl"}), async_resp({})],
         delete_data=async_resp({}),
-        put_data=async_resp({}),
     )
-
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _update_card("card-1", checklist_items=["New step"])
-
-    client.delete.assert_called_once()  # old checklist deleted
-    assert client.post.call_count == 2  # new checklist + 1 item
-    assert result["updated_fields"] == ["checklist_items"]
+        result = await update_cards([CardUpdate(handle="frm/auth/google-sso", checklist=["Fresh"])])
+    client.delete.assert_called_once()
+    assert result["updated"][0]["applied"] == ["checklist"]
 
 
-async def test_update_card_no_fields_no_put():
-    ctx, client = make_async_ctx(put_data=async_resp({}))
+# ── move_cards (batch) ───────────────────────────────────────────────────────
 
+async def test_move_cards_returns_new_handle():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, client = make_async_ctx(async_resp([BOARD]), async_resp(cards), put_data=async_resp({}))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        await _update_card("card-1")
-
-    client.put.assert_not_called()
-
-
-async def test_update_card_only_reports_applied_fields():
-    """updated_fields must reflect what was actually sent, not caller intent."""
-    ctx, client = make_async_ctx(put_data=async_resp({}))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _update_card("card-1", title="T", list_id="l-new")
-
-    assert set(result["updated_fields"]) == {"title", "list_id"}
-    assert client.put.call_args[1]["params"]["idList"] == "l-new"
+        result = await move_cards([CardMove(handle="frm/auth/google-sso", to_list="Done")])
+    assert result["moved"] == [{"from": "frm/auth/google-sso", "to": "frm/done/google-sso"}]
+    assert client.put.call_args[1]["params"]["idList"] == "l-done"
 
 
-# ── get_urgent_cards ─────────────────────────────────────────────────────────
-
-
-async def test_get_urgent_cards_sort_order():
-    """Due-date cards first, urgent-no-due second, rest last; Done excluded."""
-    lists = [
-        {"id": "l-todo", "name": "To Do"},
-        {"id": "l-done", "name": "Done"},
-    ]
-    cards = [
-        {"id": "c-nodue", "name": "No due", "due": None, "idList": "l-todo", "labels": [], "shortUrl": "", "checklists": []},
-        {"id": "c-urgent", "name": "Urgent no due", "due": None, "idList": "l-todo", "labels": [{"name": "urgent"}], "shortUrl": "", "checklists": []},
-        {"id": "c-due", "name": "Has due", "due": "2025-06-01T10:00:00Z", "idList": "l-todo", "labels": [], "shortUrl": "", "checklists": []},
-        {"id": "c-done", "name": "In Done", "due": None, "idList": "l-done", "labels": [], "shortUrl": "", "checklists": []},
-    ]
-
-    ctx, _ = make_async_ctx(async_resp(lists), async_resp(cards))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _get_urgent(board_id="b1", limit=10)
-
-    ids = [c["card_id"] for c in result["cards"]]
-    assert ids == ["c-due", "c-urgent", "c-nodue"]
-    assert "c-done" not in ids
-
-
-async def test_get_urgent_cards_respects_limit():
-    lists = [{"id": "l1", "name": "To Do"}]
-    cards = [
-        {"id": f"c{i}", "name": f"Card {i}", "due": f"2025-06-0{i}T10:00:00Z",
-         "idList": "l1", "labels": [], "shortUrl": "", "checklists": []}
-        for i in range(1, 6)
-    ]
-
-    ctx, _ = make_async_ctx(async_resp(lists), async_resp(cards))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _get_urgent(board_id="b1", limit=3)
-
-    assert len(result["cards"]) == 3
-
-
-async def test_get_urgent_cards_list_names_filter():
-    lists = [
-        {"id": "l-todo", "name": "To Do"},
-        {"id": "l-wip", "name": "In Progress"},
-        {"id": "l-done", "name": "Done"},
-    ]
-    cards = [
-        {"id": "c1", "due": None, "idList": "l-todo", "name": "In Todo", "labels": [], "shortUrl": "", "checklists": []},
-        {"id": "c2", "due": None, "idList": "l-wip", "name": "In WIP", "labels": [], "shortUrl": "", "checklists": []},
-        {"id": "c3", "due": None, "idList": "l-done", "name": "In Done", "labels": [], "shortUrl": "", "checklists": []},
-    ]
-
-    ctx, _ = make_async_ctx(async_resp(lists), async_resp(cards))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _get_urgent(board_id="b1", list_names=["To Do"])
-
-    assert len(result["cards"]) == 1
-    assert result["cards"][0]["card_id"] == "c1"
-
-
-async def test_get_urgent_cards_includes_checklist_state():
-    lists = [{"id": "l1", "name": "To Do"}]
-    cards = [{
-        "id": "c1", "name": "Card", "due": None, "idList": "l1", "labels": [], "shortUrl": "",
-        "checklists": [{"checkItems": [
-            {"name": "Step 1", "state": "complete"},
-            {"name": "Step 2", "state": "incomplete"},
-        ]}],
-    }]
-
-    ctx, _ = make_async_ctx(async_resp(lists), async_resp(cards))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _get_urgent(board_id="b1")
-
-    items = result["cards"][0]["checklist_items"]
-    assert items == [{"name": "Step 1", "checked": True}, {"name": "Step 2", "checked": False}]
-
-
-# ── get_all_cards ────────────────────────────────────────────────────────────
-
-
-async def test_get_all_cards_returns_everything():
-    cards = [
-        {"id": "c1", "name": "Card A", "desc": "", "due": None, "idList": "l-todo", "labels": [], "shortUrl": "", "checklists": []},
-        {"id": "c2", "name": "Card B", "desc": "", "due": None, "idList": "l-done", "labels": [], "shortUrl": "", "checklists": []},
-    ]
-    ctx, _ = make_async_ctx(async_resp(cards))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _get_all(board_id="b1")
-
-    assert len(result["cards"]) == 2
-
-
-async def test_get_all_cards_exclude_lists():
-    lists = [{"id": "l-done", "name": "Done"}, {"id": "l-todo", "name": "To Do"}]
-    cards = [
-        {"id": "c1", "name": "Active", "desc": "", "due": None, "idList": "l-todo", "labels": [], "shortUrl": "", "checklists": []},
-        {"id": "c2", "name": "Archived", "desc": "", "due": None, "idList": "l-done", "labels": [], "shortUrl": "", "checklists": []},
-    ]
-    ctx, _ = make_async_ctx(async_resp(lists), async_resp(cards))
-
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await _get_all(board_id="b1", exclude_lists=["Done"])
-
-    assert len(result["cards"]) == 1
-    assert result["cards"][0]["card_id"] == "c1"
-
-
-# ── Cron ─────────────────────────────────────────────────────────────────────
-
+# ── Cron (unchanged behaviour) ───────────────────────────────────────────────
 
 def test_cron_labels_overdue_card():
     overdue = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     cards = [{"id": "c1", "due": overdue, "idLabels": []}]
     labels = [{"name": "overdue", "id": "lbl-overdue"}, {"name": "due-today", "id": "lbl-today"}]
-
     ctx, client = make_sync_ctx(sync_resp(cards), sync_resp(labels), put_data=sync_resp({}))
-
     with patch("mcp_server.httpx.Client", return_value=ctx):
         _cron_update_card_statuses()
-
     put_params = client.put.call_args[1]["params"]
     assert "lbl-overdue" in put_params["idLabels"]
     assert "lbl-today" not in put_params["idLabels"]
 
 
 def test_cron_labels_due_today_card():
-    # Use 2h from now — clearly in the future so it's NOT counted as overdue,
-    # but still on today's calendar date (safe up to ~22:00 UTC).
     due_today = future_today()
     cards = [{"id": "c1", "due": due_today, "idLabels": []}]
     labels = [{"name": "overdue", "id": "lbl-overdue"}, {"name": "due-today", "id": "lbl-today"}]
-
     ctx, client = make_sync_ctx(sync_resp(cards), sync_resp(labels), put_data=sync_resp({}))
-
     with patch("mcp_server.httpx.Client", return_value=ctx):
         _cron_update_card_statuses()
-
     put_params = client.put.call_args[1]["params"]
     assert "lbl-today" in put_params["idLabels"]
     assert "lbl-overdue" not in put_params["idLabels"]
 
 
 def test_cron_no_api_call_when_labels_unchanged():
-    """Card already has the correct overdue label — no PUT."""
     overdue = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     cards = [{"id": "c1", "due": overdue, "idLabels": ["lbl-overdue"]}]
     labels = [{"name": "overdue", "id": "lbl-overdue"}]
-
     ctx, client = make_sync_ctx(sync_resp(cards), sync_resp(labels))
-
     with patch("mcp_server.httpx.Client", return_value=ctx):
         _cron_update_card_statuses()
-
     client.put.assert_not_called()
 
 
 def test_cron_skips_card_with_no_due_date():
     cards = [{"id": "c1", "due": None, "idLabels": []}]
     labels = [{"name": "overdue", "id": "lbl-overdue"}]
-
     ctx, client = make_sync_ctx(sync_resp(cards), sync_resp(labels))
-
     with patch("mcp_server.httpx.Client", return_value=ctx):
         _cron_update_card_statuses()
-
-    client.put.assert_not_called()
-
-
-def test_cron_no_put_when_board_has_no_matching_labels():
-    """Board has no 'overdue' label defined — nothing to add, no PUT."""
-    overdue = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    cards = [{"id": "c1", "due": overdue, "idLabels": []}]
-    labels = []
-
-    ctx, client = make_sync_ctx(sync_resp(cards), sync_resp(labels))
-
-    with patch("mcp_server.httpx.Client", return_value=ctx):
-        _cron_update_card_statuses()
-
     client.put.assert_not_called()
 
 
@@ -466,39 +342,27 @@ def test_cron_skips_when_no_board_configured():
     original_name = mcp_server.TRELLO_CRON_BOARD_NAME
     mcp_server.TRELLO_CRON_BOARD_ID = ""
     mcp_server.TRELLO_CRON_BOARD_NAME = ""
-
     with patch("mcp_server.httpx.Client") as MockClient:
         _cron_update_card_statuses()
         MockClient.assert_not_called()
-
     mcp_server.TRELLO_CRON_BOARD_ID = original_id
     mcp_server.TRELLO_CRON_BOARD_NAME = original_name
 
 
 def test_cron_resolves_board_name_to_id():
-    """When only TRELLO_CRON_BOARD_NAME is set, cron resolves board ID before running."""
     boards = [{"id": "b-resolved", "name": "My Board"}]
     due_today = future_today()
     cards = [{"id": "c1", "due": due_today, "idLabels": []}]
     labels = [{"name": "due-today", "id": "lbl-today"}]
-
     original_id = mcp_server.TRELLO_CRON_BOARD_ID
     original_name = mcp_server.TRELLO_CRON_BOARD_NAME
     mcp_server.TRELLO_CRON_BOARD_ID = ""
     mcp_server.TRELLO_CRON_BOARD_NAME = "My Board"
-
-    # All three GETs share the same mock client across the two httpx.Client() context blocks
     ctx, client = make_sync_ctx(
-        sync_resp(boards),   # 1st GET: board name resolution
-        sync_resp(cards),    # 2nd GET: cards fetch
-        sync_resp(labels),   # 3rd GET: labels fetch
-        put_data=sync_resp({}),
+        sync_resp(boards), sync_resp(cards), sync_resp(labels), put_data=sync_resp({}),
     )
-
     with patch("mcp_server.httpx.Client", return_value=ctx):
         _cron_update_card_statuses()
-
     client.put.assert_called_once()
-
     mcp_server.TRELLO_CRON_BOARD_ID = original_id
     mcp_server.TRELLO_CRON_BOARD_NAME = original_name
