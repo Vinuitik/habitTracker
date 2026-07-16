@@ -50,12 +50,19 @@ services:
       MONGO_DB: habits
       MONGO_AUTH_DB: admin
       TZ: Europe/London
+      # Backup → Drive (OAuth). Fail fast rather than run a backup-less container:
+      # a silent no-op here is exactly how backups died unnoticed before.
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:?set GOOGLE_OAUTH_CLIENT_ID in .env}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:?set GOOGLE_OAUTH_CLIENT_SECRET in .env}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${GOOGLE_OAUTH_REFRESH_TOKEN:?set GOOGLE_OAUTH_REFRESH_TOKEN in .env}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?set BACKUP_PASSPHRASE in .env — it is the only key to your backups}
+      BACKUP_FOLDER_NAME: ${BACKUP_FOLDER_NAME:-HabitBackups v2}
+      BACKUP_KEEP: ${BACKUP_KEEP:-5}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-12}
       TRELLO_API_KEY: ${TRELLO_API_KEY:-}
       TRELLO_TOKEN: ${TRELLO_TOKEN:-}
       TRELLO_CRON_BOARD_ID: ${TRELLO_CRON_BOARD_ID:-}
       TRELLO_CRON_BOARD_NAME: ${TRELLO_CRON_BOARD_NAME:-}
-    volumes:
-      - ./backup/habitbackup.json:/app/habitbackup.json:ro
     mem_limit: 128m
     restart: unless-stopped
 
