@@ -90,9 +90,22 @@ def make_sync_ctx(*get_seq, put_data=None, delete_data=None):
 
 def card(cid, name, list_id, **extra):
     base = {"id": cid, "name": name, "idList": list_id, "desc": "", "due": None,
-            "labels": [], "shortUrl": f"https://trello.com/c/{cid}", "checklists": []}
+            "labels": [], "shortUrl": f"https://trello.com/c/{cid}", "shortLink": cid,
+            "checklists": []}
     base.update(extra)
     return base
+
+
+def gcard(link, name, after=(), est=None, feature=None, done=False):
+    """Graph-shaped card for the pure scheduler tests."""
+    lines = [f"after: {a}" for a in after]
+    if feature:
+        lines.append(f"feature: {feature}")
+    if est is not None:
+        lines.append(f"est: {est}")
+    desc = "prose\n\n```meta\n" + "\n".join(lines) + "\n```" if lines else "prose"
+    return {"shortLink": link, "name": name, "idList": "L", "desc": desc,
+            "labels": [{"name": "done"}] if done else []}
 
 
 def future_today() -> str:
@@ -212,17 +225,18 @@ async def test_get_card_unresolvable_handle_suggests():
 # ── create_cards (batch) ─────────────────────────────────────────────────────
 
 async def test_create_cards_batch_names_resolved():
-    created1 = {"id": "n1", "shortUrl": "https://trello.com/c/n1"}
-    created2 = {"id": "n2", "shortUrl": "https://trello.com/c/n2"}
+    created1 = {"id": "n1", "shortUrl": "https://trello.com/c/n1", "shortLink": "n1"}
+    created2 = {"id": "n2", "shortUrl": "https://trello.com/c/n2", "shortLink": "n2"}
     ctx, client = make_async_ctx(
-        async_resp([BOARD]),                       # boards (cached across both)
+        async_resp([BOARD]),                              # boards
         async_resp([{"name": "urgent", "id": "lbl-u"}]),  # labels for card 2
         post_seq=[async_resp(created1), async_resp(created2)],
+        put_data=async_resp({}),
     )
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await create_cards([
-            NewCard(board="frm", list_name="Auth", title="First"),
-            NewCard(board="frm", list_name="Auth", title="Second", labels=["urgent"]),
+        result = await create_cards(board="frm", list_name="Auth", cards=[
+            NewCard(title="First"),
+            NewCard(title="Second", labels=["urgent"]),
         ])
     assert result["created"] == [
         {"handle": "frm/auth/first", "url": "https://trello.com/c/n1"},
@@ -232,19 +246,106 @@ async def test_create_cards_batch_names_resolved():
     second_params = client.post.call_args_list[1][1]["params"]
     assert second_params["idList"] == "l-auth"
     assert second_params["idLabels"] == "lbl-u"
+    # feature defaults to the list name and is written in the meta pass
+    assert "feature: auth" in client.put.call_args_list[0][1]["params"]["desc"]
 
 
 async def test_create_cards_per_item_error_isolated():
-    created = {"id": "n1", "shortUrl": ""}
-    ctx, _ = make_async_ctx(async_resp([BOARD]), post_seq=[async_resp(created)])
+    created = {"id": "n1", "shortUrl": "", "shortLink": "n1"}
+    ctx, _ = make_async_ctx(async_resp([BOARD]), post_seq=[async_resp(created), Exception("boom")],
+                            put_data=async_resp({}))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await create_cards([
-            NewCard(board="frm", list_name="Auth", title="Good"),
-            NewCard(board="frm", list_name="Nope", title="Bad list"),
+        result = await create_cards(board="frm", list_name="Auth", cards=[
+            NewCard(title="Good"),
+            NewCard(title="Bad"),
         ])
     assert result["created"] == [{"handle": "frm/auth/good", "url": ""}]
     assert result["errors"][0]["index"] == 1
-    assert "Nope" in result["errors"][0]["error"]
+
+
+async def test_create_cards_flags_too_big():
+    created = {"id": "n1", "shortUrl": "", "shortLink": "n1"}
+    ctx, _ = make_async_ctx(async_resp([BOARD]), post_seq=[async_resp(created)], put_data=async_resp({}))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await create_cards(board="frm", list_name="Auth", cards=[NewCard(title="Huge", est=4)])
+    assert result["too_big"] == [{"card": "Huge", "est": 4}]
+    assert "split" in result["advice"].lower()
+
+
+# ── meta block ───────────────────────────────────────────────────────────────
+
+def test_meta_round_trips_and_is_idempotent():
+    d = mcp_server._set_meta("prose", [("kPq3xR1a", "Session")], 2.0, "auth")
+    assert mcp_server._parse_meta(d) == (["kPq3xR1a"], 2.0, "auth")
+    assert mcp_server._set_meta(d, [("kPq3xR1a", "Session")], 2.0, "auth") == d
+    assert d.startswith("prose")
+
+
+def test_meta_absent_or_junk_is_harmless():
+    assert mcp_server._parse_meta("") == ([], None, None)
+    assert mcp_server._parse_meta("just prose") == ([], None, None)
+    assert mcp_server._parse_meta("```meta\nest: notanumber\n```") == ([], None, None)
+
+
+def test_is_done_reads_label():
+    assert mcp_server._is_done({"labels": [{"name": "done"}]})
+    assert not mcp_server._is_done({"labels": [{"name": "urgent"}]})
+
+
+# ── scheduler (pure) ─────────────────────────────────────────────────────────
+
+def _chain(n):
+    return [gcard("n1", "s1")] + [gcard(f"n{i}", f"s{i}", (f"n{i-1}",)) for i in range(2, n + 1)]
+
+
+def test_schedule_respects_dependency_order():
+    p = mcp_server._schedule(_chain(5), start="2026-07-17", pace=2)
+    day = {r["card"]: r["date"] for r in p["rows"]}
+    assert day["s1"] < day["s2"] < day["s3"] < day["s4"] < day["s5"]
+
+
+def test_schedule_spreads_and_leaves_no_empty_days():
+    cards = [gcard("base", "base")] + [
+        gcard(f"x{i}", f"x{i}", ("base",)) for i in range(1, 10)
+    ]
+    p = mcp_server._schedule(cards, deadline="2026-07-24", start="2026-07-17")
+    assert p["window_days"] == 8
+    assert all(v > 0 for v in p["load"].values()), p["load"]
+    assert sum(p["load"].values()) == 10
+
+
+def test_schedule_deadline_reports_intensity():
+    p = mcp_server._schedule(_chain(4) + [gcard("z", "z")], deadline="2026-07-21", start="2026-07-17")
+    assert p["window_days"] == 5
+    assert p["intensity"] == 1.0
+
+
+def test_schedule_without_deadline_uses_pace_and_reports_end():
+    cards = [gcard(f"n{i}", f"s{i}") for i in range(8)]
+    p = mcp_server._schedule(cards, start="2026-07-17", pace=2)
+    assert p["window_days"] == 4
+    assert p["end"] == "2026-07-20"
+
+
+def test_schedule_chain_longer_than_window_stacks_and_says_so():
+    p = mcp_server._schedule(_chain(6), deadline="2026-07-19", start="2026-07-17")
+    assert p["stacked_chain"] and p["chain"] == 6 and p["window_days"] == 3
+    assert max(p["load"].values()) > 1
+
+
+def test_schedule_detects_cycle_with_the_loop():
+    p = mcp_server._schedule([gcard("a", "A", ("c",)), gcard("b", "B", ("a",)), gcard("c", "C", ("b",))])
+    assert [p["by_link"][l]["name"] for l in p["cycle"]] == ["A", "C", "B", "A"]
+
+
+def test_schedule_reports_dangling_edge():
+    p = mcp_server._schedule([gcard("a", "A", ("nope",))], start="2026-07-17")
+    assert p["dangling"] == [{"card": "A", "unknown_ref": "nope"}]
+
+
+def test_schedule_deadline_before_start_errors():
+    p = mcp_server._schedule([gcard("a", "A")], deadline="2026-07-10", start="2026-07-17")
+    assert "error" in p
 
 
 # ── update_cards (batch) ─────────────────────────────────────────────────────
