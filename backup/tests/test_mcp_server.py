@@ -21,12 +21,14 @@ from mcp_server import (
     _clean,
     _cron_update_card_statuses,
     _slug,
+    archive_cards,
     complete_cards,
     create_cards,
     describe_board,
     get_card,
     get_cards,
     move_cards,
+    park_cards,
     update_cards,
 )
 
@@ -137,14 +139,21 @@ def test_build_handles_collision_gets_tiebreak():
 
 # ── describe_board ───────────────────────────────────────────────────────────
 
-async def test_describe_board_counts_per_list():
-    cards = [card("c1", "A", "l-auth"), card("c2", "B", "l-auth"), card("c3", "C", "l-done")]
+async def test_describe_board_splits_open_done_parked():
+    cards = [
+        card("c1", "A", "l-auth"),
+        card("c2", "B", "l-auth", labels=[{"id": "d", "name": "done"}]),
+        card("c3", "C", "l-auth", labels=[{"id": "p", "name": "parked"}]),
+        card("c4", "D", "l-done"),
+    ]
     ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         result = await describe_board("frm")
-    assert result["board"] == "FRM"
-    assert result["total_cards"] == 3
-    assert result["lists"] == [{"list": "Auth", "cards": 2}, {"list": "Done", "cards": 1}]
+    assert result["total_cards"] == 4
+    assert result["lists"] == [
+        {"list": "Auth", "done": 1, "parked": 1, "open": 1},
+        {"list": "Done", "open": 1},  # zero-count keys dropped by _clean
+    ]
 
 
 async def test_describe_board_unknown_suggests():
@@ -317,6 +326,42 @@ async def test_complete_cards_reopen_removes_label():
         result = await complete_cards(["frm/auth/google-sso"], done=False)
     assert result["changed"] == [{"handle": "frm/auth/google-sso", "done": False}]
     assert client.put.call_args_list[0][1]["params"]["idLabels"] == ""
+
+
+async def test_park_cards_applies_parked_label():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, client = make_async_ctx(
+        async_resp([BOARD]), async_resp(cards),
+        async_resp([]),                            # no labels on board yet
+        post_seq=[async_resp({"id": "lbl-parked"})],
+        put_data=async_resp({}),
+    )
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await park_cards(["frm/auth/google-sso"])
+    assert result["changed"] == [{"handle": "frm/auth/google-sso", "parked": True}]
+    assert client.post.call_args_list[0][0][0].endswith("/labels")
+    assert "lbl-parked" in client.put.call_args_list[0][1]["params"]["idLabels"]
+
+
+async def test_archive_cards_closes_card():
+    cards = [card("c1", "Junk", "l-auth")]
+    ctx, client = make_async_ctx(async_resp([BOARD]), async_resp(cards), put_data=async_resp({}))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await archive_cards(["frm/auth/junk"])
+    assert result["archived"] == [{"handle": "frm/auth/junk"}]
+    assert client.put.call_args_list[0][1]["params"]["closed"] == "true"
+
+
+def test_parked_card_excluded_from_scheduler():
+    b = {"lists": [{"id": "L1", "name": "auth"}]}
+    cards = [
+        gcard("a", "A"),
+        {"shortLink": "b", "name": "B", "idList": "L1", "desc": "p",
+         "labels": [{"id": "p", "name": "parked"}]},
+    ]
+    from datetime import date
+    live = mcp_server._schedulable(b, cards, None, date(2026, 7, 17))
+    assert [c["name"] for c in live] == ["A"]
 
 
 # ── meta block ───────────────────────────────────────────────────────────────

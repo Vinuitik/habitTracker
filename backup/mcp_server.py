@@ -190,6 +190,7 @@ DEFAULT_EST = 1.0
 META_LIST = "_meta"       # holds the STATE card; excluded from every read and the scheduler
 STATE_CARD = "STATE"
 DONE_LABEL = "done"
+PARKED_LABEL = "parked"   # excluded from scheduling until unparked; not done, just not now
 DEFAULT_PACE = 2.0        # cards/day when no deadline is given
 
 
@@ -239,8 +240,16 @@ def _set_meta(desc: str, after: list[tuple[str, str]], est: float | None, featur
     return f"{body}\n\n{block}".strip() if block else body
 
 
+def _has_label(card: dict, name: str) -> bool:
+    return any(_slug(l.get("name", "")) == name for l in card.get("labels", []))
+
+
 def _is_done(card: dict) -> bool:
-    return any(_slug(l.get("name", "")) == DONE_LABEL for l in card.get("labels", []))
+    return _has_label(card, DONE_LABEL)
+
+
+def _is_parked(card: dict) -> bool:
+    return _has_label(card, PARKED_LABEL)
 
 
 # ── Graph ───────────────────────────────────────────────────────────────────────
@@ -460,14 +469,21 @@ class CardMove(BaseModel):
 
 @mcp.tool()
 async def describe_board(board: str) -> dict:
-    """Overview of a board: every list and how many cards it holds. Cheap situational
-    awareness — call this first instead of dumping all cards. Accepts a board name or slug."""
+    """Overview of a board: every list with its card count split into open / done / parked. Cheap
+    situational awareness — call this first instead of dumping all cards. Accepts a board name or
+    slug. `open` is what is still live work; use describe_graph to see how those cards depend."""
     async with httpx.AsyncClient() as client:
         cache: dict = {}
         b = await _resolve_board(client, board, cache)
         cards = await _cards(client, b["id"], cache)
-        counts = Counter(c["idList"] for c in cards)
-        lists = [{"list": l["name"], "cards": counts.get(l["id"], 0)} for l in b.get("lists", [])]
+        by_list: dict[str, dict] = {l["id"]: {"done": 0, "parked": 0, "open": 0} for l in b.get("lists", [])}
+        for c in cards:
+            bucket = by_list.get(c["idList"])
+            if bucket is None:
+                continue
+            bucket["done" if _is_done(c) else "parked" if _is_parked(c) else "open"] += 1
+        lists = [{"list": l["name"], **{k: v for k, v in by_list[l["id"]].items() if v}}
+                 for l in b.get("lists", [])]
     return {"board": b["name"], "slug": _slug(b["name"]), "lists": lists, "total_cards": len(cards)}
 
 
@@ -790,6 +806,28 @@ async def move_cards(moves: list[CardMove]) -> dict:
     return _clean({"moved": moved, "errors": errors})
 
 
+async def _toggle_label(handles: list[str], label: str, on: bool, key: str) -> dict:
+    """Add (on=True) or remove a board label across a batch of cards, creating it if needed. Shared
+    by complete_cards and park_cards — both are just 'this card carries label X or not'."""
+    changed, errors = [], []
+    async with httpx.AsyncClient() as client:
+        cache, label_cache = {}, {}
+        for h in handles:
+            try:
+                board, _, c = await _resolve_handle(client, h, cache)
+                lid = await _ensure_label(client, board["id"], label, label_cache)
+                have = {l["id"] for l in c.get("labels", [])}
+                want = have | {lid} if on else have - {lid}
+                if want != have:
+                    r = await client.put(f"{TRELLO_BASE}/cards/{c['id']}",
+                                         params={**_auth(), "idLabels": ",".join(want)})
+                    r.raise_for_status()
+                changed.append({"handle": h, key: on})
+            except Exception as e:
+                errors.append({"handle": h, "error": str(e)})
+    return _clean({"changed": changed, "errors": errors})
+
+
 @mcp.tool()
 async def complete_cards(handles: list[str], done: bool = True) -> dict:
     """Mark one or more cards done (or reopen them with done=False). Batch, addressed by handle.
@@ -799,36 +837,52 @@ async def complete_cards(handles: list[str], done: bool = True) -> dict:
     carries that label. This tool creates the `done` label on the board the first time it is needed,
     so it always sticks; setting the label by hand via update_cards silently fails if the label does
     not already exist. Done cards drop out of scheduling and out of the dependency-candidate set."""
-    changed, errors = [], []
+    return await _toggle_label(handles, DONE_LABEL, done, "done")
+
+
+@mcp.tool()
+async def park_cards(handles: list[str], parked: bool = True) -> dict:
+    """Park one or more cards (or unpark with parked=False). Batch, addressed by handle.
+
+    Parked is 'not now', distinct from done ('finished'). A parked card is held out of scheduling
+    and out of describe_graph, but is NOT complete — use this for work you are deferring, or to keep
+    a list out of the plan without passing `lists=` on every schedule call. Unpark to bring it back.
+    Creates the `parked` label on the board as needed."""
+    return await _toggle_label(handles, PARKED_LABEL, parked, "parked")
+
+
+@mcp.tool()
+async def archive_cards(handles: list[str]) -> dict:
+    """Archive (close) one or more cards, removing them from the board without deleting them. Batch,
+    addressed by handle. Use this for template junk and anything you want out of sight — it is the
+    right tool for 'hide this', which done and parked are not. Archived cards can be restored from
+    Trello's UI. This does not delete; there is no hard-delete tool by design."""
+    archived, errors = [], []
     async with httpx.AsyncClient() as client:
-        cache, label_cache = {}, {}
+        cache: dict = {}
         for h in handles:
             try:
-                board, _, c = await _resolve_handle(client, h, cache)
-                did = await _ensure_label(client, board["id"], DONE_LABEL, label_cache)
-                have = {l["id"] for l in c.get("labels", [])}
-                want = have | {did} if done else have - {did}
-                if want != have:
-                    r = await client.put(f"{TRELLO_BASE}/cards/{c['id']}",
-                                         params={**_auth(), "idLabels": ",".join(want)})
-                    r.raise_for_status()
-                changed.append({"handle": h, "done": done})
+                _, _, c = await _resolve_handle(client, h, cache)
+                r = await client.put(f"{TRELLO_BASE}/cards/{c['id']}", params={**_auth(), "closed": "true"})
+                r.raise_for_status()
+                archived.append({"handle": h})
             except Exception as e:
                 errors.append({"handle": h, "error": str(e)})
-    return _clean({"changed": changed, "errors": errors})
+    return _clean({"archived": archived, "errors": errors})
 
 
 # ── Scheduling ─────────────────────────────────────────────────────────────────
 
 def _schedulable(b: dict, all_cards: list[dict], lists: list[str] | None, today: date) -> list[dict]:
-    """Everything not done and not frozen. Frozen = sits in a PAST day list (already worked).
-    A card in a past day list WITHOUT the done label is a straggler: it is not frozen, it gets
-    pulled forward. The _meta list (STATE card) is never schedulable."""
+    """Everything not done, not parked, and not frozen. Frozen = sits in a PAST day list (already
+    worked). A card in a past day list WITHOUT the done label is a straggler: it is not frozen, it
+    gets pulled forward. Parked cards are held out until unparked; the _meta list (STATE card) is
+    never schedulable."""
     name_by_id = {l["id"]: l["name"].strip() for l in b.get("lists", [])}
     ok = []
     for c in all_cards:
         ln = name_by_id.get(c["idList"], "")
-        if _slug(ln) == META_LIST.strip("_") or ln == META_LIST or _is_done(c):
+        if _slug(ln) == META_LIST.strip("_") or ln == META_LIST or _is_done(c) or _is_parked(c):
             continue
         if lists is not None:
             if _slug(ln) in {_slug(x) for x in lists}:
@@ -999,8 +1053,10 @@ async def describe_graph(board: str) -> dict:
         all_cards = await _cards(client, b["id"], cache)
         name_by_id = {l["id"]: l["name"].strip() for l in b.get("lists", [])}
 
-        live = [c for c in all_cards if not _is_done(c) and name_by_id.get(c["idList"], "") != META_LIST]
+        live = [c for c in all_cards if not _is_done(c) and not _is_parked(c)
+                and name_by_id.get(c["idList"], "") != META_LIST]
         done_n = sum(1 for c in all_cards if _is_done(c))
+        parked_n = sum(1 for c in all_cards if _is_parked(c))
         handles = _build_handles(live, _slug(b["name"]), name_by_id)
         by_link = {c["shortLink"]: c for c in live}
 
@@ -1021,6 +1077,7 @@ async def describe_graph(board: str) -> dict:
     return _clean({
         "features": [{"feature": f, "in_flight": n} for f, n in sorted(feats.items())],
         "done_cards": done_n,
+        "parked_cards": parked_n,
         "in_flight": "\n".join(rows) if rows else "Nothing in flight.",
         "hint": "Depend on these by handle. For what is already built, call get_state.",
     })

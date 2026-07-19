@@ -153,7 +153,7 @@ ignored — a missing edge yields a *confidently wrong* schedule.
 
 ---
 
-## Tool Surface (13 tools)
+## Tool Surface (16 tools)
 
 All reads omit-empty (`_clean()` drops `None`/`""`/`[]`/`{}`, keeps `0`/`False`).
 The `_meta` list and the STATE card are excluded from every card read and from the scheduler.
@@ -162,17 +162,36 @@ The `_meta` list and the STATE card are excluded from every card read and from t
 |---|---|
 | `get_state(board)` | **read first.** What the app IS: built + planned. |
 | `describe_graph(board)` | **read second.** Features + in-flight cards + edges. Done cards omitted. |
-| `describe_board(board)` | lists + card counts. Cheap situational awareness. |
+| `describe_board(board)` | lists + card counts split open/done/parked. Cheap situational awareness. |
 | `get_cards(...)` | compact lines; filters `list_name`/`feature`/`label`/`text`/`due_before`/`has_due`/`include_done` |
 | `get_card(handle)` | full detail incl. checklist |
 | `create_lists([NewList])` | batch; topic or dated |
 | `create_cards(board, list_name, cards, feature?)` | batch, hoisted schema; two-pass so intra-batch edges resolve |
 | `update_cards([CardUpdate])` | batch, partial; `after`/`est`/`feature` |
 | `move_cards([CardMove])` | batch; the manual override |
+| `complete_cards(handles, done=True)` | toggle the `done` label; the only correct way to tick |
+| `park_cards(handles, parked=True)` | toggle the `parked` label; held out of scheduling, not done |
+| `archive_cards(handles)` | close (hide) cards without deleting; for template junk |
 | `split_card([CardSplit])` | break a card up, inherit edges; the cycle repair |
 | `propose_schedule(...)` | read-only dated plan |
 | `apply_schedule(...)` | creates day lists + bulk-moves, one call |
 | `update_state(board, content)` | overwrite STATE wholesale |
+
+### Three card states, three tools
+
+Cards have three orthogonal "not live" states, and conflating them was the original friction:
+
+| state | label / mechanism | scheduler | meaning |
+|---|---|---|---|
+| **done** | `done` label | excluded (frozen anchor) | finished |
+| **parked** | `parked` label | excluded (returns on unpark) | deferred / "not now" |
+| **archived** | Trello `closed=true` | gone from board | hidden junk, restorable |
+
+`complete_cards` / `park_cards` share `_toggle_label` — both just add/remove a board label, creating
+it on first use (so it always sticks; a hand-set label via `update_cards` silently fails if the label
+doesn't exist yet). `archive_cards` uses `closed=true`. There is **no hard-delete** by design —
+archive is reversible from the Trello UI. Parked exists so you never have to pass `lists=` on every
+schedule call just to keep a list out of the plan.
 
 ### Why `describe_graph` hides done cards
 
@@ -289,7 +308,10 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Default estimate | `DEFAULT_EST` | 1 |
 | "too big" threshold | `est > 1` in `create_cards` / `_schedule` | advice → `split_card` |
 | Done marker | `DONE_LABEL` + `_is_done()` | label `done` |
-| Straggler / frozen rule | `_schedulable()` | past day list + not done → pulled forward |
+| Parked marker | `PARKED_LABEL` + `_is_parked()` | label `parked`; held out of scheduling |
+| Label toggle (done/parked) | `_toggle_label()` | shared add/remove, creates label on first use |
+| Archive (hide) | `archive_cards()` | Trello `closed=true`; reversible, no hard-delete |
+| Straggler / frozen rule | `_schedulable()` | past day list + not done/parked → pulled forward |
 | STATE card location | `META_LIST`, `STATE_CARD` | `_meta/STATE` |
 | Day list name format | `DATE_RE` + `apply_schedule` | `YYYY-MM-DD` |
 | Intra-day ordering | `apply_schedule` `pos="bottom"` + topo row order | order in list = dep order |
