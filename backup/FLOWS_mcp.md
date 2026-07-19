@@ -116,24 +116,28 @@ occupies multiple days. Two modes:
 | `deadline` given | fixed: `deadline - start + 1` | `intensity` = cards/day you signed up for |
 | no `deadline` | `max(chain, ceil(total/pace))` | `end` = implied finish date |
 
-Placement is greedy in topological order, each card landing on the **least-loaded day still open to
-it** (ties → earliest), bounded by:
+Placement is **even bucketing of the topological order**. Walk the sorted sequence; each card's day
+is set by the cumulative weight *before* it, mapped onto the window:
 
-- `lo` = `depth[n]-1` (its chain position), and strictly after every placed predecessor
-- `hi` = `window - height[n]` — parking it later would push its dependents past the deadline
+```
+day(n) = floor( cum_before(n) / total * window )      # clamped to [0, window-1]
+```
 
-Both bounds are load-bearing and were found by testing, not theory:
-- Without `hi`, least-loaded is **myopic** — it drops an independent card on a far empty day and
-  strands the chain behind it (observed: `1,1,1,1,1,2,7`).
-- First-fit-under-target instead fills the front and dumps the remainder on the deadline
-  (observed: `1,1,1,1,1,1,1,7`).
-- With both: `1,2,2,2,2,2,2,1`. Flat, zero empty days.
+`cum` runs 0 → total, so `day` runs 0 → window-1 evenly. This is dependency-safe **for free**: `cum`
+only increases and topo order places every predecessor first, so `day` is non-decreasing along real
+edges → a predecessor always lands on the same day as its dependent or earlier, never later. Cards
+sharing a day are still emitted in dependency order, and `apply_schedule` preserves it via
+`pos="bottom"`.
 
-`depth`/`height` are CPM's forward/backward passes counted **in cards, not time** — that's the whole
-trick. To change levelling: the greedy loop in `_schedule`. To change pace default: `DEFAULT_PACE`.
+This replaced an earlier greedy/chain-bounded version that **back-loaded** — it pushed leaf tasks to
+7–9/day near the deadline while early days sat at 2–3. The fix (per the user: "topological sort then
+divide into even buckets") is both simpler and correct: observed load for 26 cards over 20 days is
+`2,1,1,1,2,1,1,1,…` — min 1, max 2, zero empty days.
 
-Chain longer than the window → `hi < lo`, clamped, chained cards **stack on one day**. Legal (you
-work multiple cards/day) and reported as `stacked_chain`.
+To change spreading: the `cum` loop in `_schedule`. To change pace default: `DEFAULT_PACE`.
+
+Chain longer than the window just means chained cards **share days** — allowed (you work multiple
+cards/day), reported as `stacked_chain` for information only. No special-casing.
 
 ### Cycles
 
@@ -279,8 +283,8 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Meta block format | `META_RE`, `_parse_meta`, `_render_meta` | ```meta fence in card desc |
 | Handle format / slug rules | `_slug()`, `_build_handles()` | kebab `board/list/card`, `~id4` on collision |
 | Fuzzy-suggestion behaviour | `difflib.get_close_matches` in the 3 resolvers | on any unresolved name/handle |
-| Levelling algorithm | greedy loop in `_schedule()` | least-loaded within `[lo, hi]` |
-| Chain bounds | `_chain_pos()` | depth = earliest, height = latest |
+| Spreading algorithm | `cum` loop in `_schedule()` | even bucketing of the topo order by cumulative weight |
+| Longest-chain (info) | `_longest_chain()` | reported as `chain`/`stacked_chain`, not a constraint |
 | Default pace | `DEFAULT_PACE` | 2 cards/day when no deadline |
 | Default estimate | `DEFAULT_EST` | 1 |
 | "too big" threshold | `est > 1` in `create_cards` / `_schedule` | advice → `split_card` |

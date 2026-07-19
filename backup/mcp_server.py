@@ -313,42 +313,41 @@ def _topo(preds: dict[str, list[str]]) -> tuple[list[str] | None, dict[str, list
     return (order if len(order) == len(preds) else None), succs
 
 
-def _chain_pos(order: list[str], preds: dict[str, list[str]], succs: dict[str, list[str]]):
-    """depth = cards in the longest chain ENDING at n (how early n can possibly be).
-    height = cards in the longest chain STARTING at n (how late n can possibly be, or it drags
-    its dependents past the deadline). Counted in cards, not time — a card is one day at most."""
+def _longest_chain(order: list[str], preds: dict[str, list[str]]) -> int:
+    """Cards in the longest dependency chain. Informational only — a chain longer than the window
+    just means some chained cards share a day, which is allowed."""
     depth: dict[str, int] = {}
     for n in order:
         depth[n] = 1 + max((depth[p] for p in preds[n]), default=0)
-    height: dict[str, int] = {}
-    for n in reversed(order):
-        height[n] = 1 + max((height[s] for s in succs[n]), default=0)
-    return depth, height
+    return max(depth.values(), default=0)
 
 
 def _schedule(cards: list[dict], deadline: str | None = None, start: str | None = None,
               pace: float = DEFAULT_PACE) -> dict:
-    """Topological order + even spreading of card COUNT across the window.
+    """Topological sort, then slice the ordered sequence into even buckets across the window.
 
-    Cards are atomic steps of uniform weight, so `est` is a load figure, not a duration — nothing
-    here models a task occupying multiple days. Two modes:
-      deadline given → window is fixed; target load = total/window. The plan always fits; how hard
-                       you are pushing comes back as `intensity` (cards/day).
-      no deadline    → schedule at `pace` cards/day and report the implied end date.
-    A chain longer than the window forces stacking, which is legal (multiple cards/day) but reported.
+    Cards are atomic steps: `est` is a load weight, not a duration, and nothing occupies more than a
+    day. The schedule is dead simple by design — sort so every dependency precedes its dependents,
+    then walk the sequence assigning each card the day at its position in the CUMULATIVE weight. That
+    is perfectly even and automatically dependency-safe: a card's day is monotonic in its position,
+    so a predecessor always lands on the same day as its dependent or earlier (never later). Cards
+    that share a day are still emitted in dependency order, and apply_schedule keeps that order.
+
+    Two modes:
+      deadline given → window is fixed; `intensity` (cards/day) reports how hard you are pushing.
+      no deadline    → window = enough days at `pace` cards/day; reports the implied end date.
     """
     by_link, preds, ests, dangling = _build_graph(cards)
     if not by_link:
         return {"error": "No cards to schedule."}
 
-    order, succs = _topo(preds)
+    order, _ = _topo(preds)
     if order is None:
         return {"cycle": _find_cycle(preds) or [], "by_link": by_link}
 
     start_d = date.fromisoformat(start) if start else date.today()
     total = sum(ests.values())
-    depth, height = _chain_pos(order, preds, succs)
-    chain = max(depth.values(), default=0)
+    chain = _longest_chain(order, preds)
 
     if deadline:
         end_d = date.fromisoformat(deadline)
@@ -358,24 +357,18 @@ def _schedule(cards: list[dict], deadline: str | None = None, start: str | None 
     else:  # natural pace — the schedule defines its own end
         window = max(chain, int(-(-total // pace)))
 
-    # Greedy in topological order, placing each card on the least-loaded day still open to it
-    # (ties → earliest). Two bounds keep it honest:
-    #   lo — its chain depth, and strictly after every predecessor already placed
-    #   hi — window minus its chain height, so parking it late cannot push its dependents past
-    #        the deadline. Without hi, least-loaded is myopic: it drops an independent card on a
-    #        far empty day and strands the chain behind it (and first-fit instead just fills the
-    #        front and dumps the remainder on the last day).
-    # Chain longer than the window → hi < lo, we clamp, and chained cards stack. Legal here, and
-    # reported as `stacked_chain`.
+    # Even bucketing: a card's day is set by the cumulative weight BEFORE it, mapped onto the window.
+    # cum runs 0 → total across the sequence, so day runs 0 → window-1 evenly. Because cum only
+    # increases and topo order puts every predecessor first, day is non-decreasing along real edges —
+    # the dependency constraint (predecessor day ≤ dependent day, same day allowed) holds for free.
     load: dict[int, float] = defaultdict(float)
     day_of: dict[str, int] = {}
+    cum = 0.0
     for n in order:
-        lo = max([depth[n] - 1] + [day_of[p] + 1 for p in preds[n]])
-        lo = min(lo, window - 1)
-        hi = max(lo, min(window - height[n], window - 1))
-        best = min(range(lo, hi + 1), key=lambda d: (load[d], d))
-        day_of[n] = best
-        load[best] += ests[n]
+        day = min(int(cum / total * window), window - 1) if total else 0
+        day_of[n] = day
+        load[day] += ests[n]
+        cum += ests[n]
 
     rows = [{
         "link": n,
