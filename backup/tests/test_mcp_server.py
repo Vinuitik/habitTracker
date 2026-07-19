@@ -21,6 +21,7 @@ from mcp_server import (
     _clean,
     _cron_update_card_statuses,
     _slug,
+    complete_cards,
     create_cards,
     describe_board,
     get_card,
@@ -270,6 +271,52 @@ async def test_create_cards_flags_too_big():
         result = await create_cards(board="frm", list_name="Auth", cards=[NewCard(title="Huge", est=4)])
     assert result["too_big"] == [{"card": "Huge", "est": 4}]
     assert "split" in result["advice"].lower()
+
+
+# ── labels & completion ──────────────────────────────────────────────────────
+
+async def test_update_cards_reports_skipped_unknown_label():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, client = make_async_ctx(
+        async_resp([BOARD]), async_resp(cards),
+        async_resp([{"name": "urgent", "id": "lbl-u"}]),  # board labels — no "done"
+        put_data=async_resp({}),
+    )
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await update_cards([CardUpdate(handle="frm/auth/google-sso", labels=["done"])])
+    entry = result["updated"][0]
+    assert entry["labels_skipped"] == ["done"]
+    assert "labels" not in entry["applied"]   # no false success
+    assert "complete_cards" in entry["hint"]
+
+
+async def test_complete_cards_creates_done_label_when_missing():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, client = make_async_ctx(
+        async_resp([BOARD]), async_resp(cards),
+        async_resp([{"name": "urgent", "id": "lbl-u"}]),  # board labels — no "done"
+        post_seq=[async_resp({"id": "lbl-done"})],         # POST /labels creates it
+        put_data=async_resp({}),
+    )
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await complete_cards(["frm/auth/google-sso"])
+    assert result["changed"] == [{"handle": "frm/auth/google-sso", "done": True}]
+    assert client.post.call_args_list[0][0][0].endswith("/labels")
+    applied = client.put.call_args_list[0][1]["params"]["idLabels"]
+    assert "lbl-done" in applied
+
+
+async def test_complete_cards_reopen_removes_label():
+    cards = [card("c1", "Google SSO", "l-auth", labels=[{"id": "lbl-done", "name": "done"}])]
+    ctx, client = make_async_ctx(
+        async_resp([BOARD]), async_resp(cards),
+        async_resp([{"name": "done", "id": "lbl-done"}]),
+        put_data=async_resp({}),
+    )
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await complete_cards(["frm/auth/google-sso"], done=False)
+    assert result["changed"] == [{"handle": "frm/auth/google-sso", "done": False}]
+    assert client.put.call_args_list[0][1]["params"]["idLabels"] == ""
 
 
 # ── meta block ───────────────────────────────────────────────────────────────

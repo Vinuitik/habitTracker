@@ -142,15 +142,37 @@ async def _resolve_handle(client, handle: str, cache: dict, checklists: bool = F
     return board, lst, matches[0]
 
 
-async def _label_ids(client, board_id: str, names: list[str], cache: dict) -> list[str]:
-    if not names:
-        return []
+async def _board_labels(client, board_id: str, cache: dict) -> dict:
     if board_id not in cache:
         r = await client.get(f"{TRELLO_BASE}/boards/{board_id}/labels", params=_auth())
         r.raise_for_status()
         cache[board_id] = {_slug(l["name"]): l["id"] for l in r.json() if l["name"]}
-    m = cache[board_id]
-    return [m[_slug(n)] for n in names if _slug(n) in m]
+    return cache[board_id]
+
+
+async def _label_ids(client, board_id: str, names: list[str], cache: dict) -> tuple[list[str], list[str]]:
+    """Returns (ids, skipped). Unknown label names are NOT created — they are reported so the
+    caller never claims success for a label that silently vanished."""
+    if not names:
+        return [], []
+    m = await _board_labels(client, board_id, cache)
+    ids = [m[_slug(n)] for n in names if _slug(n) in m]
+    skipped = [n for n in names if _slug(n) not in m]
+    return ids, skipped
+
+
+async def _ensure_label(client, board_id: str, name: str, cache: dict) -> str:
+    """Resolve a label id by name, creating the label on the board if it does not exist.
+    Used for the `done` label the completion system depends on — it must exist to be applied."""
+    m = await _board_labels(client, board_id, cache)
+    if _slug(name) in m:
+        return m[_slug(name)]
+    r = await client.post(f"{TRELLO_BASE}/labels",
+                          params={**_auth(), "idBoard": board_id, "name": name, "color": "green"})
+    r.raise_for_status()
+    lid = r.json()["id"]
+    m[_slug(name)] = lid  # keep the per-call cache coherent
+    return lid
 
 
 # ── Dependency meta block ───────────────────────────────────────────────────────
@@ -627,7 +649,7 @@ async def create_cards(
 
         for i, spec in enumerate(cards):
             try:
-                label_ids = await _label_ids(client, b["id"], spec.labels, label_cache)
+                label_ids, skipped = await _label_ids(client, b["id"], spec.labels, label_cache)
                 params = {**_auth(), "idList": lst["id"], "name": spec.title, "desc": spec.description}
                 if spec.due:
                     params["due"] = spec.due
@@ -640,7 +662,10 @@ async def create_cards(
                     await _write_checklist(client, card["id"], spec.checklist)
                 handle = f"{bs}/{lsg}/{_slug(spec.title)}"
                 made.append((spec, card, handle))
-                created.append({"handle": handle, "url": card.get("shortUrl", "")})
+                entry = {"handle": handle, "url": card.get("shortUrl", "")}
+                if skipped:
+                    entry["labels_skipped"] = skipped
+                created.append(entry)
             except Exception as e:
                 errors.append({"index": i, "title": spec.title, "error": str(e)})
 
@@ -720,11 +745,15 @@ async def update_cards(updates: list[CardUpdate]) -> dict:
                     r = await client.put(f"{TRELLO_BASE}/cards/{cid}", params=scalar)
                     r.raise_for_status()
 
+                skipped_labels = []
                 if u.labels is not None:
-                    ids = await _label_ids(client, board["id"], u.labels, label_cache)
+                    ids, skipped_labels = await _label_ids(client, board["id"], u.labels, label_cache)
                     r = await client.put(f"{TRELLO_BASE}/cards/{cid}", params={**_auth(), "idLabels": ",".join(ids)})
                     r.raise_for_status()
-                    applied.append("labels")
+                    # Report only what actually stuck. A name that isn't a board label is dropped by
+                    # Trello, so claiming applied:["labels"] for it would be a false success.
+                    if ids:
+                        applied.append("labels")
 
                 if u.checklist is not None:
                     ex = await client.get(f"{TRELLO_BASE}/cards/{cid}/checklists", params=_auth())
@@ -734,7 +763,12 @@ async def update_cards(updates: list[CardUpdate]) -> dict:
                     await _write_checklist(client, cid, u.checklist)
                     applied.append("checklist")
 
-                updated.append({"handle": u.handle, "applied": applied})
+                entry = {"handle": u.handle, "applied": applied}
+                if skipped_labels:
+                    entry["labels_skipped"] = skipped_labels
+                    entry["hint"] = ("These are not labels on the board and were dropped. To mark a "
+                                     "card done use complete_cards, which creates the label as needed.")
+                updated.append(entry)
             except Exception as e:
                 errors.append({"handle": u.handle, "error": str(e)})
     return _clean({"updated": updated, "errors": errors})
@@ -761,6 +795,34 @@ async def move_cards(moves: list[CardMove]) -> dict:
             except Exception as e:
                 errors.append({"handle": m.handle, "error": str(e)})
     return _clean({"moved": moved, "errors": errors})
+
+
+@mcp.tool()
+async def complete_cards(handles: list[str], done: bool = True) -> dict:
+    """Mark one or more cards done (or reopen them with done=False). Batch, addressed by handle.
+
+    This is the ONLY correct way to tick a card. The whole planning system keys off a label literally
+    named `done` — get_state, describe_graph, and the scheduler all treat a card as finished iff it
+    carries that label. This tool creates the `done` label on the board the first time it is needed,
+    so it always sticks; setting the label by hand via update_cards silently fails if the label does
+    not already exist. Done cards drop out of scheduling and out of the dependency-candidate set."""
+    changed, errors = [], []
+    async with httpx.AsyncClient() as client:
+        cache, label_cache = {}, {}
+        for h in handles:
+            try:
+                board, _, c = await _resolve_handle(client, h, cache)
+                did = await _ensure_label(client, board["id"], DONE_LABEL, label_cache)
+                have = {l["id"] for l in c.get("labels", [])}
+                want = have | {did} if done else have - {did}
+                if want != have:
+                    r = await client.put(f"{TRELLO_BASE}/cards/{c['id']}",
+                                         params={**_auth(), "idLabels": ",".join(want)})
+                    r.raise_for_status()
+                changed.append({"handle": h, "done": done})
+            except Exception as e:
+                errors.append({"handle": h, "error": str(e)})
+    return _clean({"changed": changed, "errors": errors})
 
 
 # ── Scheduling ─────────────────────────────────────────────────────────────────
