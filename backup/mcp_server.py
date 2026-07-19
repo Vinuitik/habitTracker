@@ -1,9 +1,10 @@
 import difflib
+import heapq
 import os
 import re
 import threading
 import time
-from collections import Counter, defaultdict, deque
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 import httpx
@@ -192,20 +193,22 @@ STATE_CARD = "STATE"
 DONE_LABEL = "done"
 PARKED_LABEL = "parked"   # excluded from scheduling until unparked; not done, just not now
 DEFAULT_PACE = 2.0        # cards/day when no deadline is given
+DEFAULT_IMPORTANCE = 2    # MoSCoW: 3=Must, 2=Should, 1=Could. Absent → Should.
+IMPORTANCE_MIN, IMPORTANCE_MAX = 1, 3
 
 
 def _fmt_num(x: float) -> str:
     return str(int(x)) if float(x).is_integer() else f"{x:g}"
 
 
-def _parse_meta(desc: str) -> tuple[list[str], float | None, str | None]:
-    """desc → (after:[shortLink], est, feature). Missing/malformed block → ([], None, None)."""
+def _parse_meta(desc: str) -> dict:
+    """desc → {after:[shortLink], est, feature, importance}. Missing keys are None (after is []).
+    Absent values are NOT defaulted here — callers apply DEFAULT_EST / DEFAULT_IMPORTANCE at use, so
+    a card without the line stays clean on disk and only gets one written when explicitly set."""
+    out: dict = {"after": [], "est": None, "feature": None, "importance": None}
     m = META_RE.search(desc or "")
     if not m:
-        return [], None, None
-    after: list[str] = []
-    est: float | None = None
-    feature: str | None = None
+        return out
     for raw in m.group(1).splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
@@ -213,30 +216,39 @@ def _parse_meta(desc: str) -> tuple[list[str], float | None, str | None]:
         k, _, v = line.partition(":")
         k, v = k.strip().lower(), v.strip()
         if k == "after" and v:
-            after.extend(p.strip() for p in v.split(",") if p.strip())
+            out["after"].extend(p.strip() for p in v.split(",") if p.strip())
         elif k == "est" and v:
             try:
-                est = float(v)
+                out["est"] = float(v)
             except ValueError:
                 pass
         elif k == "feature" and v:
-            feature = v
-    return after, est, feature
+            out["feature"] = v
+        elif k == "importance" and v:
+            try:
+                out["importance"] = max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(float(v))))
+            except ValueError:
+                pass
+    return out
 
 
-def _render_meta(after: list[tuple[str, str]], est: float | None, feature: str | None) -> str:
+def _render_meta(after: list[tuple[str, str]], est: float | None,
+                 feature: str | None, importance: int | None = None) -> str:
     lines = [f"after: {link}  # {title}" for link, title in after]
     if feature:
         lines.append(f"feature: {feature}")
+    if importance is not None:
+        lines.append(f"importance: {importance}")
     if est is not None:
         lines.append(f"est: {_fmt_num(est)}")
     return "```meta\n" + "\n".join(lines) + "\n```" if lines else ""
 
 
-def _set_meta(desc: str, after: list[tuple[str, str]], est: float | None, feature: str | None = None) -> str:
+def _set_meta(desc: str, after: list[tuple[str, str]], est: float | None,
+              feature: str | None = None, importance: int | None = None) -> str:
     """Replace the meta block in desc, leaving the human prose untouched."""
     body = META_RE.sub("", desc or "").strip()
-    block = _render_meta(after, est, feature)
+    block = _render_meta(after, est, feature, importance)
     return f"{body}\n\n{block}".strip() if block else body
 
 
@@ -262,16 +274,19 @@ def _build_graph(cards: list[dict]) -> tuple[dict, dict, dict, list[dict]]:
     by_link = {c["shortLink"]: c for c in cards}
     preds: dict[str, list[str]] = {}
     ests: dict[str, float] = {}
+    imps: dict[str, int] = {}
     dangling: list[dict] = []
     for c in cards:
         link = c["shortLink"]
-        after, est, _ = _parse_meta(c.get("desc"))
+        meta = _parse_meta(c.get("desc"))
+        after = meta["after"]
         preds[link] = [a for a in after if a in by_link]
-        ests[link] = est if est is not None else DEFAULT_EST
+        ests[link] = meta["est"] if meta["est"] is not None else DEFAULT_EST
+        imps[link] = meta["importance"] if meta["importance"] is not None else DEFAULT_IMPORTANCE
         for a in after:
             if a not in by_link:
                 dangling.append({"card": c["name"], "unknown_ref": a})
-    return by_link, preds, ests, dangling
+    return by_link, preds, ests, imps, dangling
 
 
 def _find_cycle(preds: dict[str, list[str]]) -> list[str] | None:
@@ -302,23 +317,39 @@ def _find_cycle(preds: dict[str, list[str]]) -> list[str] | None:
     return None
 
 
-def _topo(preds: dict[str, list[str]]) -> tuple[list[str] | None, dict[str, list[str]]]:
-    """Kahn. Returns (order, succs); order is None iff a cycle exists."""
+def _topo(preds: dict[str, list[str]], imps: dict[str, int] | None = None
+          ) -> tuple[list[str] | None, dict[str, list[str]]]:
+    """Kahn's, but the ready frontier is a MAX-PRIORITY queue on importance rather than FIFO.
+    Returns (order, succs); order is None iff a cycle exists.
+
+    Precedence stays hard: only in-degree-0 nodes are ever popped, so a card never precedes its
+    prerequisites regardless of importance. Importance only decides which of the CURRENTLY-ready
+    cards comes next — as each card is scheduled it unlocks its successors, which then compete in the
+    frontier (the 'moving frontier'). Ties break by shortLink for determinism. With imps=None this is
+    a plain deterministic topo sort (ties by link).
+
+    The even-bucketing in _schedule then maps this order onto days, so a card ranked earlier here —
+    a Must, or a plain blocker of something a Must depends on — lands on an earlier day."""
     succs: dict[str, list[str]] = defaultdict(list)
     indeg = {n: 0 for n in preds}
     for n, ps in preds.items():
         for p in ps:
             succs[p].append(n)
             indeg[n] += 1
-    q = deque(sorted(n for n, d in indeg.items() if d == 0))
+
+    def key(n: str) -> tuple:
+        return (-(imps[n] if imps else 0), n)  # higher importance first, then stable by link
+
+    frontier = [n for n, d in indeg.items() if d == 0]
+    heapq.heapify(h := [key(n) + (n,) for n in frontier])
     order: list[str] = []
-    while q:
-        n = q.popleft()
+    while h:
+        n = heapq.heappop(h)[-1]
         order.append(n)
-        for s in sorted(succs[n]):
+        for s in succs[n]:
             indeg[s] -= 1
             if indeg[s] == 0:
-                q.append(s)
+                heapq.heappush(h, key(s) + (s,))
     return (order if len(order) == len(preds) else None), succs
 
 
@@ -346,11 +377,11 @@ def _schedule(cards: list[dict], deadline: str | None = None, start: str | None 
       deadline given → window is fixed; `intensity` (cards/day) reports how hard you are pushing.
       no deadline    → window = enough days at `pace` cards/day; reports the implied end date.
     """
-    by_link, preds, ests, dangling = _build_graph(cards)
+    by_link, preds, ests, imps, dangling = _build_graph(cards)
     if not by_link:
         return {"error": "No cards to schedule."}
 
-    order, _ = _topo(preds)
+    order, _ = _topo(preds, imps)  # importance ranks the ready frontier; precedence stays hard
     if order is None:
         return {"cycle": _find_cycle(preds) or [], "by_link": by_link}
 
@@ -382,10 +413,11 @@ def _schedule(cards: list[dict], deadline: str | None = None, start: str | None 
     rows = [{
         "link": n,
         "card": by_link[n]["name"],
-        "feature": _parse_meta(by_link[n].get("desc"))[2] or "",
+        "feature": _parse_meta(by_link[n].get("desc"))["feature"] or "",
         "date": (start_d + timedelta(days=day_of[n])).isoformat(),
         "est": ests[n],
-    } for n in order]  # topological order preserved — apply_schedule relies on it
+        "importance": imps[n],
+    } for n in order]  # importance-ranked topological order — apply_schedule relies on it
 
     return {
         "rows": rows,
@@ -429,6 +461,13 @@ _FEATURE_DOC = (
     "Feature slug this card belongs to, e.g. 'auth'. Defaults to the list name. Stored on the card "
     "itself because cards get moved into dated lists, which destroys the list-as-feature grouping."
 )
+_IMPORTANCE_DOC = (
+    "MoSCoW priority, 1-3: 3 = Must (critical, do first), 2 = Should (default — omit for this), "
+    "1 = Could (nice-to-have, whenever). Set the extremes confidently and leave the middle at 2. "
+    "This only re-ranks which of the currently-unblocked cards get scheduled earlier; it NEVER "
+    "overrides dependencies — a prerequisite is always scheduled before the card that needs it, "
+    "whatever its importance."
+)
 
 
 class NewCard(BaseModel):
@@ -439,6 +478,7 @@ class NewCard(BaseModel):
     checklist: list[str] = Field(default_factory=list)
     after: list[str] = Field(default_factory=list, description=_AFTER_DOC + " May reference cards created in this same batch.")
     est: float | None = Field(default=None, description=_EST_DOC)
+    importance: int | None = Field(default=None, description=_IMPORTANCE_DOC)
 
 
 class CardUpdate(BaseModel):
@@ -451,6 +491,7 @@ class CardUpdate(BaseModel):
     after: list[str] | None = Field(default=None, description=_AFTER_DOC + " Replaces all edges when given; pass [] to clear.")
     est: float | None = Field(default=None, description=_EST_DOC)
     feature: str | None = Field(default=None, description=_FEATURE_DOC)
+    importance: int | None = Field(default=None, description=_IMPORTANCE_DOC)
 
 
 class NewList(BaseModel):
@@ -525,7 +566,7 @@ async def get_cards(
         if feature is not None:
             ft = _slug(feature)
             cards = [c for c in cards
-                     if _slug(_parse_meta(c.get("desc"))[2] or list_name_by_id.get(c["idList"], "")) == ft]
+                     if _slug(_parse_meta(c.get("desc"))["feature"] or list_name_by_id.get(c["idList"], "")) == ft]
         if list_name is not None:
             lst = _resolve_list(b, list_name)
             cards = [c for c in cards if c["idList"] == lst["id"]]
@@ -549,6 +590,9 @@ async def get_cards(
     lines = []
     for c in cards:
         meta = []
+        pm = _parse_meta(c.get("desc"))
+        imp = pm["importance"] if pm["importance"] is not None else DEFAULT_IMPORTANCE
+        meta.append(f"imp:{imp}")
         d = _short_due(c.get("due"))
         if d:
             meta.append(f"due:{d}")
@@ -689,7 +733,7 @@ async def create_cards(
                         edges.append(await _handle_to_link(client, ref, cache))
                     except Exception as e:
                         errors.append({"title": spec.title, "error": f"after '{h}': {e}"})
-                desc = _set_meta(spec.description, edges, spec.est, feat)
+                desc = _set_meta(spec.description, edges, spec.est, feat, spec.importance)
                 r = await client.put(f"{TRELLO_BASE}/cards/{card['id']}", params={**_auth(), "desc": desc})
                 r.raise_for_status()
             except Exception as e:
@@ -709,8 +753,8 @@ async def update_cards(updates: list[CardUpdate]) -> dict:
     Only the fields you set are changed. `labels` and `checklist` replace wholesale when given.
     `due='null'` clears the due date. Per-card failures are collected in `errors`.
 
-    `after` and `est` edit the dependency graph — see propose_schedule. Setting one leaves the
-    other intact; `after=[]` clears the card's dependencies."""
+    `after`, `est`, `feature`, and `importance` edit the planning meta — see propose_schedule.
+    Setting one leaves the others intact; `after=[]` clears the card's dependencies."""
     updated, errors = [], []
     async with httpx.AsyncClient() as client:
         cache, label_cache = {}, {}
@@ -727,8 +771,8 @@ async def update_cards(updates: list[CardUpdate]) -> dict:
                     scalar["desc"] = u.description
                     applied.append("description")
 
-                if u.after is not None or u.est is not None or u.feature is not None:
-                    cur_after, cur_est, cur_feat = _parse_meta(c.get("desc"))
+                if u.after is not None or u.est is not None or u.feature is not None or u.importance is not None:
+                    cur = _parse_meta(c.get("desc"))
                     base = u.description if u.description is not None else c.get("desc", "")
                     if u.after is not None:
                         edges = []
@@ -738,14 +782,17 @@ async def update_cards(updates: list[CardUpdate]) -> dict:
                         applied.append("after")
                     else:
                         names = {x["shortLink"]: x["name"] for x in await _cards(client, board["id"], cache)}
-                        edges = [(l, names.get(l, "")) for l in cur_after]
-                    est = u.est if u.est is not None else cur_est
-                    feat = u.feature if u.feature is not None else cur_feat
+                        edges = [(l, names.get(l, "")) for l in cur["after"]]
+                    est = u.est if u.est is not None else cur["est"]
+                    feat = u.feature if u.feature is not None else cur["feature"]
+                    imp = u.importance if u.importance is not None else cur["importance"]
                     if u.est is not None:
                         applied.append("est")
                     if u.feature is not None:
                         applied.append("feature")
-                    scalar["desc"] = _set_meta(base, edges, est, feat)
+                    if u.importance is not None:
+                        applied.append("importance")
+                    scalar["desc"] = _set_meta(base, edges, est, feat, imp)
 
                 if u.due is not None:
                     scalar["due"] = u.due
@@ -966,7 +1013,7 @@ async def propose_schedule(
                     f"{plan['window_days']} days, so some chained cards share a day.")
 
     rows = "\n".join(
-        f"{r['date']}\t{r['card']}\t{r['feature']}"
+        f"{r['date']}\t{r['card']}\t{r['feature']}\timp:{r['importance']}"
         for r in sorted(plan["rows"], key=lambda r: r["date"])
     )
     return _clean({
@@ -1063,13 +1110,14 @@ async def describe_graph(board: str) -> dict:
         feats: dict[str, int] = Counter()
         rows = []
         for c in live:
-            after, _, feat = _parse_meta(c.get("desc"))
-            feat = feat or _slug(name_by_id.get(c["idList"], ""))
+            pm = _parse_meta(c.get("desc"))
+            feat = pm["feature"] or _slug(name_by_id.get(c["idList"], ""))
             feats[feat] += 1
-            deps = [by_link[a]["name"] for a in after if a in by_link]
+            imp = pm["importance"] if pm["importance"] is not None else DEFAULT_IMPORTANCE
+            deps = [by_link[a]["name"] for a in pm["after"] if a in by_link]
             ln = name_by_id.get(c["idList"], "")
             when = ln if DATE_RE.match(ln) else "unscheduled"
-            cells = [handles[c["id"]], c["name"], feat, when]
+            cells = [handles[c["id"]], c["name"], feat, f"imp:{imp}", when]
             if deps:
                 cells.append("after: " + ", ".join(deps))
             rows.append("\t".join(cells))
@@ -1156,13 +1204,14 @@ async def split_card(splits: list[CardSplit]) -> dict:
                 if len(spec.into) < 2:
                     raise ToolError("A split needs at least 2 titles.")
                 old_link = c["shortLink"]
-                after, est, feat = _parse_meta(c.get("desc"))
+                pm = _parse_meta(c.get("desc"))
+                feat, imp = pm["feature"], pm["importance"]  # parts inherit feature + importance
                 body = META_RE.sub("", c.get("desc") or "").strip()
                 each = None  # parts are atomic steps by definition; drop the parent's est
 
                 all_cards = await _cards(client, board["id"], cache)
                 names = {x["shortLink"]: x["name"] for x in all_cards}
-                inherited = [(l, names.get(l, "")) for l in after]
+                inherited = [(l, names.get(l, "")) for l in pm["after"]]
 
                 new: list[tuple[str, str]] = []
                 for idx, title in enumerate(spec.into):
@@ -1175,7 +1224,7 @@ async def split_card(splits: list[CardSplit]) -> dict:
                     r = await client.post(
                         f"{TRELLO_BASE}/cards",
                         params={**_auth(), "idList": lst["id"], "name": title,
-                                "desc": _set_meta(body if idx == 0 else "", edges, each, feat), "pos": "bottom"},
+                                "desc": _set_meta(body if idx == 0 else "", edges, each, feat, imp), "pos": "bottom"},
                     )
                     r.raise_for_status()
                     nc = r.json()
@@ -1184,13 +1233,13 @@ async def split_card(splits: list[CardSplit]) -> dict:
                 # Successors of the original now point at the last part.
                 last = new[-1]
                 for other in all_cards:
-                    o_after, o_est, o_feat = _parse_meta(other.get("desc"))
-                    if old_link not in o_after:
+                    om = _parse_meta(other.get("desc"))
+                    if old_link not in om["after"]:
                         continue
-                    rewired = [(last[0] if l == old_link else l, names.get(l, last[1])) for l in o_after]
+                    rewired = [(last[0] if l == old_link else l, names.get(l, last[1])) for l in om["after"]]
                     r = await client.put(
                         f"{TRELLO_BASE}/cards/{other['id']}",
-                        params={**_auth(), "desc": _set_meta(other.get("desc", ""), rewired, o_est, o_feat)},
+                        params={**_auth(), "desc": _set_meta(other.get("desc", ""), rewired, om["est"], om["feature"], om["importance"])},
                     )
                     r.raise_for_status()
 

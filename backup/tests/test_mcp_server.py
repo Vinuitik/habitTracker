@@ -99,11 +99,13 @@ def card(cid, name, list_id, **extra):
     return base
 
 
-def gcard(link, name, after=(), est=None, feature=None, done=False):
+def gcard(link, name, after=(), est=None, feature=None, importance=None, done=False):
     """Graph-shaped card for the pure scheduler tests."""
     lines = [f"after: {a}" for a in after]
     if feature:
         lines.append(f"feature: {feature}")
+    if importance is not None:
+        lines.append(f"importance: {importance}")
     if est is not None:
         lines.append(f"est: {est}")
     desc = "prose\n\n```meta\n" + "\n".join(lines) + "\n```" if lines else "prose"
@@ -178,8 +180,8 @@ async def test_get_cards_compact_lines_omit_empty():
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         out = await get_cards("frm")
     lines = out.split("\n")
-    assert lines[0] == "frm/auth/google-sso\tGoogle SSO\tAuth"          # no meta on empty card
-    assert lines[1] == "frm/auth/email-login\tEmail Login\tAuth\tdue:2026-07-20\t[urgent]\tcheck:1/2"
+    assert lines[0] == "frm/auth/google-sso\tGoogle SSO\tAuth\timp:2"   # default importance shown
+    assert lines[1] == "frm/auth/email-login\tEmail Login\tAuth\timp:2\tdue:2026-07-20\t[urgent]\tcheck:1/2"
 
 
 async def test_get_cards_filters_combine():
@@ -192,7 +194,7 @@ async def test_get_cards_filters_combine():
     ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         out = await get_cards("frm", list_name="Auth", has_due=True, due_before="2026-07-15")
-    assert out == "frm/auth/has-due\tHas due\tAuth\tdue:2026-07-10"
+    assert out == "frm/auth/has-due\tHas due\tAuth\timp:2\tdue:2026-07-10"
 
 
 async def test_get_cards_no_match_message():
@@ -367,16 +369,23 @@ def test_parked_card_excluded_from_scheduler():
 # ── meta block ───────────────────────────────────────────────────────────────
 
 def test_meta_round_trips_and_is_idempotent():
-    d = mcp_server._set_meta("prose", [("kPq3xR1a", "Session")], 2.0, "auth")
-    assert mcp_server._parse_meta(d) == (["kPq3xR1a"], 2.0, "auth")
-    assert mcp_server._set_meta(d, [("kPq3xR1a", "Session")], 2.0, "auth") == d
+    d = mcp_server._set_meta("prose", [("kPq3xR1a", "Session")], 2.0, "auth", 3)
+    assert mcp_server._parse_meta(d) == {"after": ["kPq3xR1a"], "est": 2.0, "feature": "auth", "importance": 3}
+    assert mcp_server._set_meta(d, [("kPq3xR1a", "Session")], 2.0, "auth", 3) == d
     assert d.startswith("prose")
 
 
 def test_meta_absent_or_junk_is_harmless():
-    assert mcp_server._parse_meta("") == ([], None, None)
-    assert mcp_server._parse_meta("just prose") == ([], None, None)
-    assert mcp_server._parse_meta("```meta\nest: notanumber\n```") == ([], None, None)
+    empty = {"after": [], "est": None, "feature": None, "importance": None}
+    assert mcp_server._parse_meta("") == empty
+    assert mcp_server._parse_meta("just prose") == empty
+    assert mcp_server._parse_meta("```meta\nest: notanumber\n```") == empty
+
+
+def test_meta_importance_clamped_to_range():
+    assert mcp_server._parse_meta("```meta\nimportance: 9\n```")["importance"] == 3
+    assert mcp_server._parse_meta("```meta\nimportance: 0\n```")["importance"] == 1
+    assert mcp_server._parse_meta("```meta\nimportance: 2\n```")["importance"] == 2
 
 
 def test_is_done_reads_label():
@@ -394,6 +403,34 @@ def test_schedule_respects_dependency_order():
     p = mcp_server._schedule(_chain(5), start="2026-07-17", pace=2)
     day = {r["card"]: r["date"] for r in p["rows"]}
     assert day["s1"] < day["s2"] < day["s3"] < day["s4"] < day["s5"]
+
+
+def test_importance_ranks_the_frontier():
+    # All independent (no edges) → all ready at once. Higher importance schedules earlier.
+    cards = [
+        gcard("a", "low", importance=1),
+        gcard("b", "must", importance=3),
+        gcard("c", "mid"),  # absent → default 2
+    ]
+    p = mcp_server._schedule(cards, start="2026-07-17", pace=1)  # one per day → strict order
+    day = {r["card"]: r["date"] for r in p["rows"]}
+    assert day["must"] < day["mid"] < day["low"]
+
+
+def test_importance_never_overrides_dependency():
+    # A low-importance card that BLOCKS a must still runs first, because precedence is hard.
+    cards = [
+        gcard("blocker", "blocker", importance=1),
+        gcard("must", "must", ("blocker",), importance=3),
+    ]
+    p = mcp_server._schedule(cards, start="2026-07-17", pace=1)
+    day = {r["card"]: r["date"] for r in p["rows"]}
+    assert day["blocker"] < day["must"]
+
+
+def test_absent_importance_defaults_to_two_in_rows():
+    p = mcp_server._schedule([gcard("a", "A")], start="2026-07-17", pace=1)
+    assert p["rows"][0]["importance"] == 2
 
 
 def test_schedule_spreads_and_leaves_no_empty_days():

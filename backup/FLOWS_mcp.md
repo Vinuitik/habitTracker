@@ -79,15 +79,20 @@ Lives in the card description, fenced, human-readable in the Trello UI:
 ```meta
 after: 9mZt4Bc2  # Session store
 feature: auth
+importance: 3
 est: 1
 ```
 
 - `after` — shortLink edges, one per line (or comma-separated). Comment after `#` is cosmetic.
 - `feature` — survives the move into a dated list, which destroys list-as-feature grouping.
+- `importance` — MoSCoW 1–3 (3 Must / 2 Should / 1 Could). Default 2. Ranks the scheduling frontier;
+  never overrides dependencies. See *Priority* below.
 - `est` — **load weight, not duration.** Default 1. `est>1` is a confession the card is too big;
   tools return it in `too_big` with advice to `split_card`. Nothing schedules across days.
 
-`_parse_meta` → `(after, est, feature)`. `_set_meta` replaces the block, leaving prose intact
+`_parse_meta` → dict `{after, est, feature, importance}` (absent values `None`; defaults applied by
+callers, so a card without a line stays clean on disk). `_set_meta` replaces the block, leaving prose
+intact
 (idempotent). To change the format: `META_RE`, `_parse_meta`, `_render_meta`.
 
 ---
@@ -100,13 +105,30 @@ drift from the write.
 ```
 _plan ──► _resolve_board ──► _cards ──► _schedulable ──► _schedule
                                           │                 │
-                    drops done / _meta ───┘                 ├─ _build_graph  (meta → edges)
-                    keeps stragglers                        ├─ _topo (Kahn)  → cycle? _find_cycle
-                                                            ├─ _chain_pos    (depth / height)
-                                                            └─ greedy placement
+                    drops done / _meta ───┘                 ├─ _build_graph  (meta → edges, ests, imps)
+                    keeps stragglers                        ├─ _topo(preds, imps) → cycle? _find_cycle
+                                                            └─ even bucketing → days
 ```
 
-### `_schedule` — the algorithm
+### Priority: importance ranks the frontier
+
+`_topo` is Kahn's algorithm with the ready frontier as a **max-priority queue on importance** (a
+`heapq`, key `(-importance, shortLink)`) instead of FIFO. Precedence stays hard — only in-degree-0
+nodes are ever popped, so a card never precedes its prerequisites regardless of importance. Importance
+only decides which of the *currently-unblocked* cards comes next; as each is scheduled it unlocks its
+successors, which then compete in the moving frontier.
+
+- **Importance is MoSCoW 1–3** (`3` Must / `2` Should / `1` Could), stored as `importance:` in the
+  meta block. Absent → `DEFAULT_IMPORTANCE` (2) at read time; never written on read (like `est`).
+- **No backward propagation.** We deliberately do *not* compute an "effective importance" over
+  descendants. Precedence already forces a blocker to run before what it blocks, so ranking by own
+  importance within the frontier was judged enough — propagation was declined as overengineering.
+- **Ties break by shortLink** for determinism (no critical-path tie-break).
+
+The even-bucketing below then maps this importance-ranked order onto days, so a Must lands earlier
+than a Could that was ready at the same time. It **never** reorders across a real edge.
+
+### `_schedule` — the placement
 
 Cards are uniform-weight atomic steps, so this places **which day each card is done**, and nothing
 occupies multiple days. Two modes:
@@ -116,8 +138,8 @@ occupies multiple days. Two modes:
 | `deadline` given | fixed: `deadline - start + 1` | `intensity` = cards/day you signed up for |
 | no `deadline` | `max(chain, ceil(total/pace))` | `end` = implied finish date |
 
-Placement is **even bucketing of the topological order**. Walk the sorted sequence; each card's day
-is set by the cumulative weight *before* it, mapped onto the window:
+Placement is **even bucketing of the (importance-ranked) topological order**. Walk the sorted
+sequence; each card's day is set by the cumulative weight *before* it, mapped onto the window:
 
 ```
 day(n) = floor( cum_before(n) / total * window )      # clamped to [0, window-1]
@@ -167,7 +189,7 @@ The `_meta` list and the STATE card are excluded from every card read and from t
 | `get_card(handle)` | full detail incl. checklist |
 | `create_lists([NewList])` | batch; topic or dated |
 | `create_cards(board, list_name, cards, feature?)` | batch, hoisted schema; two-pass so intra-batch edges resolve |
-| `update_cards([CardUpdate])` | batch, partial; `after`/`est`/`feature` |
+| `update_cards([CardUpdate])` | batch, partial; `after`/`est`/`feature`/`importance` |
 | `move_cards([CardMove])` | batch; the manual override |
 | `complete_cards(handles, done=True)` | toggle the `done` label; the only correct way to tick |
 | `park_cards(handles, parked=True)` | toggle the `parked` label; held out of scheduling, not done |
@@ -303,6 +325,8 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Handle format / slug rules | `_slug()`, `_build_handles()` | kebab `board/list/card`, `~id4` on collision |
 | Fuzzy-suggestion behaviour | `difflib.get_close_matches` in the 3 resolvers | on any unresolved name/handle |
 | Spreading algorithm | `cum` loop in `_schedule()` | even bucketing of the topo order by cumulative weight |
+| Frontier priority | `_topo(preds, imps)` heap key | `(-importance, shortLink)`; importance ranks ready set |
+| Importance default / range | `DEFAULT_IMPORTANCE`, `IMPORTANCE_MIN/MAX` | 2, clamped 1–3; MoSCoW |
 | Longest-chain (info) | `_longest_chain()` | reported as `chain`/`stacked_chain`, not a constraint |
 | Default pace | `DEFAULT_PACE` | 2 cards/day when no deadline |
 | Default estimate | `DEFAULT_EST` | 1 |
