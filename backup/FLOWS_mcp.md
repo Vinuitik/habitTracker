@@ -253,10 +253,16 @@ board scale without retrieval, and what the STATE card exists to backstop.
 `after` accepts a bare slug (same list) or a full handle (elsewhere). Two passes: create all cards,
 then resolve edges — so cards in one batch may depend on each other in any order.
 
-### `apply_schedule` — intra-day ordering for free
+### `apply_schedule` — intra-day ordering + day lists on the left
 
 Rows come out of `_schedule` in topological order, and moves are applied at `pos="bottom"`. So when
 several cards land on the same day, **their order within that day list IS the dependency order**.
+
+After creating any missing day lists, apply repositions **every** day list (existing + new) to the
+left of the board, chronologically. It does this by walking the dates in REVERSE order and PUTting
+each to `pos="top"` — a stack: the last push (the earliest date) ends up leftmost. Feature/topic
+lists keep their relative order on the right. This is pure UX: the day you work from is never a
+scroll away. Costs one `PUT /lists/{id}` per day list per apply — fine at this scale.
 
 ### STATE card
 
@@ -266,10 +272,13 @@ It's what lets done cards be archived without losing the knowledge of what they 
 
 ---
 
-## Cron: Hourly Card Status Labels
+## Cron: Hourly (two sweeps)
 
-`_cron_loop()` (daemon thread, `sleep(3600)`) → `_cron_update_card_statuses()`.
-Requires `TRELLO_CRON_BOARD_ID` (or resolves `TRELLO_CRON_BOARD_NAME`); skips silently otherwise.
+`_cron_loop()` (daemon thread in `mcp_server.py`, `sleep(3600)`) runs two independent sweeps each
+cycle. Both require `TRELLO_CRON_BOARD_ID` (or resolve `TRELLO_CRON_BOARD_NAME`); skip silently
+otherwise. Each is wrapped in its own try/except so one failing doesn't stop the other.
+
+**1. `_cron_update_card_statuses()` — overdue / due-today labels:**
 
 | Condition (cards with a due date) | Action |
 |---|---|
@@ -277,8 +286,16 @@ Requires `TRELLO_CRON_BOARD_ID` (or resolves `TRELLO_CRON_BOARD_NAME`); skips si
 | `due.date() == today` | add `due-today`, remove `overdue` |
 | no due date | skipped |
 
-Labels `overdue` / `due-today` must exist on the board.
-**Note:** nothing in the read path consumes these labels — they're purely for the visual board.
+Labels `overdue` / `due-today` must exist on the board. Nothing in the read path consumes these —
+they're purely for the visual board.
+
+**2. `_cron_archive_empty_day_lists()` — clean up spent day lists:**
+Archives (Trello `closed=true`, reversible) any **open list whose name matches `YYYY-MM-DD` and
+holds zero cards**. A day list is a scheduling artifact; once its cards are done or moved, it's
+empty clutter. **Only DATE-named lists are touched** — feature/topic lists and `_meta` are left
+alone even when empty, because an empty topic list is usually intentional (just created, about to
+be filled). To broaden to all empty lists: drop the `DATE_RE.match` guard.
+
 To change interval: `time.sleep(3600)`.
 
 ---
@@ -366,6 +383,8 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | STATE card location | `config.py` | `META_LIST`, `STATE_CARD` | `_meta/STATE` |
 | Day list name format | `config.py`/`tools_planning.py` | `DATE_RE` + `apply_schedule` | `YYYY-MM-DD` |
 | Intra-day ordering | `tools_planning.py` | `apply_schedule` `pos="bottom"` + topo row order | order in list = dep order |
+| Day lists to the left | `tools_planning.py` | `apply_schedule` reverse-date `PUT /lists pos=top` | earliest date leftmost |
+| Empty day-list cleanup | `mcp_server.py` | `_cron_archive_empty_day_lists()` | archives empty `YYYY-MM-DD` lists only |
 | Cycle reporting | `graph.py` | `_find_cycle()`, `_cycle_report()` | DFS colouring |
 | Compact read columns | `tools_cards.py` | `get_cards` formatting loop | tab-delimited |
 | Omit-empty rules | `formatting.py` | `_clean()` | drops None/""/[]/{}, keeps 0/False |
@@ -373,5 +392,5 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Batch input schemas | `models.py` | `NewCard` / `CardUpdate` / `CardMove` / `NewList` / `CardSplit` | Pydantic |
 | MCP server port | `mcp_server.py` | `mcp.run(port=...)` + `caddy/Caddyfile` | 8091 |
 | Route prefix / auth | — | `caddy/Caddyfile` `handle /mcp*` + `MCP_TOKEN` | no prefix strip |
-| Cron interval / board / logic | `mcp_server.py` | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()` | 1h |
+| Cron interval / board / logic | `mcp_server.py` | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()`, `_cron_archive_empty_day_lists()` | 1h, two sweeps |
 | Trello credentials | `config.py` | `TRELLO_API_KEY`, `TRELLO_TOKEN` env | single-tenant |

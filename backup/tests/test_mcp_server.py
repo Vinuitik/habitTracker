@@ -19,8 +19,10 @@ from mcp_server import (
     ToolError,
     _build_handles,
     _clean,
+    _cron_archive_empty_day_lists,
     _cron_update_card_statuses,
     _slug,
+    apply_schedule,
     archive_cards,
     complete_cards,
     create_cards,
@@ -352,6 +354,43 @@ async def test_archive_cards_closes_card():
         result = await archive_cards(["frm/auth/junk"])
     assert result["archived"] == [{"handle": "frm/auth/junk"}]
     assert client.put.call_args_list[0][1]["params"]["closed"] == "true"
+
+
+# ── apply_schedule: day lists go to the left ──────────────────────────────────
+
+async def test_apply_schedule_positions_day_lists_at_top():
+    from datetime import date
+    today = date.today().isoformat()
+    cards = [card("c1", "A", "l-auth"), card("c2", "B", "l-auth")]
+    ctx, client = make_async_ctx(
+        async_resp([BOARD]), async_resp(cards),          # _resolve_board, _cards
+        post_seq=[async_resp({"id": "l-today"})],          # create the one day list
+        put_data=async_resp({}),
+    )
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await apply_schedule("frm")               # no deadline → pace, 2 cards → 1 day
+    assert result["lists_created"] == [today]
+    # the created day list is repositioned to the left (pos=top), before the card moves
+    list_puts = [c for c in client.put.call_args_list if "/lists/l-today" in c[0][0]]
+    assert list_puts and list_puts[0][1]["params"]["pos"] == "top"
+
+
+# ── cron: empty day-list cleanup ──────────────────────────────────────────────
+
+def test_cron_archives_empty_day_lists_only():
+    lists = [
+        {"id": "l1", "name": "2026-07-10"},   # empty date list → archive
+        {"id": "l2", "name": "Auth"},          # empty topic list → leave
+        {"id": "l3", "name": "2026-07-11"},   # non-empty date list → leave
+    ]
+    cards = [{"idList": "l3"}]
+    ctx, client = make_sync_ctx(sync_resp(lists), sync_resp(cards), put_data=sync_resp({}))
+    with patch("mcp_server.httpx.Client", return_value=ctx):
+        _cron_archive_empty_day_lists()
+    assert client.put.call_count == 1
+    call = client.put.call_args_list[0]
+    assert "/lists/l1/closed" in call[0][0]
+    assert call[1]["params"]["value"] == "true"
 
 
 def test_parked_card_excluded_from_scheduler():

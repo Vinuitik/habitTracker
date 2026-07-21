@@ -125,6 +125,14 @@ async def apply_schedule(
                 existing[d] = r.json()["id"]
                 made.append(d)
 
+        # UX: keep day lists on the LEFT, chronological, ahead of the feature/topic lists — so the
+        # day you work from is never a scroll away. Repositioning every day list (existing + new)
+        # in REVERSE date order at pos=top makes the earliest date end up leftmost (a stack: the
+        # last push lands on top). Feature lists keep their relative order on the right.
+        for d in sorted((n for n in existing if DATE_RE.match(n)), reverse=True):
+            r = await client.put(f"{TRELLO_BASE}/lists/{existing[d]}", params={**_auth(), "pos": "top"})
+            r.raise_for_status()
+
         moved, errors = 0, []
         for row in plan["rows"]:  # already topological → pos=bottom yields intra-day order
             try:

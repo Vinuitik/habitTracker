@@ -13,6 +13,7 @@ patches the httpx used inside every trello_mcp submodule.
 """
 import threading
 import time
+from collections import Counter
 from datetime import datetime, timezone
 
 import httpx
@@ -114,12 +115,43 @@ def _cron_update_card_statuses() -> None:
     print(f"[cron] Card status update done at {now.isoformat()}")
 
 
+def _cron_archive_empty_day_lists() -> None:
+    """Archive open day lists (name matches YYYY-MM-DD) that hold no cards. A day list is a
+    scheduling artifact — once its cards are done or moved it is empty clutter, so it gets closed
+    (reversible from the Trello UI). Only DATE-named lists are touched: feature/topic lists and the
+    _meta list are left alone even when empty, since an empty topic list is usually intentional."""
+    if not TRELLO_API_KEY or not TRELLO_TOKEN:
+        return
+    board_id = _resolve_cron_board_id()
+    if not board_id:
+        return
+
+    with httpx.Client() as client:
+        lr = client.get(f"{TRELLO_BASE}/boards/{board_id}/lists", params={**_auth(), "fields": "name"})
+        cr = client.get(f"{TRELLO_BASE}/boards/{board_id}/cards", params={**_auth(), "fields": "idList"})
+        if lr.status_code != 200 or cr.status_code != 200:
+            return
+
+        counts = Counter(c["idList"] for c in cr.json())
+        archived = 0
+        for l in lr.json():
+            if DATE_RE.match(l["name"].strip()) and counts.get(l["id"], 0) == 0:
+                client.put(f"{TRELLO_BASE}/lists/{l['id']}/closed", params={**_auth(), "value": "true"})
+                archived += 1
+        if archived:
+            print(f"[cron] Archived {archived} empty day list(s)")
+
+
 def _cron_loop() -> None:
     while True:
         try:
             _cron_update_card_statuses()
         except Exception as e:
             print(f"[cron] Error: {e}")
+        try:
+            _cron_archive_empty_day_lists()
+        except Exception as e:
+            print(f"[cron] Error (list cleanup): {e}")
         time.sleep(3600)
 
 
