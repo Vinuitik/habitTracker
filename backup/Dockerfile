@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backup.py .
 COPY mcp_server.py .
+COPY trello_mcp/ ./trello_mcp/
 COPY start.sh .
 
 CMD ["sh", "start.sh"]

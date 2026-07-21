@@ -1,6 +1,31 @@
 # Trello MCP Server Flow
 
-Files: `mcp_server.py`, `tests/test_mcp_server.py`
+Files: `mcp_server.py`, `trello_mcp/*.py`, `tests/test_mcp_server.py`
+
+## Module Layout
+
+The server was split out of a single 1300-line file into the `trello_mcp/` package. Import graph
+(a DAG — no cycles):
+
+```
+config.py      env, constants, _auth, the shared `mcp` (FastMCP instance), ToolError
+formatting.py  pure helpers: _slug, _clean, _build_handles, _fmt_num, _short_due, _checklist_counts
+meta.py        the ```meta block: _parse_meta/_render_meta/_set_meta + _is_done/_is_parked   → config, formatting
+api.py         live Trello I/O: _resolve_board/_list/_handle, _cards, _label_ids, _ensure_label  → config, formatting
+graph.py       pure scheduling: _build_graph, _topo, _schedule, _schedulable, _cycle_report      → config, meta, formatting
+models.py      pydantic input models + LLM field docs (NewCard, CardUpdate, NewList, CardMove, CardSplit)
+tools_cards.py     @mcp.tool: describe_board, get_cards, get_card, create_lists/cards, update/move,
+                   complete/park/archive_cards                                                   → api, meta, graph, models
+tools_planning.py  @mcp.tool: propose/apply_schedule, describe_graph, get/update_state, split_card → api, graph, meta, models
+mcp_server.py  entrypoint: re-exports everything, keeps the cron, runs mcp.run()
+```
+
+**Why the cron stays in `mcp_server.py`** and everything else moved: the tests set
+`mcp_server.TRELLO_CRON_BOARD_ID` / `_NAME` directly, so the cron functions must read those from
+this module's namespace. **Why `mcp_server` still `import httpx`**: the tests patch
+`mcp_server.httpx.AsyncClient` / `.Client`; `import httpx` is one shared module object, so patching
+it here also patches the httpx used inside every submodule. Adding a tool = add it to the relevant
+`tools_*.py` (it registers via `@mcp.tool()` on import) and re-export it from `mcp_server.py`.
 
 ## Overall Architecture
 
@@ -292,9 +317,11 @@ optimality. It will not find the perfectly balanced assignment; it finds a flat-
 reason about. No resource model beyond card count — a card is a card.
 
 **FastMCP 3.x.** `requirements.txt` pins `fastmcp` unpinned → builds against latest 3.x. In v3
-`@mcp.tool()` returns the original coroutine (registering as a side effect); there is no `.fn`
-wrapper, so tests call tool functions directly. A future fastmcp changing this breaks the test
-imports first.
+`@mcp.tool()` returns the original coroutine (registering it on the shared `mcp` as a side effect);
+there is no `.fn` wrapper, so tests import the tool functions (re-exported from `mcp_server`) and
+call them directly. A future fastmcp changing this breaks the test imports first. All tool modules
+register on the single `mcp` created in `config.py`; `mcp_server.py` importing them is what triggers
+registration before `mcp.run()`.
 
 **Auth.** `TRELLO_API_KEY` + `TRELLO_TOKEN` as query params on every request (from
 trello.com/power-ups/admin). No per-user scoping — single-tenant by design. `MCP_TOKEN` gates the
@@ -319,32 +346,32 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 
 ## Change Index
 
-| What to change | Where | Note |
-|---|---|---|
-| Meta block format | `META_RE`, `_parse_meta`, `_render_meta` | ```meta fence in card desc |
-| Handle format / slug rules | `_slug()`, `_build_handles()` | kebab `board/list/card`, `~id4` on collision |
-| Fuzzy-suggestion behaviour | `difflib.get_close_matches` in the 3 resolvers | on any unresolved name/handle |
-| Spreading algorithm | `cum` loop in `_schedule()` | even bucketing of the topo order by cumulative weight |
-| Frontier priority | `_topo(preds, imps)` heap key | `(-importance, shortLink)`; importance ranks ready set |
-| Importance default / range | `DEFAULT_IMPORTANCE`, `IMPORTANCE_MIN/MAX` | 2, clamped 1–3; MoSCoW |
-| Longest-chain (info) | `_longest_chain()` | reported as `chain`/`stacked_chain`, not a constraint |
-| Default pace | `DEFAULT_PACE` | 2 cards/day when no deadline |
-| Default estimate | `DEFAULT_EST` | 1 |
-| "too big" threshold | `est > 1` in `create_cards` / `_schedule` | advice → `split_card` |
-| Done marker | `DONE_LABEL` + `_is_done()` | label `done` |
-| Parked marker | `PARKED_LABEL` + `_is_parked()` | label `parked`; held out of scheduling |
-| Label toggle (done/parked) | `_toggle_label()` | shared add/remove, creates label on first use |
-| Archive (hide) | `archive_cards()` | Trello `closed=true`; reversible, no hard-delete |
-| Straggler / frozen rule | `_schedulable()` | past day list + not done/parked → pulled forward |
-| STATE card location | `META_LIST`, `STATE_CARD` | `_meta/STATE` |
-| Day list name format | `DATE_RE` + `apply_schedule` | `YYYY-MM-DD` |
-| Intra-day ordering | `apply_schedule` `pos="bottom"` + topo row order | order in list = dep order |
-| Cycle reporting | `_find_cycle()`, `_cycle_report()` | DFS colouring |
-| Compact read columns | `get_cards` formatting loop | tab-delimited |
-| Omit-empty rules | `_clean()` | drops None/""/[]/{}, keeps 0/False |
-| Checklist name | `_write_checklist` → `POST /checklists name=Tasks` | currently "Tasks" |
-| Batch input schemas | `NewCard` / `CardUpdate` / `CardMove` / `NewList` / `CardSplit` | Pydantic |
-| MCP server port | `mcp.run(port=...)` + `caddy/Caddyfile` | 8091 |
-| Route prefix / auth | `caddy/Caddyfile` `handle /mcp*` + `MCP_TOKEN` | no prefix strip |
-| Cron interval / board / logic | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()` | 1h |
-| Trello credentials | `TRELLO_API_KEY`, `TRELLO_TOKEN` env | single-tenant |
+| What to change | Module | Where | Note |
+|---|---|---|---|
+| Meta block format | `meta.py` | `META_RE`, `_parse_meta`, `_render_meta` | ```meta fence in card desc |
+| Handle format / slug rules | `formatting.py` | `_slug()`, `_build_handles()` | kebab `board/list/card`, `~id4` on collision |
+| Fuzzy-suggestion behaviour | `api.py` | `difflib.get_close_matches` in the 3 resolvers | on any unresolved name/handle |
+| Spreading algorithm | `graph.py` | `cum` loop in `_schedule()` | even bucketing of the topo order by cumulative weight |
+| Frontier priority | `graph.py` | `_topo(preds, imps)` heap key | `(-importance, shortLink)`; importance ranks ready set |
+| Importance default / range | `config.py` | `DEFAULT_IMPORTANCE`, `IMPORTANCE_MIN/MAX` | 2, clamped 1–3; MoSCoW |
+| Longest-chain (info) | `graph.py` | `_longest_chain()` | reported as `chain`/`stacked_chain`, not a constraint |
+| Default pace | `config.py` | `DEFAULT_PACE` | 2 cards/day when no deadline |
+| Default estimate | `config.py` | `DEFAULT_EST` | 1 |
+| "too big" threshold | `tools_cards.py`/`graph.py` | `est > 1` in `create_cards` / `_schedule` | advice → `split_card` |
+| Done marker | `config.py`/`meta.py` | `DONE_LABEL` + `_is_done()` | label `done` |
+| Parked marker | `config.py`/`meta.py` | `PARKED_LABEL` + `_is_parked()` | label `parked`; held out of scheduling |
+| Label toggle (done/parked) | `tools_cards.py` | `_toggle_label()` | shared add/remove, creates label on first use |
+| Archive (hide) | `tools_cards.py` | `archive_cards()` | Trello `closed=true`; reversible, no hard-delete |
+| Straggler / frozen rule | `graph.py` | `_schedulable()` | past day list + not done/parked → pulled forward |
+| STATE card location | `config.py` | `META_LIST`, `STATE_CARD` | `_meta/STATE` |
+| Day list name format | `config.py`/`tools_planning.py` | `DATE_RE` + `apply_schedule` | `YYYY-MM-DD` |
+| Intra-day ordering | `tools_planning.py` | `apply_schedule` `pos="bottom"` + topo row order | order in list = dep order |
+| Cycle reporting | `graph.py` | `_find_cycle()`, `_cycle_report()` | DFS colouring |
+| Compact read columns | `tools_cards.py` | `get_cards` formatting loop | tab-delimited |
+| Omit-empty rules | `formatting.py` | `_clean()` | drops None/""/[]/{}, keeps 0/False |
+| Checklist name | `api.py` | `_write_checklist` → `POST /checklists name=Tasks` | currently "Tasks" |
+| Batch input schemas | `models.py` | `NewCard` / `CardUpdate` / `CardMove` / `NewList` / `CardSplit` | Pydantic |
+| MCP server port | `mcp_server.py` | `mcp.run(port=...)` + `caddy/Caddyfile` | 8091 |
+| Route prefix / auth | — | `caddy/Caddyfile` `handle /mcp*` + `MCP_TOKEN` | no prefix strip |
+| Cron interval / board / logic | `mcp_server.py` | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()` | 1h |
+| Trello credentials | `config.py` | `TRELLO_API_KEY`, `TRELLO_TOKEN` env | single-tenant |
