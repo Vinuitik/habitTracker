@@ -6,7 +6,8 @@ from collections import Counter
 
 import httpx
 
-from .api import _cards, _handle_to_link, _resolve_board, _resolve_handle, _resolve_list
+from .api import (_archive_empty_day_lists, _cards, _handle_to_link, _resolve_board,
+                  _resolve_handle, _resolve_list)
 from .config import (DATE_RE, DEFAULT_IMPORTANCE, DEFAULT_PACE, META_LIST, STATE_CARD,
                      TRELLO_BASE, ToolError, _auth, mcp)
 from .formatting import _build_handles, _clean, _slug
@@ -125,14 +126,6 @@ async def apply_schedule(
                 existing[d] = r.json()["id"]
                 made.append(d)
 
-        # UX: keep day lists on the LEFT, chronological, ahead of the feature/topic lists — so the
-        # day you work from is never a scroll away. Repositioning every day list (existing + new)
-        # in REVERSE date order at pos=top makes the earliest date end up leftmost (a stack: the
-        # last push lands on top). Feature lists keep their relative order on the right.
-        for d in sorted((n for n in existing if DATE_RE.match(n)), reverse=True):
-            r = await client.put(f"{TRELLO_BASE}/lists/{existing[d]}", params={**_auth(), "pos": "top"})
-            r.raise_for_status()
-
         moved, errors = 0, []
         for row in plan["rows"]:  # already topological → pos=bottom yields intra-day order
             try:
@@ -145,9 +138,21 @@ async def apply_schedule(
             except Exception as e:
                 errors.append({"card": row["card"], "error": str(e)})
 
+        # Active cleanup: moving cards into their new day lists empties the old ones. Archive those
+        # now (not just on the hourly cron) so the board is tidy the moment you look at it.
+        cleaned = await _archive_empty_day_lists(client, b["id"])
+
+        # UX: keep the SURVIVING day lists on the LEFT, chronological, ahead of feature/topic lists —
+        # so the day you work from is never a scroll away. Repositioning in REVERSE date order at
+        # pos=top makes the earliest date end up leftmost (a stack: the last push lands on top).
+        for d in sorted((n for n in existing if DATE_RE.match(n) and n not in cleaned), reverse=True):
+            r = await client.put(f"{TRELLO_BASE}/lists/{existing[d]}", params={**_auth(), "pos": "top"})
+            r.raise_for_status()
+
     return _clean({
         "moved": moved,
         "lists_created": made,
+        "lists_cleaned": cleaned,
         "intensity": plan["intensity"],
         "end": plan["end"],
         "errors": errors,
@@ -259,11 +264,13 @@ async def split_card(splits: list[CardSplit]) -> dict:
     are atomic by definition). After splitting, re-point whichever edge caused the cycle at the
     specific part it truly depends on."""
     done, errors = [], []
+    boards_touched: dict[str, str] = {}
     async with httpx.AsyncClient() as client:
         cache: dict = {}
         for spec in splits:
             try:
                 board, lst, c = await _resolve_handle(client, spec.handle, cache)
+                boards_touched[board["id"]] = board["id"]
                 if len(spec.into) < 2:
                     raise ToolError("A split needs at least 2 titles.")
                 old_link = c["shortLink"]
@@ -311,4 +318,8 @@ async def split_card(splits: list[CardSplit]) -> dict:
                 done.append({"split": spec.handle, "into": [f"{bs}/{lsg}/{_slug(t)}" for t in spec.into]})
             except Exception as e:
                 errors.append({"handle": spec.handle, "error": str(e)})
-    return _clean({"split": done, "errors": errors})
+
+        cleaned = []
+        for bid in boards_touched:
+            cleaned += await _archive_empty_day_lists(client, bid)
+    return _clean({"split": done, "errors": errors, "lists_cleaned": cleaned})

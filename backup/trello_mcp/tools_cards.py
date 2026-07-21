@@ -4,8 +4,8 @@ Importing this module registers these tools on the shared `mcp` (via @mcp.tool()
 """
 import httpx
 
-from .api import (_cards, _ensure_label, _handle_to_link, _label_ids, _resolve_board,
-                  _resolve_handle, _resolve_list, _write_checklist)
+from .api import (_archive_empty_day_lists, _cards, _ensure_label, _handle_to_link, _label_ids,
+                  _resolve_board, _resolve_handle, _resolve_list, _write_checklist)
 from .config import DEFAULT_IMPORTANCE, DONE_LABEL, META_LIST, PARKED_LABEL, TRELLO_BASE, _auth, mcp
 from .formatting import _build_handles, _checklist_counts, _clean, _short_due, _slug
 from .meta import _is_done, _is_parked, _parse_meta, _set_meta
@@ -333,6 +333,7 @@ async def move_cards(moves: list[CardMove]) -> dict:
     """Move one or more cards to another list in a single call (batch), each addressed by handle.
     Returns the new handle for each moved card. Per-card failures are collected in `errors`."""
     moved, errors = [], []
+    boards_touched: set[str] = set()
     async with httpx.AsyncClient() as client:
         cache: dict = {}
         for m in moves:
@@ -344,11 +345,16 @@ async def move_cards(moves: list[CardMove]) -> dict:
                     params={**_auth(), "idList": dest["id"], "pos": m.pos},
                 )
                 r.raise_for_status()
+                boards_touched.add(board["id"])
                 new_handle = f"{_slug(board['name'])}/{_slug(dest['name'])}/{_slug(c['name'])}"
                 moved.append({"from": m.handle, "to": new_handle})
             except Exception as e:
                 errors.append({"handle": m.handle, "error": str(e)})
-    return _clean({"moved": moved, "errors": errors})
+
+        cleaned = []  # a move can empty the source list — tidy it up now, not only on cron
+        for bid in boards_touched:
+            cleaned += await _archive_empty_day_lists(client, bid)
+    return _clean({"moved": moved, "errors": errors, "lists_cleaned": cleaned})
 
 
 async def _toggle_label(handles: list[str], label: str, on: bool, key: str) -> dict:
@@ -403,14 +409,20 @@ async def archive_cards(handles: list[str]) -> dict:
     right tool for 'hide this', which done and parked are not. Archived cards can be restored from
     Trello's UI. This does not delete; there is no hard-delete tool by design."""
     archived, errors = [], []
+    boards_touched: set[str] = set()
     async with httpx.AsyncClient() as client:
         cache: dict = {}
         for h in handles:
             try:
-                _, _, c = await _resolve_handle(client, h, cache)
+                board, _, c = await _resolve_handle(client, h, cache)
                 r = await client.put(f"{TRELLO_BASE}/cards/{c['id']}", params={**_auth(), "closed": "true"})
                 r.raise_for_status()
+                boards_touched.add(board["id"])
                 archived.append({"handle": h})
             except Exception as e:
                 errors.append({"handle": h, "error": str(e)})
-    return _clean({"archived": archived, "errors": errors})
+
+        cleaned = []  # archiving cards can empty their day list
+        for bid in boards_touched:
+            cleaned += await _archive_empty_day_lists(client, bid)
+    return _clean({"archived": archived, "errors": errors, "lists_cleaned": cleaned})

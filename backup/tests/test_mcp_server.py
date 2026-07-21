@@ -349,7 +349,11 @@ async def test_park_cards_applies_parked_label():
 
 async def test_archive_cards_closes_card():
     cards = [card("c1", "Junk", "l-auth")]
-    ctx, client = make_async_ctx(async_resp([BOARD]), async_resp(cards), put_data=async_resp({}))
+    ctx, client = make_async_ctx(
+        async_resp([BOARD]), async_resp(cards),
+        async_resp([]), async_resp([]),   # post-archive cleanup: board lists, cards (nothing empty)
+        put_data=async_resp({}),
+    )
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         result = await archive_cards(["frm/auth/junk"])
     assert result["archived"] == [{"handle": "frm/auth/junk"}]
@@ -364,13 +368,14 @@ async def test_apply_schedule_positions_day_lists_at_top():
     cards = [card("c1", "A", "l-auth"), card("c2", "B", "l-auth")]
     ctx, client = make_async_ctx(
         async_resp([BOARD]), async_resp(cards),          # _resolve_board, _cards
+        async_resp([]), async_resp([]),                   # post-move cleanup: lists, cards (none empty)
         post_seq=[async_resp({"id": "l-today"})],          # create the one day list
         put_data=async_resp({}),
     )
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         result = await apply_schedule("frm")               # no deadline → pace, 2 cards → 1 day
     assert result["lists_created"] == [today]
-    # the created day list is repositioned to the left (pos=top), before the card moves
+    # the surviving day list is repositioned to the left (pos=top)
     list_puts = [c for c in client.put.call_args_list if "/lists/l-today" in c[0][0]]
     assert list_puts and list_puts[0][1]["params"]["pos"] == "top"
 
@@ -554,11 +559,15 @@ async def test_update_cards_replaces_checklist():
 
 async def test_move_cards_returns_new_handle():
     cards = [card("c1", "Google SSO", "l-auth")]
-    ctx, client = make_async_ctx(async_resp([BOARD]), async_resp(cards), put_data=async_resp({}))
+    ctx, client = make_async_ctx(
+        async_resp([BOARD]), async_resp(cards),
+        async_resp([]), async_resp([]),   # post-move cleanup: board lists, cards (nothing empty)
+        put_data=async_resp({}),
+    )
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         result = await move_cards([CardMove(handle="frm/auth/google-sso", to_list="Done")])
     assert result["moved"] == [{"from": "frm/auth/google-sso", "to": "frm/done/google-sso"}]
-    assert client.put.call_args[1]["params"]["idList"] == "l-done"
+    assert client.put.call_args_list[0][1]["params"]["idList"] == "l-done"
 
 
 # ── Cron (unchanged behaviour) ───────────────────────────────────────────────

@@ -298,6 +298,16 @@ be filled). To broaden to all empty lists: drop the `DATE_RE.match` guard.
 
 To change interval: `time.sleep(3600)`.
 
+### Cleanup is both passive AND active
+
+The cron is the *passive* sweep. The same logic also runs *actively* at the end of every write op
+that shuffles cards — `apply_schedule`, `move_cards`, `archive_cards`, `split_card` — via the async
+`_archive_empty_day_lists(client, board_id)` in `api.py`, so the board is tidy the instant you look
+rather than up to an hour later. Those tools return `lists_cleaned` with the archived names. The
+cron (`mcp_server.py`) and the async helper (`api.py`) are twins: same rule (empty `YYYY-MM-DD`
+lists), different transport (sync `httpx.Client` vs async). `apply_schedule` cleans *before*
+repositioning, so it never bothers to move a list it's about to archive.
+
 ---
 
 ## Technology Notes
@@ -384,7 +394,8 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Day list name format | `config.py`/`tools_planning.py` | `DATE_RE` + `apply_schedule` | `YYYY-MM-DD` |
 | Intra-day ordering | `tools_planning.py` | `apply_schedule` `pos="bottom"` + topo row order | order in list = dep order |
 | Day lists to the left | `tools_planning.py` | `apply_schedule` reverse-date `PUT /lists pos=top` | earliest date leftmost |
-| Empty day-list cleanup | `mcp_server.py` | `_cron_archive_empty_day_lists()` | archives empty `YYYY-MM-DD` lists only |
+| Empty day-list cleanup (passive) | `mcp_server.py` | `_cron_archive_empty_day_lists()` | hourly; archives empty `YYYY-MM-DD` lists only |
+| Empty day-list cleanup (active) | `api.py` | `_archive_empty_day_lists()` | end of apply/move/archive/split; returns `lists_cleaned` |
 | Cycle reporting | `graph.py` | `_find_cycle()`, `_cycle_report()` | DFS colouring |
 | Compact read columns | `tools_cards.py` | `get_cards` formatting loop | tab-delimited |
 | Omit-empty rules | `formatting.py` | `_clean()` | drops None/""/[]/{}, keeps 0/False |

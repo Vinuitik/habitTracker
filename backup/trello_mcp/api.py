@@ -5,10 +5,11 @@ truth, so there is nothing to invalidate between calls. Resolution teaches on a 
 "did you mean …?").
 """
 import difflib
+from collections import Counter
 
 import httpx
 
-from .config import TRELLO_BASE, ToolError, _auth
+from .config import DATE_RE, TRELLO_BASE, ToolError, _auth
 from .formatting import _slug
 
 
@@ -129,3 +130,24 @@ async def _handle_to_link(client, handle: str, cache: dict) -> tuple[str, str]:
     """handle → (shortLink, title). Used to translate LLM-facing handles into stable edges."""
     _, _, c = await _resolve_handle(client, handle, cache)
     return c["shortLink"], c["name"]
+
+
+async def _archive_empty_day_lists(client, board_id: str) -> list[str]:
+    """Archive open day lists (name YYYY-MM-DD) that now hold no cards. Active cleanup, called at the
+    end of write ops that shuffle cards around (apply_schedule / move / archive / split); the cron
+    does the same passively. Fetches fresh — the caller's per-call cache is stale after the writes.
+    Only DATE-named lists are touched (feature/topic lists and _meta are left alone). Returns the
+    archived list names."""
+    lr = await client.get(f"{TRELLO_BASE}/boards/{board_id}/lists", params={**_auth(), "fields": "name"})
+    lr.raise_for_status()
+    cr = await client.get(f"{TRELLO_BASE}/boards/{board_id}/cards", params={**_auth(), "fields": "idList"})
+    cr.raise_for_status()
+    counts = Counter(c["idList"] for c in cr.json())
+    archived = []
+    for l in lr.json():
+        name = l["name"].strip()
+        if DATE_RE.match(name) and counts.get(l["id"], 0) == 0:
+            r = await client.put(f"{TRELLO_BASE}/lists/{l['id']}/closed", params={**_auth(), "value": "true"})
+            r.raise_for_status()
+            archived.append(name)
+    return archived
