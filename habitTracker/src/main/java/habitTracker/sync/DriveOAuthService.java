@@ -38,7 +38,7 @@ public class DriveOAuthService {
         }
         String state = UUID.randomUUID().toString();
         pendingStates.put(state, System.currentTimeMillis() + STATE_TTL_MS);
-        return UriComponentsBuilder.fromHttpUrl(AUTH_URL)
+        return UriComponentsBuilder.fromUriString(AUTH_URL)
                 .queryParam("client_id", driveService.clientId())
                 .queryParam("redirect_uri", redirectUri)
                 .queryParam("response_type", "code")

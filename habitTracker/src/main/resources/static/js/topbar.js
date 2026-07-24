@@ -5,6 +5,8 @@ const NAV_ITEMS = [
   { label: 'Rules',         route: 'HABITS_RULES' },
   { label: 'KPIs',          route: 'KPI_LIST' },
   { label: 'KPI Dashboard', route: 'KPI_DASHBOARD' },
+  { label: 'Connect Drive', route: 'CONNECT_DRIVE' },
+  { label: 'Install App',   route: 'INSTALL' },
 ];
 
 /* Call initTopbar(activeRoute) after DOM is ready.

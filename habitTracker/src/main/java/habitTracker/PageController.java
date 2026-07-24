@@ -39,4 +39,10 @@ public class PageController {
 
     @GetMapping("/kpis/dashboard")
     public String kpiDashboard() { return "forward:/kpi-dashboard.html"; }
+
+    @GetMapping("/connect-drive")
+    public String connectDrive() { return "forward:/connect-drive.html"; }
+
+    @GetMapping("/install")
+    public String install() { return "forward:/install.html"; }
 }

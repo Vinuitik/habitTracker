@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitTracker — Install App</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/molecules/card.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/pages/sync.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/today" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav"></nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="sync-page">
+    <h1 class="sync-page__title">Install HabitTracker</h1>
+
+    <div class="card">
+      <div class="card__title">Get it on your home screen</div>
+      <div class="card__body">
+        Installing gives you a real app icon, a faster launch, and lets the app keep working
+        even when this server is offline. Takes a few seconds.
+      </div>
+    </div>
+
+    <div id="already-installed" class="sync-status" style="display:none;">
+      <span class="sync-status__dot"></span>Already installed — you're using it right now.
+    </div>
+
+    <div class="sync-actions">
+      <button id="install-btn" class="btn btn--primary" style="display:none;" onclick="doInstall()">Install App</button>
+    </div>
+
+    <div id="manual-steps" class="card" style="display:none;">
+      <div class="card__title">Install manually</div>
+      <ol class="sync-steps" id="manual-steps-list"></ol>
+    </div>
+  </main>
+
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/registerSW.js"></script>
+  <script>
+    let deferredPrompt = null;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      document.getElementById('install-btn').style.display = '';
+    });
+
+    async function doInstall() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      document.getElementById('install-btn').style.display = 'none';
+    }
+
+    function showManualSteps() {
+      const ua = navigator.userAgent;
+      const isIOS = /iPhone|iPad|iPod/.test(ua);
+      const isSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS/.test(ua);
+      const list = document.getElementById('manual-steps-list');
+
+      let steps;
+      if (isIOS && isSafari) {
+        steps = [
+          'Tap the Share icon in Safari\'s toolbar.',
+          'Scroll down and tap "Add to Home Screen".',
+          'Tap "Add" — the app icon appears on your home screen.',
+        ];
+      } else if (isIOS) {
+        steps = ['Open this page in Safari (not another browser) — iOS only allows installing from Safari, then follow Share → Add to Home Screen.'];
+      } else {
+        steps = [
+          'Open the browser menu (⋮ or ⋯).',
+          'Look for "Install app" or "Add to Home Screen".',
+          'Confirm — the app icon appears like a native app.',
+        ];
+      }
+      list.innerHTML = steps.map((s) => `<li>${s}</li>`).join('');
+      document.getElementById('manual-steps').style.display = '';
+    }
+
+    async function init() {
+      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
+      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      initTopbar(ENV.ROUTES.INSTALL);
+
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+      if (standalone) {
+        document.getElementById('already-installed').style.display = '';
+        return;
+      }
+
+      // Give beforeinstallprompt a moment to fire before falling back to manual instructions.
+      setTimeout(() => { if (!deferredPrompt) showManualSteps(); }, 800);
+    }
+
+    init();
+  </script>
+</body>
+</html>

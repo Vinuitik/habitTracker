@@ -48,6 +48,12 @@
   <!-- Scripts -->
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
+  <script src="/js/offline/db.js"></script>
+  <script src="/js/offline/crypto.js"></script>
+  <script src="/js/offline/connectivity.js"></script>
+  <script src="/js/offline/driveClient.js"></script>
+  <script src="/js/offline/outbox.js"></script>
+  <script src="/js/registerSW.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <script>
@@ -181,25 +187,20 @@
       const base = parseInt(streakEl.dataset.base || '0', 10);
       const display = nowChecked ? (base <= 0 ? 1 : base + 1) : base;
 
-      fetch(ENV.ENDPOINTS.HABIT_UPDATE(card.dataset.id), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-XSRF-TOKEN': csrf()
-        },
-        body: new URLSearchParams({ completed: nowChecked })
-      }).then(r => {
-        if (!r.ok) {
-          checkbox.checked = !nowChecked;
-          card.classList.toggle('completed', !nowChecked);
-          setRing(card, !nowChecked);
-          return;
-        }
+      // Offline-capable: sent directly if the server's up, else queued through the user's
+      // own Drive (or purely locally if neither is reachable) — see js/offline/outbox.js.
+      // The toggle is applied optimistically either way; it's never lost, just not yet
+      // confirmed, so there's no revert-on-failure path anymore.
+      Outbox.submitHabitComplete(card.dataset.id, nowChecked).then(() => {
         tickStreak(streakEl, base, display, parseInt(streakEl.dataset.freq || '1', 10));
         moveCard(card, nowChecked);
         updateSummary();
         if (nowChecked) checkAllComplete();
         else allDoneFired = false;
+      }).catch(() => {
+        checkbox.checked = !nowChecked;
+        card.classList.toggle('completed', !nowChecked);
+        setRing(card, !nowChecked);
       });
     }
 
@@ -233,23 +234,14 @@
       checkbox.disabled = true;
       card.classList.add('shame');
 
-      fetch(ENV.ENDPOINTS.HABIT_UPDATE(card.dataset.id), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-XSRF-TOKEN': csrf()
-        },
-        body: new URLSearchParams({ completed: false })
-      }).then(r => {
-        if (!r.ok) {
-          card.classList.remove('shame');
-          checkbox.disabled = false;
-          return;
-        }
+      Outbox.submitHabitComplete(card.dataset.id, false).then(() => {
         setTimeout(() => {
           card.classList.add('shame-out');
           card.addEventListener('animationend', () => { card.remove(); updateSummary(); }, { once: true });
         }, 420);
+      }).catch(() => {
+        card.classList.remove('shame');
+        checkbox.disabled = false;
       });
     }
 

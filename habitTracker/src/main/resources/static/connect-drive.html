@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitTracker — Connect Drive</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/molecules/card.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/pages/sync.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/today" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav"></nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="sync-page">
+    <h1 class="sync-page__title">Connect your Google Drive</h1>
+
+    <div class="card">
+      <div class="card__title">Do you want to connect backups?</div>
+      <div class="card__body">
+        <p>
+          This app runs on a personal computer that isn't always online. If you connect your
+          own Google Drive, the app can still work when the server is asleep — anything you do
+          (mark a habit done, log a KPI value) gets queued through your own Drive and applied
+          automatically the next time the server is up. Your data goes to <strong>your own
+          Drive</strong>, encrypted, in a folder only this app can see — nobody else's account
+          is involved.
+        </p>
+      </div>
+    </div>
+
+    <div id="status" class="sync-status">checking…</div>
+    <div id="banner" class="sync-status" style="display:none;"></div>
+
+    <div class="sync-actions">
+      <button id="connect-btn" class="btn btn--primary" onclick="connect()">Connect Google Drive</button>
+      <button id="disconnect-btn" class="btn btn--ghost" style="display:none;" onclick="disconnect()">Disconnect</button>
+    </div>
+
+    <div id="pending-meta" class="sync-meta"></div>
+  </main>
+
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/offline/db.js"></script>
+  <script src="/js/offline/crypto.js"></script>
+  <script src="/js/offline/connectivity.js"></script>
+  <script src="/js/offline/driveClient.js"></script>
+  <script src="/js/offline/outbox.js"></script>
+  <script src="/js/registerSW.js"></script>
+  <script>
+    function csrf() {
+      const m = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
+      return m ? decodeURIComponent(m.split('=')[1]) : '';
+    }
+
+    function setStatus(connected) {
+      const el = document.getElementById('status');
+      el.className = 'sync-status' + (connected ? ' sync-status--connected' : '');
+      el.innerHTML = `<span class="sync-status__dot"></span>${connected ? 'Connected' : 'Not connected'}`;
+      document.getElementById('connect-btn').style.display = connected ? 'none' : '';
+      document.getElementById('disconnect-btn').style.display = connected ? '' : 'none';
+    }
+
+    function showBanner(kind) {
+      const el = document.getElementById('banner');
+      if (kind === 'connected') {
+        el.className = 'sync-status sync-status--connected';
+        el.textContent = 'Drive connected — offline sync is active.';
+      } else if (kind === 'error') {
+        el.className = 'sync-status sync-status--error';
+        el.textContent = 'Could not connect Drive. Please try again.';
+      } else {
+        return;
+      }
+      el.style.display = '';
+    }
+
+    async function connect() {
+      const resp = await fetch(`${ENV.ENDPOINTS.SYNC_OAUTH_URL}?origin=${encodeURIComponent(window.location.origin)}`, {
+        credentials: 'include',
+      });
+      const data = await resp.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        showBanner('error');
+      }
+    }
+
+    async function disconnect() {
+      if (!confirm('Disconnect Google Drive? Offline sync will stop working until you reconnect.')) return;
+      await fetch(ENV.ENDPOINTS.SYNC_DISCONNECT, { method: 'POST', headers: { 'X-XSRF-TOKEN': csrf() } });
+      await refresh();
+    }
+
+    async function refresh() {
+      const resp = await fetch(ENV.ENDPOINTS.SYNC_STATUS, { credentials: 'include' });
+      const data = await resp.json();
+      setStatus(!!data.connected);
+      const pending = await Outbox.pendingCount();
+      document.getElementById('pending-meta').textContent =
+        pending > 0 ? `${pending} change${pending > 1 ? 's' : ''} waiting to sync.` : '';
+    }
+
+    async function init() {
+      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
+      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      initTopbar(ENV.ROUTES.CONNECT_DRIVE);
+
+      const params = new URLSearchParams(window.location.search);
+      showBanner(params.get('drive'));
+
+      await refresh();
+    }
+
+    init();
+  </script>
+</body>
+</html>

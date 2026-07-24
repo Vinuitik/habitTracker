@@ -11,6 +11,9 @@ window.ENV = {
     HABIT_INFO:      (id) => `/api/habits/${id}`,
     KPI_LIST:        '/api/kpis',
     KPI_DASHBOARD:   '/api/kpis/dashboard',
+    SYNC_OAUTH_URL:  '/api/sync/oauth/url',
+    SYNC_DISCONNECT: '/api/sync/disconnect',
+    SYNC_STATUS:     '/api/sync/status',
   },
   ROUTES: {
     HOME:            '/today',
@@ -25,6 +28,8 @@ window.ENV = {
     KPI_LIST:        '/kpis',
     KPI_CREATE:      '/kpis/create',
     KPI_DASHBOARD:   '/kpis/dashboard',
+    CONNECT_DRIVE:   '/connect-drive',
+    INSTALL:         '/install',
   },
   FEATURES: {
     ANIMATIONS: true,

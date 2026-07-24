@@ -58,12 +58,13 @@
 
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
+  <script src="/js/offline/db.js"></script>
+  <script src="/js/offline/crypto.js"></script>
+  <script src="/js/offline/connectivity.js"></script>
+  <script src="/js/offline/driveClient.js"></script>
+  <script src="/js/offline/outbox.js"></script>
+  <script src="/js/registerSW.js"></script>
   <script>
-    function csrf() {
-      const m = document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='));
-      return m ? decodeURIComponent(m.split('=')[1]) : '';
-    }
-
     function getHabitOrder() {
       return Array.from(document.querySelectorAll('.overview-table thead th'))
         .slice(1)
@@ -81,11 +82,10 @@
       if (cb.getAttribute('data-habit-status') === 'INACTIVE') { cb.checked = false; return; }
       const id        = cb.getAttribute('data-habit-id');
       const completed = cb.checked;
-      fetch(ENV.ENDPOINTS.HABIT_UPDATE(id), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRF-TOKEN': csrf() },
-        body: new URLSearchParams({ completed, date: cb.getAttribute('data-date') })
-      }).then(r => { if (!r.ok) cb.checked = !completed; });
+      const date      = cb.getAttribute('data-date');
+      // Offline-capable: direct if the server's up, else via the user's own Drive, else
+      // queued locally — see js/offline/outbox.js. Never lost, so no revert-on-failure here.
+      Outbox.submitHabitComplete(id, completed, date).catch(() => { cb.checked = !completed; });
     }
 
     function buildRows(data) {

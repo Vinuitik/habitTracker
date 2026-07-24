@@ -56,7 +56,7 @@ function setTodayAsDefault() {
 
 async function handleFormSubmit(event) {
     event.preventDefault();
-    
+
     const form = event.target;
     const formData = new FormData(form);
     const kpiName = formData.get('kpiName');
@@ -64,26 +64,12 @@ async function handleFormSubmit(event) {
     const value = formData.get('value');
 
     try {
-        const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/data`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-XSRF-TOKEN': getCsrfToken()
-            },
-            body: new URLSearchParams({
-                date: date,
-                value: value
-            })
-        });
-
-        const result = await response.text();
-        
-        if (response.ok) {
-            showMessage(result, 'success');
-            closeModal();
-        } else {
-            showMessage(result, 'error');
-        }
+        // Offline-capable: direct if the server's up, else via the user's own Drive, else
+        // queued locally — see js/offline/outbox.js. Always "succeeds" from here since the
+        // write is captured one way or another; only a thrown exception means a real bug.
+        const { via } = await Outbox.submitKpiValue(kpiName, date, value);
+        showMessage(via === 'server' ? 'Data added successfully' : 'Saved — will sync when possible', 'success');
+        closeModal();
     } catch (error) {
         console.error('Error adding KPI data:', error);
         showMessage('Failed to add data. Please try again.', 'error');
