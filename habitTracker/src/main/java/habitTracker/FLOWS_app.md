@@ -37,6 +37,8 @@ Auth enforcement:
 | `/kpis` | `static/kpi-list.html` |
 | `/kpis/create` | `static/kpi-create.html` |
 | `/kpis/dashboard` | `static/kpi-dashboard.html` |
+| `/connect-drive` | `static/connect-drive.html` — per-user Google Drive connect (offline sync) |
+| `/install` | `static/install.html` — PWA install prompt |
 
 Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop()`.
 
@@ -52,8 +54,9 @@ Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop
                                                                        ↓
 / (Today) ←── all nav bars link here                             ←────┘
   ├── JS fetches /api/today → renders habit list
-  ├── checkbox toggle → POST /habits/update/{id}
-  └── nav → My Habits | Overview | Rules | KPIs | KPI Dashboard | Sign out
+  ├── checkbox toggle → Outbox.submitHabitComplete() → POST /habits/update/{id} (direct, Drive,
+  │     or locally queued — see sync/FLOWS.md and static/js/offline/FLOWS.md)
+  └── nav → My Habits | Overview | Rules | KPIs | KPI Dashboard | Connect Drive | Install App | Sign out
 
 /habits/list (My Habits)
   ├── JS fetches /api/habits → renders list
@@ -95,6 +98,13 @@ Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop
   ├── chart data → GET /api/kpis/{name}/data?period=weekly|monthly|alltime|custom
   ├── period tabs: Weekly / Monthly / All Time / Custom
   └── Custom tab reveals date-range pickers → Apply → GET ...?period=custom&startDate=&endDate=
+
+/connect-drive (per-user offline sync)
+  ├── "Connect Google Drive" → GET /api/sync/oauth/url → Google consent → GET /api/sync/oauth/callback → back here
+  └── see habitTracker/sync/FLOWS.md for the full connect + mailbox-replay flow
+
+/install
+  └── captures beforeinstallprompt; manual Add-to-Home-Screen steps as iOS fallback
 
 POST /logout (all pages via nav "Sign out" button)
   └── CSRF token from XSRF-TOKEN cookie → Spring Security invalidates session → redirect /login?logout
@@ -141,19 +151,25 @@ JS on each page calls this on load; 401 → `window.location.href = '/login'`
 | `GET /api/kpis/dashboard` | `List<KPIDTO>` |
 | `GET /api/kpis/{name}/data?period=weekly\|monthly\|alltime\|custom[&startDate=&endDate=]` | `List<KPIDataDTO>` |
 | `GET /auth/me` | `{userId}` or 401 |
+| `GET /api/ping` | `"ok"` — unauthenticated, cheap reachability probe (offline-sync client) |
+| `GET /api/sync/status` | `{connected, driveAccessToken, ...}` — see `sync/FLOWS.md` |
 
-### Write endpoints (unchanged)
+### Write endpoints
 | Endpoint | Body | Notes |
 |---|---|---|
 | `POST /new-habit` | JSON `Habit` | sets curDate, active, streak before save |
 | `POST /habits/edit/{id}` | JSON `Habit` | |
-| `POST /habits/update/{id}?completed=&date=` | form params | checkbox toggle |
+| `POST /habits/update/{id}?completed=&date=` | form params | checkbox toggle — offline-capable, see `Outbox.submitHabitComplete()` |
 | `POST /habits/info/save` | JSON `Habit` | partial update |
 | `POST /habits/addRule` | JSON `UpdateDTO` | |
 | `DELETE /habits/delete/{id}` | — | marks active=false |
 | `POST /api/kpis/create` | JSON `{name,description,higherIsBetter,habitIds}` | |
-| `POST /api/kpis/{name}/data?date=&value=` | form params | |
+| `POST /api/kpis/{name}/data?date=&value=` | form params | offline-capable, see `Outbox.submitKpiValue()` |
 | `DELETE /api/kpis/{name}` | — | |
+
+The two offline-capable rows above are also replayable server-side with no HTTP session, via
+`StructureService.updateHabitCompletionForUser()` / `KPIService.addKPIDataForUser()` — see
+`habitTracker/sync/FLOWS.md`.
 
 ---
 
@@ -196,7 +212,7 @@ To change this fallback: `KPIService.getAllActiveKPIs()` — the `if (userId == 
 - **CSRF**: `CookieCsrfTokenRepository` — token in `XSRF-TOKEN` cookie, readable by JS. No Thymeleaf `th:action` needed on static pages — JS reads cookie directly.
 - **Static pages**: Thymeleaf is NOT used for page rendering. Pages are plain HTML files in `static/`. `PageController` does a servlet `forward:` to each file. Spring Security auth runs on the page route, not the forwarded path.
 - **Edit/Info page ID**: Habit ID extracted from URL path via `window.location.pathname.split('/').pop()` — no query string needed.
-- **Nav is copy-pasted**: All 10 static HTML files have their own `<nav>`. Changes must be applied to all 10 files.
+- **Nav is shared via `topbar.js`**: each page has an empty `<nav class="topbar__nav">` shell; `topbar.js`'s `NAV_ITEMS` array + `initTopbar(activeRoute)` render the links from `ENV.ROUTES` at load time — a single source of truth, not copy-pasted per file (this note was stale as of 2026-07; the array-driven render already existed, just wasn't reflected here).
 - **Legacy JS reuse**: `input.js`, `habits-list.js`, `habit-table.js`, `edit-habit.js`, `info.js`, `rule-setting.js`, `kpi-list.js`, `kpi-dashboard.js` are all kept. Their `DOMContentLoaded` handlers fire before async `init()` populates the DOM, so each page's `init()` re-runs any DOM-dependent setup after data loads.
 - **Integration tests**: All tests use Testcontainers `@ServiceConnection` (a fresh `mongo:7` container per test class). Do NOT use `@WithMockUser` — it injects a `String` principal which causes `SecurityUtils.getCurrentUserId()` to return null, breaking all userId-scoped assertions. Use `AuthTestHelper` (in `src/test/java/habitTracker/auth/`) which creates real `User` docs and `UserPrincipal` objects. JWT tokens for `/api/**` tests: `auth.bearer(principal)` → `Authorization: Bearer <token>` header.
 
@@ -206,7 +222,7 @@ To change this fallback: `KPIService.getAllActiveKPIs()` — the `if (userId == 
 
 | What to change | Where |
 |---|---|
-| Add a new nav link | All 10 static HTML files (no shared fragment) |
+| Add a new nav link | `static/js/topbar.js` `NAV_ITEMS` + matching `ENV.ROUTES` entry in `static/js/env.js` |
 | Add a new page route | `PageController.java` + new static HTML file + SecurityConfig if new path pattern |
 | Login page layout | `templates/login.html` |
 | Register page layout | `templates/register.html` |

@@ -53,6 +53,7 @@ To change cron time: `UpdateScheduler.scheduledUpdate()` in source + rebuild `ja
 | Variable | Used by | Where to set |
 |---|---|---|
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth login | `.env` → `javaapp` |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | Per-user Drive offline-sync connect (shared with mongo-backup's own Drive OAuth client, but each habitTracker user's consent yields their own refresh token — see `habitTracker/src/main/java/habitTracker/sync/FLOWS.md`) | `.env` → `javaapp` + `mongo-backup` |
 | `jwt.secret` | JWT signing | `application.properties` or `.env` |
 | `jwt.expiration-ms` | JWT token lifetime | `application.properties` or `.env` |
 | `MONGO_USER` / `MONGO_PASS` / `MONGO_DB` | All MongoDB connections | `.env` → `javaapp` + `mongo-backup` |
