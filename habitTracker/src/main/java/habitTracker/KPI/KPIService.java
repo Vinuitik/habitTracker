@@ -41,9 +41,10 @@ public class KPIService {
                 .build();
         
         KPI savedKPI = kpiRepository.save(kpi);
-        
-        // Create collection for this KPI's data
-        String collectionName = collectionNameUtil.toCollectionName(name);
+
+        // Create collection for this KPI's data, keyed by the KPI's own id (see
+        // KPICollectionNameUtil) so same-named KPIs from different users never collide.
+        String collectionName = collectionNameUtil.toCollectionName(savedKPI.getId());
         dynamicKPIDataRepository.createCollection(collectionName);
         
         // Create habit mappings
@@ -72,22 +73,22 @@ public class KPIService {
     }
     
     public Optional<KPIDTO> getKPIByName(String name) {
-        return kpiRepository.findByName(name)
+        String userId = SecurityUtils.getCurrentUserId();
+        return kpiRepository.findByNameAndUserId(name, userId)
                 .map(this::convertToDTO);
     }
     
     @Transactional
     public void addKPIData(String kpiName, LocalDate date, Double value) {
-        // Check if KPI exists
-        if (!kpiRepository.existsByName(kpiName)) {
-            throw new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist");
-        }
-        
-        String collectionName = collectionNameUtil.toCollectionName(kpiName);
-        
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+
+        String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
+
         // Check if data for this date already exists
         Optional<KPIData> existingData = dynamicKPIDataRepository.findByDate(date, collectionName);
-        
+
         KPIData kpiData;
         if (existingData.isPresent()) {
             kpiData = existingData.get();
@@ -98,25 +99,27 @@ public class KPIService {
                     .value(value)
                     .build();
         }
-        
+
         // Calculate EMA
-        Double ema = calculateEMA(kpiName, value, date);
+        Double ema = calculateEMA(collectionName, value);
         kpiData.setExponentialMovingAverage(ema);
-        
+
         dynamicKPIDataRepository.save(kpiData, collectionName);
     }
-    
+
     public List<KPIDataDTO> getKPIDataForDateRange(String kpiName, LocalDate startDate, LocalDate endDate) {
-        String collectionName = collectionNameUtil.toCollectionName(kpiName);
-        List<KPIData> data = dynamicKPIDataRepository.findByDateBetweenOrderByDateAsc(startDate, endDate, collectionName);
-        Optional<KPI> kpi = kpiRepository.findByName(kpiName);
-        
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) return new ArrayList<>();
+        Optional<KPI> kpi = kpiRepository.findByNameAndUserId(kpiName, userId);
+
         if (kpi.isEmpty()) {
             return new ArrayList<>();
         }
-        
+
+        String collectionName = collectionNameUtil.toCollectionName(kpi.get().getId());
+        List<KPIData> data = dynamicKPIDataRepository.findByDateBetweenOrderByDateAsc(startDate, endDate, collectionName);
         boolean higherIsBetter = kpi.get().getHigherIsBetter();
-        
+
         return data.stream()
                 .map(d -> convertToDataDTO(d, kpiName, higherIsBetter))
                 .collect(Collectors.toList());
@@ -135,18 +138,23 @@ public class KPIService {
     }
 
     public List<KPIDataDTO> getAllTimeKPIData(String kpiName) {
-        String collectionName = collectionNameUtil.toCollectionName(kpiName);
-        List<KPIData> data = dynamicKPIDataRepository.findAllOrderByDateAsc(collectionName);
-        Optional<KPI> kpi = kpiRepository.findByName(kpiName);
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) return new ArrayList<>();
+        Optional<KPI> kpi = kpiRepository.findByNameAndUserId(kpiName, userId);
         if (kpi.isEmpty()) return new ArrayList<>();
+
+        String collectionName = collectionNameUtil.toCollectionName(kpi.get().getId());
+        List<KPIData> data = dynamicKPIDataRepository.findAllOrderByDateAsc(collectionName);
         boolean higherIsBetter = kpi.get().getHigherIsBetter();
         return data.stream()
                 .map(d -> convertToDataDTO(d, kpiName, higherIsBetter))
                 .collect(Collectors.toList());
     }
-    
+
     public List<KPIDTO> getKPIsByHabitId(Integer habitId) {
-        List<KPIHabitMapping> mappings = kpiHabitMappingRepository.findByHabitId(habitId);
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) return new ArrayList<>();
+        List<KPIHabitMapping> mappings = kpiHabitMappingRepository.findByHabitIdAndUserId(habitId, userId);
         if (mappings == null || mappings.isEmpty()) {
             return new ArrayList<>();
         }
@@ -155,8 +163,10 @@ public class KPIService {
                 .map(KPIHabitMapping::getKpiName)
                 .collect(Collectors.toList());
 
-        // Fetch all KPIs in a single call
-        List<KPI> kpis = kpiRepository.findByNameIn(kpiNames);
+        // Fetch this user's KPIs matching those names in a single call
+        List<KPI> kpis = kpiRepository.findByNameIn(kpiNames).stream()
+                .filter(k -> userId.equals(k.getUserId()))
+                .collect(Collectors.toList());
         Map<String, KPI> kpiByName = kpis.stream()
                 .collect(Collectors.toMap(KPI::getName, k -> k));
 
@@ -167,23 +177,26 @@ public class KPIService {
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
-    
+
     @Transactional
     public void deleteKPI(String name) {
-        String collectionName = collectionNameUtil.toCollectionName(name);
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(name, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + name + "' does not exist"));
+        String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
         dynamicKPIDataRepository.dropCollection(collectionName);
-        kpiHabitMappingRepository.deleteByKpiName(name);
-        kpiRepository.findByName(name).ifPresent(kpiRepository::delete);
+        kpiHabitMappingRepository.deleteByKpiNameAndUserId(name, userId);
+        kpiRepository.delete(kpi);
     }
-    
+
     @Transactional
     public void updateKPIHabitMappings(String kpiName, List<Integer> habitIds) {
-        // Remove existing mappings
-        kpiHabitMappingRepository.deleteByKpiName(kpiName);
-        
+        String userId = SecurityUtils.getCurrentUserId();
+        // Remove existing mappings (scoped to this user's own mappings for this KPI name)
+        kpiHabitMappingRepository.deleteByKpiNameAndUserId(kpiName, userId);
+
         // Add new mappings
         if (habitIds != null && !habitIds.isEmpty()) {
-            String userId = SecurityUtils.getCurrentUserId();
             List<KPIHabitMapping> mappings = habitIds.stream()
                     .map(habitId -> KPIHabitMapping.builder()
                             .kpiName(kpiName)
@@ -194,9 +207,8 @@ public class KPIService {
             kpiHabitMappingRepository.saveAll(mappings);
         }
     }
-    
-    private Double calculateEMA(String kpiName, Double currentValue, LocalDate currentDate) {
-        String collectionName = collectionNameUtil.toCollectionName(kpiName);
+
+    private Double calculateEMA(String collectionName, Double currentValue) {
         List<KPIData> historicalData = dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName);
         
         if (historicalData.isEmpty()) {
@@ -217,7 +229,7 @@ public class KPIService {
     }
     
     private KPIDTO convertToDTO(KPI kpi) {
-        List<KPIHabitMapping> mappings = kpiHabitMappingRepository.findByKpiName(kpi.getName());
+        List<KPIHabitMapping> mappings = kpiHabitMappingRepository.findByKpiNameAndUserId(kpi.getName(), kpi.getUserId());
         List<Integer> habitIds = mappings.stream()
                 .map(KPIHabitMapping::getHabitId)
                 .collect(Collectors.toList());

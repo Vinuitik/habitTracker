@@ -1,6 +1,7 @@
 package habitTracker;
 
 import habitTracker.Habit.Habit;
+import habitTracker.Rules.Rule;
 import habitTracker.Structure.HabitStructure;
 import habitTracker.auth.AuthTestHelper;
 import habitTracker.auth.JwtUtil;
@@ -20,6 +21,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -200,5 +202,46 @@ class SecurityAndValidationTest {
                         .param("completed", "true")
                         .with(auth.session(alice)).with(csrf()))
                 .andExpect(status().isOk());
+    }
+
+    // Bug: updateHabitCompletion() never set userId on newly-created HabitStructure rows, so a
+    // fresh toggle looked "saved" but was invisible to any userId-scoped read (e.g. the history
+    // table), reverting to unchecked on reload. Regression guard: the written row must carry it.
+    @Test
+    void completingHabit_persistsUserIdOnHabitStructure() throws Exception {
+        UserPrincipal alice = auth.register("owner6@habits.test");
+        saveHabitFor(alice, 105, "alice-habit");
+
+        mockMvc.perform(post("/habits/update/105")
+                        .param("completed", "true")
+                        .with(auth.session(alice)).with(csrf()))
+                .andExpect(status().isOk());
+
+        List<HabitStructure> written = mongoTemplate.findAll(HabitStructure.class);
+        assertEquals(1, written.size());
+        assertEquals(alice.getId(), written.get(0).getUserId(),
+                "HabitStructure.userId must be set so userId-scoped reads (history views) find it");
+    }
+
+    // ---------- IDOR: planting a Rule on another user's habit ----------
+
+    @Test
+    void cannotAddRuleOnAnotherUsersHabit() throws Exception {
+        UserPrincipal alice = auth.register("owner7@habits.test");
+        UserPrincipal bob = auth.register("attacker7@habits.test");
+        saveHabitFor(alice, 106, "alice-habit");
+        saveHabitFor(bob, 206, "bob-habit");
+
+        mongoTemplate.dropCollection(Rule.class);
+
+        mockMvc.perform(post("/habits/addRule")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mainId\":106,\"subIds\":[206],\"frequency\":1,\"streak\":0}")
+                        .with(auth.session(bob)).with(csrf()))
+                .andExpect(status().isNotFound());
+
+        // No Rule row should exist pointing at the victim's habit — planting it before the
+        // ownership check used to succeed even though the request overall was rejected.
+        assertEquals(0, mongoTemplate.findAll(Rule.class).size());
     }
 }

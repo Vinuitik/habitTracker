@@ -3,6 +3,7 @@ package habitTracker.Habit;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -158,6 +159,17 @@ public class HabitService {
 
     public List<Habit> getHabitsByIds(List<Integer> ids) {
         return habitRepository.findAllById(ids);
+    }
+
+    // Narrows an arbitrary id list down to the ones the current user actually owns.
+    // Used before writing anything (e.g. Rule rows) keyed by caller-supplied habit ids,
+    // so a request can't plant records pointing at another user's habit (IDOR).
+    public List<Integer> filterOwnedHabitIds(List<Integer> ids) {
+        if (ids == null || ids.isEmpty()) return new ArrayList<>();
+        return habitRepository.findAllById(ids).stream()
+            .filter(this::ownedByCurrentUser)
+            .map(Habit::getId)
+            .collect(Collectors.toList());
     }
 
     public List<HabitDTO> getAllHabitsAsDTOs() {

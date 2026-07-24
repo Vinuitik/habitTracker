@@ -161,6 +161,74 @@ class KPIIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    // ── Bug 5: KPI data collections keyed by name collided across users ──────
+    // (KPICollectionNameUtil used to derive the Mongo collection from the KPI's slugified
+    // name alone; two users naming a KPI the same thing shared one collection and could
+    // read/write/delete each other's values. Fixed by keying the collection off the KPI's
+    // own id instead.)
+
+    @Test
+    void sameNamedKPI_dataIsIsolatedBetweenUsers() throws Exception {
+        UserPrincipal alice = auth.register("alice7@test.com");
+        UserPrincipal bob   = auth.register("bob3@test.com");
+
+        for (UserPrincipal u : List.of(alice, bob)) {
+            mockMvc.perform(post("/api/kpis/create")
+                            .with(auth.session(u)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"name":"Weight","description":"","higherIsBetter":false,"habitIds":[]}
+                                    """))
+                    .andExpect(status().isOk());
+        }
+
+        String today = LocalDate.now().toString();
+        mockMvc.perform(post("/api/kpis/Weight/data")
+                        .with(auth.session(alice)).with(csrf())
+                        .param("date", today).param("value", "70"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/kpis/Weight/data")
+                        .with(auth.session(bob)).with(csrf())
+                        .param("date", today).param("value", "999"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/kpis/Weight/data").param("period", "alltime")
+                        .with(auth.session(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].value").value(70.0));
+
+        mockMvc.perform(get("/api/kpis/Weight/data").param("period", "alltime")
+                        .with(auth.session(bob)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].value").value(999.0));
+    }
+
+    @Test
+    void deletingOwnSameNamedKPI_doesNotDeleteOtherUsersKPI() throws Exception {
+        UserPrincipal alice = auth.register("alice8@test.com");
+        UserPrincipal bob   = auth.register("bob4@test.com");
+
+        for (UserPrincipal u : List.of(alice, bob)) {
+            mockMvc.perform(post("/api/kpis/create")
+                            .with(auth.session(u)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"name":"Weight","description":"","higherIsBetter":false,"habitIds":[]}
+                                    """))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(delete("/api/kpis/Weight").with(auth.session(bob)).with(csrf()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/kpis").with(auth.session(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("Weight"));
+    }
+
     // ── Bug 4: add-habit persists userId ─────────────────────────────────────
 
     @Test

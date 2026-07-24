@@ -90,9 +90,16 @@ public class HabitWriteController {
     }
 
     @PostMapping("/habits/addRule")
+    @Transactional
     public ResponseEntity<String> addRule(@RequestBody UpdateDTO updateDTO) {
         try {
-            ruleService.addRule(updateDTO.getMainId(), updateDTO.getSubIds());
+            // Ownership guard (IDOR): reject/trim any mainId or subIds the caller doesn't own
+            // *before* persisting anything, rather than only checking after the Rule rows exist.
+            if (habitService.getHabitById(updateDTO.getMainId()) == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Main habit not found");
+            }
+            List<Integer> ownedSubIds = habitService.filterOwnedHabitIds(updateDTO.getSubIds());
+            ruleService.addRule(updateDTO.getMainId(), ownedSubIds);
             habitService.updateRule(updateDTO);
             return ResponseEntity.ok("Rule added successfully");
         } catch (Exception e) {

@@ -260,6 +260,9 @@ public class StructureService {
             habitStructure.setStructureDate(date);
         }
         habitStructure.setCompleted(completed);
+        // Without this, toggles written here have no userId while cron-created records do —
+        // any userId-scoped read (e.g. getStructuresForDateRange) silently misses them on reload.
+        habitStructure.setUserId(SecurityUtils.getCurrentUserId());
         habitStructureRepository.save(habitStructure);
 
         if (Boolean.FALSE.equals(completed) && LocalDate.now().equals(date)) {
