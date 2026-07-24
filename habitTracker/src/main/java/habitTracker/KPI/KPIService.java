@@ -86,7 +86,14 @@ public class KPIService {
     
     @Transactional
     public void addKPIData(String kpiName, LocalDate date, Double value) {
-        String userId = SecurityUtils.getCurrentUserId();
+        addKPIDataForUser(SecurityUtils.getCurrentUserId(), kpiName, date, value);
+    }
+
+    // Explicit-userId variant for callers with no HTTP SecurityContext (e.g. the offline-sync
+    // mailbox consumer replaying a request on a background thread) — identical logic, just
+    // doesn't read SecurityUtils.getCurrentUserId() internally.
+    @Transactional
+    public void addKPIDataForUser(String userId, String kpiName, LocalDate date, Double value) {
         KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
                 .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
 

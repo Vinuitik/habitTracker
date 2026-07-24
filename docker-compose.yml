@@ -28,6 +28,11 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-disabled}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-disabled}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (see .env / .env.example)}
+      # Per-user Drive offline-sync connect flow — reuses the same Drive-scoped OAuth
+      # client already used by mongo-backup (drive.file access), just for a different
+      # purpose. Optional: a user simply can't connect Drive if this is unset.
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-disabled}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-disabled}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089"]
       interval: 5s

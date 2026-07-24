@@ -244,9 +244,17 @@ public class StructureService {
 
     @Transactional
     public void updateHabitCompletion(Integer habitId, Boolean completed, LocalDate date) {
-        // Ownership guard: getHabitById is scoped to the current user, so this rejects
+        updateHabitCompletionForUser(SecurityUtils.getCurrentUserId(), habitId, completed, date);
+    }
+
+    // Explicit-userId variant for callers with no HTTP SecurityContext (e.g. the offline-sync
+    // mailbox consumer replaying a request on a background thread) — identical logic, just
+    // doesn't read SecurityUtils.getCurrentUserId() internally.
+    @Transactional
+    public void updateHabitCompletionForUser(String userId, Integer habitId, Boolean completed, LocalDate date) {
+        // Ownership guard: getHabitByIdForUser is scoped to userId, so this rejects
         // attempts to toggle a habit the caller doesn't own (IDOR on /habits/update/{id}).
-        if (habitService.getHabitById(habitId) == null) {
+        if (habitService.getHabitByIdForUser(habitId, userId) == null) {
             throw new IllegalArgumentException("Habit not found with ID: " + habitId);
         }
         if(date == null) {
@@ -262,7 +270,7 @@ public class StructureService {
         habitStructure.setCompleted(completed);
         // Without this, toggles written here have no userId while cron-created records do —
         // any userId-scoped read (e.g. getStructuresForDateRange) silently misses them on reload.
-        habitStructure.setUserId(SecurityUtils.getCurrentUserId());
+        habitStructure.setUserId(userId);
         habitStructureRepository.save(habitStructure);
 
         if (Boolean.FALSE.equals(completed) && LocalDate.now().equals(date)) {
@@ -273,13 +281,11 @@ public class StructureService {
         List<Integer> subIds = rules.stream()
             .map(Rule::getHabitSubId)
             .collect(Collectors.toList());
-        System.out.println(habitId);
-        System.out.println("Sub IDs: " + subIds);
         for(Integer subId : subIds) {
             if(subId == null || subId.equals(habitId)) {
                 continue; // Skip if subId is null, or if it is the same as habitId in order to prevent infinite iteration
             }
-            updateHabitCompletion(subId, completed, date);
+            updateHabitCompletionForUser(userId, subId, completed, date);
         }
     }
 

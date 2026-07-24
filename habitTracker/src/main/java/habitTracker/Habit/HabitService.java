@@ -157,6 +157,14 @@ public class HabitService {
         return ownedByCurrentUser(habit) ? habit : null;
     }
 
+    // Explicit-userId variant for callers with no HTTP SecurityContext (e.g. the offline-sync
+    // mailbox consumer replaying a request on a background thread) — same ownership check,
+    // just doesn't read SecurityUtils.getCurrentUserId() internally.
+    public Habit getHabitByIdForUser(Integer id, String userId) {
+        Habit habit = habitRepository.findById(id).orElse(null);
+        return (habit != null && userId != null && userId.equals(habit.getUserId())) ? habit : null;
+    }
+
     public List<Habit> getHabitsByIds(List<Integer> ids) {
         return habitRepository.findAllById(ids);
     }
