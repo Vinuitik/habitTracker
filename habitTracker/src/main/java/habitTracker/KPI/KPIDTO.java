@@ -21,4 +21,6 @@ public class KPIDTO {
     private LocalDateTime updatedAt;
     private Boolean active;
     private List<Integer> linkedHabitIds; // list of linked habit IDs
+    private Boolean autoFillEnabled;
+    private Double defaultValue;
 }

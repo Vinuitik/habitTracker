@@ -78,13 +78,15 @@ class KPIServiceTest {
         when(kpiRepository.save(any(KPI.class))).thenReturn(mockKPI);
         when(kpiHabitMappingRepository.saveAll(anyList())).thenReturn(Arrays.asList());
 
-        KPIDTO result = kpiService.createKPI(kpiName, description, higherIsBetter, habitIds);
+        KPIDTO result = kpiService.createKPI(kpiName, description, higherIsBetter, habitIds, false, null);
 
         assertNotNull(result);
         assertEquals(kpiName, result.getName());
         assertEquals(description, result.getDescription());
         assertEquals(higherIsBetter, result.getHigherIsBetter());
         assertEquals(habitIds, result.getLinkedHabitIds());
+        assertEquals(false, result.getAutoFillEnabled());
+        assertNull(result.getDefaultValue());
 
         verify(dynamicKPIDataRepository).createCollection(expectedCollectionName);
         verify(kpiRepository).save(any(KPI.class));
@@ -98,10 +100,47 @@ class KPIServiceTest {
         when(kpiRepository.existsByNameAndUserId(kpiName, USER_ID)).thenReturn(true);
 
         assertThrows(IllegalArgumentException.class, () ->
-            kpiService.createKPI(kpiName, "description", true, Arrays.asList()));
+            kpiService.createKPI(kpiName, "description", true, Arrays.asList(), false, null));
 
         verify(dynamicKPIDataRepository, never()).createCollection(anyString());
         verify(kpiRepository, never()).save(any(KPI.class));
+    }
+
+    @Test
+    void testCreateKPI_AutoFillEnabledWithoutDefaultValue_Throws() {
+        String kpiName = "Daily Steps";
+        when(kpiRepository.existsByNameAndUserId(kpiName, USER_ID)).thenReturn(false);
+
+        assertThrows(IllegalArgumentException.class, () ->
+            kpiService.createKPI(kpiName, "description", true, null, true, null));
+
+        verify(kpiRepository, never()).save(any(KPI.class));
+    }
+
+    @Test
+    void testCreateKPI_AutoFillEnabledWithDefaultValue_Success() {
+        String kpiName = "Daily Steps";
+        String kpiId = "kpi123";
+        String expectedCollectionName = "kpi_data_kpi123";
+
+        when(kpiRepository.existsByNameAndUserId(kpiName, USER_ID)).thenReturn(false);
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(expectedCollectionName);
+
+        KPI mockKPI = KPI.builder()
+                .id(kpiId)
+                .name(kpiName)
+                .userId(USER_ID)
+                .autoFillEnabled(true)
+                .defaultValue(0.0)
+                .build();
+        when(kpiRepository.save(any(KPI.class))).thenReturn(mockKPI);
+
+        KPIDTO result = kpiService.createKPI(kpiName, "description", true, null, true, 0.0);
+
+        assertEquals(true, result.getAutoFillEnabled());
+        assertEquals(0.0, result.getDefaultValue());
+        verify(kpiRepository).save(argThat(k ->
+            Boolean.TRUE.equals(k.getAutoFillEnabled()) && Double.valueOf(0.0).equals(k.getDefaultValue())));
     }
 
     @Test
@@ -286,5 +325,138 @@ class KPIServiceTest {
 
         assertNotNull(result);
         verify(dynamicKPIDataRepository).findByDateBetweenOrderByDateAsc(any(), any(), eq(collectionName));
+    }
+
+    @Test
+    void testFillDefaultIfMissing_FillsWhenNoDataExists() {
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        KPI kpi = KPI.builder().id(kpiId).name("Weight").userId(USER_ID)
+                .autoFillEnabled(true).defaultValue(70.0).build();
+
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        when(dynamicKPIDataRepository.findByDate(date, collectionName)).thenReturn(Optional.empty());
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName)).thenReturn(Arrays.asList());
+
+        boolean filled = kpiService.fillDefaultIfMissing(kpi, date);
+
+        assertTrue(filled);
+        verify(dynamicKPIDataRepository).save(argThat(d ->
+            d.getValue().equals(70.0) && Boolean.TRUE.equals(d.getAutoFilled())), eq(collectionName));
+    }
+
+    @Test
+    void testFillDefaultIfMissing_SkipsWhenDataAlreadyExists() {
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        KPI kpi = KPI.builder().id(kpiId).name("Weight").userId(USER_ID)
+                .autoFillEnabled(true).defaultValue(70.0).build();
+
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        when(dynamicKPIDataRepository.findByDate(date, collectionName))
+            .thenReturn(Optional.of(KPIData.builder().value(65.0).build()));
+
+        boolean filled = kpiService.fillDefaultIfMissing(kpi, date);
+
+        assertFalse(filled);
+        verify(dynamicKPIDataRepository, never()).save(any(KPIData.class), anyString());
+    }
+
+    @Test
+    void testFillDefaultIfMissing_SkipsWhenAutoFillDisabled() {
+        KPI kpi = KPI.builder().id("kpi123").name("Weight").userId(USER_ID)
+                .autoFillEnabled(false).defaultValue(70.0).build();
+
+        boolean filled = kpiService.fillDefaultIfMissing(kpi, LocalDate.now());
+
+        assertFalse(filled);
+        verify(dynamicKPIDataRepository, never()).findByDate(any(), anyString());
+    }
+
+    @Test
+    void testFillDefaultIfMissing_SkipsWhenDefaultValueNull() {
+        KPI kpi = KPI.builder().id("kpi123").name("Weight").userId(USER_ID)
+                .autoFillEnabled(true).defaultValue(null).build();
+
+        boolean filled = kpiService.fillDefaultIfMissing(kpi, LocalDate.now());
+
+        assertFalse(filled);
+        verify(dynamicKPIDataRepository, never()).findByDate(any(), anyString());
+    }
+
+    @Test
+    void testAddKPIData_ManualEntryClearsAutoFilledFlag() {
+        String kpiName = "Daily Steps";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        KPI mockKPI = KPI.builder().id(kpiId).name(kpiName).userId(USER_ID).build();
+
+        KPIData autoFilledExisting = KPIData.builder()
+                .id("data123").date(date).value(0.0).autoFilled(true).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        when(dynamicKPIDataRepository.findByDate(date, collectionName)).thenReturn(Optional.of(autoFilledExisting));
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName)).thenReturn(Arrays.asList());
+
+        kpiService.addKPIData(kpiName, date, 9500.0);
+
+        verify(dynamicKPIDataRepository).save(argThat(d ->
+            d.getValue().equals(9500.0) && Boolean.FALSE.equals(d.getAutoFilled())), eq(collectionName));
+    }
+
+    @Test
+    void testUpdateDefaultFillSettings_Success() {
+        String kpiName = "Weight";
+        KPI mockKPI = KPI.builder().id("kpi123").name(kpiName).userId(USER_ID).autoFillEnabled(false).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(kpiRepository.save(any(KPI.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        KPIDTO result = kpiService.updateDefaultFillSettings(kpiName, true, 70.0);
+
+        assertEquals(true, result.getAutoFillEnabled());
+        assertEquals(70.0, result.getDefaultValue());
+    }
+
+    @Test
+    void testUpdateDefaultFillSettings_DisablingClearsDefaultValue() {
+        String kpiName = "Weight";
+        KPI mockKPI = KPI.builder().id("kpi123").name(kpiName).userId(USER_ID)
+                .autoFillEnabled(true).defaultValue(70.0).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(kpiRepository.save(any(KPI.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        KPIDTO result = kpiService.updateDefaultFillSettings(kpiName, false, null);
+
+        assertEquals(false, result.getAutoFillEnabled());
+        assertNull(result.getDefaultValue());
+    }
+
+    @Test
+    void testUpdateDefaultFillSettings_EnablingWithoutDefaultValue_Throws() {
+        String kpiName = "Weight";
+        KPI mockKPI = KPI.builder().id("kpi123").name(kpiName).userId(USER_ID).build();
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+
+        assertThrows(IllegalArgumentException.class, () ->
+            kpiService.updateDefaultFillSettings(kpiName, true, null));
+
+        verify(kpiRepository, never()).save(any(KPI.class));
+    }
+
+    @Test
+    void testUpdateDefaultFillSettings_DoesNotUpdateAnotherUsersKPIWithSameName() {
+        String kpiName = "Weight";
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () ->
+            kpiService.updateDefaultFillSettings(kpiName, true, 70.0));
+
+        verify(kpiRepository, never()).save(any(KPI.class));
     }
 }

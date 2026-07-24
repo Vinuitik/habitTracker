@@ -46,8 +46,22 @@ public class KPIController {
             List<Integer> habitIds = body.get("habitIds") != null
                     ? ((List<?>) body.get("habitIds")).stream().map(v -> ((Number) v).intValue()).collect(Collectors.toList())
                     : null;
-            kpiService.createKPI(name, description, higherIsBetter, habitIds);
+            Boolean autoFillEnabled = (Boolean) body.get("autoFillEnabled");
+            Double defaultValue = body.get("defaultValue") != null ? ((Number) body.get("defaultValue")).doubleValue() : null;
+            kpiService.createKPI(name, description, higherIsBetter, habitIds, autoFillEnabled, defaultValue);
             return ResponseEntity.ok(Map.of("message", "KPI created successfully"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{name}/default-fill")
+    public ResponseEntity<?> updateDefaultFill(@PathVariable String name, @RequestBody Map<String, Object> body) {
+        try {
+            Boolean autoFillEnabled = (Boolean) body.get("autoFillEnabled");
+            Double defaultValue = body.get("defaultValue") != null ? ((Number) body.get("defaultValue")).doubleValue() : null;
+            KPIDTO updated = kpiService.updateDefaultFillSettings(name, autoFillEnabled, defaultValue);
+            return ResponseEntity.ok(updated);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

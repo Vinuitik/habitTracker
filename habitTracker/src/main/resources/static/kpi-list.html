@@ -68,6 +68,34 @@
     </div>
   </div>
 
+  <!-- Auto-Fill Settings Modal -->
+  <div class="modal-overlay" id="autoFillModal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title">Auto-Fill Settings</span>
+        <button class="modal-box__close" onclick="closeAutoFillModal()">&#x2715;</button>
+      </div>
+      <form id="autoFillForm" class="modal-box__fields">
+        <input type="hidden" id="autoFillKpiName" name="kpiName">
+        <div class="form-group">
+          <div class="checkbox-option">
+            <input type="checkbox" id="autoFillEnabledInput" name="autoFillEnabled">
+            <label for="autoFillEnabledInput">Auto-fill missed days</label>
+          </div>
+          <span class="form-group__hint">If you forget to log a day, a nightly job fills it in with the default value below.</span>
+        </div>
+        <div class="form-group" id="autoFillDefaultValueGroup" style="display:none;">
+          <label class="form-group__label" for="autoFillDefaultValueInput">Default Value</label>
+          <input class="input" type="number" step="any" id="autoFillDefaultValueInput" name="defaultValue" placeholder="e.g. 0">
+        </div>
+        <div class="modal-box__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn btn--ghost" onclick="closeAutoFillModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
   <script>
@@ -86,6 +114,56 @@
 
     window.addEventListener('click', e => {
       if (e.target === document.getElementById('addDataModal')) closeModal();
+      if (e.target === document.getElementById('autoFillModal')) closeAutoFillModal();
+    });
+
+    function openAutoFillModal(kpiName, autoFillEnabled, defaultValue) {
+      document.getElementById('autoFillKpiName').value = kpiName;
+      document.getElementById('autoFillEnabledInput').checked = !!autoFillEnabled;
+      document.getElementById('autoFillDefaultValueInput').value = defaultValue != null ? defaultValue : '';
+      document.getElementById('autoFillDefaultValueGroup').style.display = autoFillEnabled ? '' : 'none';
+      document.getElementById('autoFillModal').classList.add('open');
+    }
+
+    function closeAutoFillModal() {
+      document.getElementById('autoFillModal').classList.remove('open');
+      document.getElementById('autoFillForm').reset();
+    }
+
+    document.getElementById('autoFillEnabledInput').addEventListener('change', function(e) {
+      document.getElementById('autoFillDefaultValueGroup').style.display = e.target.checked ? '' : 'none';
+    });
+
+    document.getElementById('autoFillForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const kpiName = document.getElementById('autoFillKpiName').value;
+      const enabled = document.getElementById('autoFillEnabledInput').checked;
+      const valueRaw = document.getElementById('autoFillDefaultValueInput').value;
+
+      if (enabled && valueRaw === '') {
+        alert('Enter a default value, or turn off auto-fill.');
+        return;
+      }
+
+      const res = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/default-fill`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-XSRF-TOKEN': csrf()
+        },
+        body: JSON.stringify({
+          autoFillEnabled: enabled,
+          defaultValue: enabled ? parseFloat(valueRaw) : null
+        })
+      });
+
+      if (res.ok) {
+        closeAutoFillModal();
+        window.location.reload();
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Failed to save auto-fill settings' }));
+        alert(err.error || 'Failed to save auto-fill settings.');
+      }
     });
   </script>
   <script src="/js/kpi-list.js"></script>
@@ -130,6 +208,9 @@
         const linked = kpi.linkedHabitIds && kpi.linkedHabitIds.length > 0
           ? `${kpi.linkedHabitIds.length} linked habit${kpi.linkedHabitIds.length > 1 ? 's' : ''}`
           : null;
+        const autoFillBadge = kpi.autoFillEnabled
+          ? `<span class="kpi-card__direction" style="color:var(--color-accent);background:var(--color-accent-dim);">Auto-fill: ${kpi.defaultValue}</span>`
+          : null;
 
         const card = document.createElement('div');
         card.className = 'kpi-card';
@@ -137,9 +218,12 @@
           <div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap;">
               <span class="kpi-card__name">${kpi.name}</span>
-              <span class="kpi-card__direction ${kpi.higherIsBetter ? 'up' : 'down'}">
-                ${kpi.higherIsBetter ? '↑ Higher better' : '↓ Lower better'}
-              </span>
+              <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+                <span class="kpi-card__direction ${kpi.higherIsBetter ? 'up' : 'down'}">
+                  ${kpi.higherIsBetter ? '↑ Higher better' : '↓ Lower better'}
+                </span>
+                ${autoFillBadge || ''}
+              </div>
             </div>
             ${kpi.description ? `<div class="kpi-card__desc" style="margin-top:var(--space-2);">${kpi.description}</div>` : ''}
           </div>
@@ -149,6 +233,7 @@
           <div class="kpi-card__actions">
             <button class="btn btn--primary btn--sm" onclick="addData('${kpi.name}')">Add Data</button>
             <button class="btn btn--ghost btn--sm" onclick="viewData('${kpi.name}')">View Charts</button>
+            <button class="btn btn--ghost btn--sm" onclick="openAutoFillModal('${kpi.name}', ${!!kpi.autoFillEnabled}, ${kpi.defaultValue != null ? kpi.defaultValue : 'null'})">Auto-Fill</button>
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
           </div>`;
         grid.appendChild(card);

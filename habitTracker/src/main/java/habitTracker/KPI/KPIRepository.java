@@ -13,6 +13,7 @@ public interface KPIRepository extends MongoRepository<KPI, String> {
     List<KPI> findByNameIn(List<String> names);
     List<KPI> findByActive(Boolean active);
     List<KPI> findByActiveAndUserId(Boolean active, String userId);
+    List<KPI> findByActiveAndAutoFillEnabled(Boolean active, Boolean autoFillEnabled);
     boolean existsByName(String name);
     boolean existsByNameAndUserId(String name, String userId);
 }

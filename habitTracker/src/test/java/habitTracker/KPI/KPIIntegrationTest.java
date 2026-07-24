@@ -6,6 +6,7 @@ import habitTracker.auth.AuthTestHelper;
 import habitTracker.auth.JwtUtil;
 import habitTracker.auth.User;
 import habitTracker.auth.UserPrincipal;
+import habitTracker.updater.KPIDefaultFillService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,9 @@ class KPIIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired MongoTemplate mongoTemplate;
     @Autowired JwtUtil jwtUtil;
+    @Autowired KPIDefaultFillService kpiDefaultFillService;
+    @Autowired KPICollectionNameUtil collectionNameUtil;
+    @Autowired DynamicKPIDataRepository dynamicKPIDataRepository;
 
     AuthTestHelper auth;
 
@@ -248,5 +252,149 @@ class KPIIntegrationTest {
         assertEquals(1, habits.size());
         assertEquals(alice.getId(), habits.get(0).getUserId(),
                 "Habit.userId must be set to the authenticated user's id");
+    }
+
+    // ── KPI default-fill cron ─────────────────────────────────────────────────
+
+    @Test
+    void createKPI_withAutoFillEnabledWithoutDefaultValue_returns400() throws Exception {
+        UserPrincipal alice = auth.register("alice-autofill1@test.com");
+
+        mockMvc.perform(post("/api/kpis/create")
+                        .with(auth.session(alice)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Weight","higherIsBetter":false,"autoFillEnabled":true}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateDefaultFillSettings_persistsAndReturnsUpdatedKPI() throws Exception {
+        UserPrincipal alice = auth.register("alice-autofill2@test.com");
+
+        mockMvc.perform(post("/api/kpis/create")
+                        .with(auth.session(alice)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Weight","higherIsBetter":false,"habitIds":[]}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/kpis/Weight/default-fill")
+                        .with(auth.session(alice)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"autoFillEnabled":true,"defaultValue":70.0}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.autoFillEnabled").value(true))
+                .andExpect(jsonPath("$.defaultValue").value(70.0));
+
+        mockMvc.perform(get("/api/kpis").with(auth.session(alice)))
+                .andExpect(jsonPath("$[0].autoFillEnabled").value(true))
+                .andExpect(jsonPath("$[0].defaultValue").value(70.0));
+    }
+
+    @Test
+    void updateDefaultFillSettings_cannotTargetAnotherUsersSameNamedKPI() throws Exception {
+        UserPrincipal alice = auth.register("alice-autofill3@test.com");
+        UserPrincipal bob   = auth.register("bob-autofill3@test.com");
+
+        for (UserPrincipal u : List.of(alice, bob)) {
+            mockMvc.perform(post("/api/kpis/create")
+                            .with(auth.session(u)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"name":"Weight","higherIsBetter":false,"habitIds":[]}
+                                    """))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(put("/api/kpis/Weight/default-fill")
+                        .with(auth.session(bob)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"autoFillEnabled":true,"defaultValue":999.0}
+                                """))
+                .andExpect(status().isOk());
+
+        // Alice's own KPI must be untouched by Bob's update to his same-named KPI
+        mockMvc.perform(get("/api/kpis").with(auth.session(alice)))
+                .andExpect(jsonPath("$[0].autoFillEnabled").value(false));
+    }
+
+    @Test
+    void defaultFillCron_fillsOnlyMissingDaysForOptedInKPIs_isolatedPerUser() throws Exception {
+        UserPrincipal alice = auth.register("alice-cron1@test.com");
+        UserPrincipal bob   = auth.register("bob-cron1@test.com");
+
+        // Alice: auto-fill enabled, same name as Bob's KPI (which is not opted in)
+        mockMvc.perform(post("/api/kpis/create")
+                        .with(auth.session(alice)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Weight","higherIsBetter":false,"autoFillEnabled":true,"defaultValue":70.0}
+                                """))
+                .andExpect(status().isOk());
+
+        // Bob: same name, auto-fill NOT enabled
+        mockMvc.perform(post("/api/kpis/create")
+                        .with(auth.session(bob)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Weight","higherIsBetter":false,"habitIds":[]}
+                                """))
+                .andExpect(status().isOk());
+
+        kpiDefaultFillService.fillMissingDefaults();
+
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+
+        // Alice got the default filled in for yesterday
+        mockMvc.perform(get("/api/kpis/Weight/data").param("period", "alltime")
+                        .with(auth.session(alice)))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].value").value(70.0))
+                .andExpect(jsonPath("$[0].date").value(yesterday.toString()))
+                .andExpect(jsonPath("$[0].autoFilled").value(true));
+
+        // Bob (not opted in) got nothing — cross-user isolation on the collection scan
+        mockMvc.perform(get("/api/kpis/Weight/data").param("period", "alltime")
+                        .with(auth.session(bob)))
+                .andExpect(jsonPath("$.length()").value(0));
+
+        // Running again is a no-op (idempotent, doesn't overwrite/duplicate)
+        kpiDefaultFillService.fillMissingDefaults();
+        mockMvc.perform(get("/api/kpis/Weight/data").param("period", "alltime")
+                        .with(auth.session(alice)))
+                .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
+    void defaultFillCron_doesNotOverwriteManuallyLoggedValue() throws Exception {
+        UserPrincipal alice = auth.register("alice-cron2@test.com");
+
+        mockMvc.perform(post("/api/kpis/create")
+                        .with(auth.session(alice)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Weight","higherIsBetter":false,"autoFillEnabled":true,"defaultValue":70.0}
+                                """))
+                .andExpect(status().isOk());
+
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        mockMvc.perform(post("/api/kpis/Weight/data")
+                        .with(auth.session(alice)).with(csrf())
+                        .param("date", yesterday.toString()).param("value", "65"))
+                .andExpect(status().isOk());
+
+        kpiDefaultFillService.fillMissingDefaults();
+
+        mockMvc.perform(get("/api/kpis/Weight/data").param("period", "alltime")
+                        .with(auth.session(alice)))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].value").value(65.0))
+                .andExpect(jsonPath("$[0].autoFilled").value(false));
     }
 }

@@ -1,6 +1,6 @@
 # Daily Cron Flows
 
-Files: `UpdateScheduler.java`, `LastRunDateService.java`, `HabitUpdateService.java`, `HabitDateCalculator.java`, `HabitStructureManager.java`
+Files: `UpdateScheduler.java`, `LastRunDateService.java`, `HabitUpdateService.java`, `HabitDateCalculator.java`, `HabitStructureManager.java`, `KPIDefaultFillService.java`
 
 ## Triggers
 
@@ -9,7 +9,9 @@ Files: `UpdateScheduler.java`, `LastRunDateService.java`, `HabitUpdateService.ja
 | App startup | `UpdateScheduler.runOnStartup()` | `@PostConstruct` — fires every container restart |
 | Nightly | `UpdateScheduler.scheduledUpdate()` | `@Scheduled` cron `0 5 0 * * ?` (00:05 server time) |
 
-Both call `UpdateScheduler.performDailyUpdate()`.
+Both call `UpdateScheduler.performDailyUpdate()`, which runs `HabitUpdateService.updateAllHabits()`
+then `KPIDefaultFillService.fillMissingDefaults()` — one daily job, two sub-tasks, gated by the
+same idempotency guard below.
 To change schedule: edit cron expression in `UpdateScheduler.scheduledUpdate()`.
 
 ---
@@ -66,6 +68,32 @@ completion table); `calculateNextOccurrence()` is used on habit creation/edit.
 
 ---
 
+## KPI Default-Fill (opt-in, per-KPI)
+
+`KPIDefaultFillService.fillMissingDefaults()` — scans **all users'** KPIs directly via
+`KPIRepository.findByActiveAndAutoFillEnabled(true, true)` (no `SecurityUtils`/request context on
+a cron thread, same reasoning as `HabitUpdateService.updateAllHabits()` using `MongoTemplate.findAll`
+instead of a userId-scoped service call). For each candidate KPI, calls
+`KPIService.fillDefaultIfMissing(kpi, yesterday)`.
+
+`KPIService.fillDefaultIfMissing()`:
+- No-op if `KPI.autoFillEnabled != true` or `KPI.defaultValue == null`.
+- No-op if a data point already exists for that date (manual entry or a prior auto-fill — never overwrites).
+- Otherwise writes `KPIData{value = defaultValue, autoFilled = true}` into that KPI's own
+  id-keyed collection (`KPICollectionNameUtil.toCollectionName(kpi.getId())`) — isolation is
+  structural (one Mongo collection per KPI id), not an extra userId check.
+
+Target date is always **yesterday** (`LocalDate.now().minusDays(1)`) — the day that just closed,
+mirroring when the habit engine finalizes occurrences. A manual `KPIService.addKPIData()` call
+always sets `autoFilled = false`, so backfilling a day by hand clears the flag even if the cron
+already filled it.
+
+To change the default value or opt in/out per KPI: `POST /api/kpis/create` (creation) or
+`PUT /api/kpis/{name}/default-fill` (post-creation) — both validate `defaultValue` is required
+whenever `autoFillEnabled = true`.
+
+---
+
 ## Change Index
 
 | What to change | Where | Note |
@@ -77,3 +105,5 @@ completion table); `calculateNextOccurrence()` is used on habit creation/edit.
 | Occurrence completion semantics | `HabitUpdateService.processHabit()` + `StructureService.isOccurrenceComplete()` | must stay in sync (normal = any completed; defaultMade = no relapse) |
 | Initial `completed` value on structure creation | `HabitStructureManager.createHabitStructure()` | currently = `defaultMade` |
 | Negative-streak color (period-aware) | `static/index.html` `applyStreakColor()` | `severity = |streak|*frequency/30` |
+| KPI default-fill target date | `KPIDefaultFillService.fillMissingDefaults()` | currently `LocalDate.now().minusDays(1)` |
+| KPI default-fill opt-in/value | `KPI.autoFillEnabled` / `KPI.defaultValue`, set via `KPIController` create/`default-fill` endpoints | off by default, per-KPI, requires `defaultValue` when enabled |

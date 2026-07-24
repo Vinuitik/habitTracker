@@ -78,6 +78,19 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <div class="checkbox-option">
+            <input type="checkbox" id="autoFillEnabled" name="autoFillEnabled">
+            <label for="autoFillEnabled">Auto-fill missed days</label>
+          </div>
+          <span class="form-group__hint">If you forget to log a day, a nightly job fills it in with the default value below.</span>
+        </div>
+
+        <div class="form-group" id="defaultValueGroup" style="display:none;">
+          <label class="form-group__label" for="defaultValue">Default Value</label>
+          <input class="input" type="number" step="any" id="defaultValue" name="defaultValue" placeholder="e.g. 0">
+        </div>
+
         <div class="form-card__actions">
           <button type="submit" class="btn btn--primary btn--lg">Create KPI</button>
           <a href="/kpis" class="btn btn--ghost">Cancel</a>
@@ -117,6 +130,11 @@
       }
     }
 
+    document.getElementById('autoFillEnabled').addEventListener('change', function(e) {
+      document.getElementById('defaultValueGroup').style.display = e.target.checked ? '' : 'none';
+      document.getElementById('defaultValue').required = e.target.checked;
+    });
+
     document.getElementById('kpi-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const dirVal = document.querySelector('input[name="higherIsBetter"]:checked');
@@ -125,11 +143,20 @@
       const checkedHabits = Array.from(document.querySelectorAll('input[name="habitIds"]:checked'))
         .map(cb => parseInt(cb.value, 10));
 
+      const autoFillEnabled = document.getElementById('autoFillEnabled').checked;
+      const defaultValueRaw = document.getElementById('defaultValue').value;
+      if (autoFillEnabled && defaultValueRaw === '') {
+        alert('Enter a default value, or turn off auto-fill.');
+        return;
+      }
+
       const body = {
-        name:           document.getElementById('name').value,
-        description:    document.getElementById('description').value,
-        higherIsBetter: dirVal.value === 'true',
-        habitIds:       checkedHabits.length > 0 ? checkedHabits : null
+        name:            document.getElementById('name').value,
+        description:     document.getElementById('description').value,
+        higherIsBetter:  dirVal.value === 'true',
+        habitIds:        checkedHabits.length > 0 ? checkedHabits : null,
+        autoFillEnabled: autoFillEnabled,
+        defaultValue:    autoFillEnabled ? parseFloat(defaultValueRaw) : null
       };
 
       const res = await fetch('/api/kpis/create', {

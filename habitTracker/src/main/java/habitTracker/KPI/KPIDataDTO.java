@@ -20,4 +20,5 @@ public class KPIDataDTO {
     private String trendDirection; // "up", "down", "stable"
     private String colorIntensity; // "low", "medium", "high" for color strength
     private Boolean higherIsBetter; // true if higher values are better, false otherwise
+    private Boolean autoFilled; // true if synthesized by the default-fill cron rather than entered manually
 }

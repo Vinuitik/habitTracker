@@ -22,6 +22,8 @@ public class KPIData {
     private LocalDate date;
     
     private Double value;
-    
+
     private Double exponentialMovingAverage; // calculated EMA
+
+    private Boolean autoFilled; // true if this point was synthesized by the default-fill cron, not entered manually
 }

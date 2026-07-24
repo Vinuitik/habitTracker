@@ -24,10 +24,14 @@ public class KPIService {
     private final KPICollectionNameUtil collectionNameUtil;
     
     @Transactional
-    public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds) {
+    public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds,
+                             Boolean autoFillEnabled, Double defaultValue) {
         String userId = SecurityUtils.getCurrentUserId();
         if (userId != null ? kpiRepository.existsByNameAndUserId(name, userId) : kpiRepository.existsByName(name)) {
             throw new IllegalArgumentException("KPI with name '" + name + "' already exists");
+        }
+        if (Boolean.TRUE.equals(autoFillEnabled) && defaultValue == null) {
+            throw new IllegalArgumentException("defaultValue is required when autoFillEnabled is true");
         }
 
         KPI kpi = KPI.builder()
@@ -38,8 +42,10 @@ public class KPIService {
                 .updatedAt(LocalDateTime.now())
                 .active(true)
                 .userId(userId)
+                .autoFillEnabled(Boolean.TRUE.equals(autoFillEnabled))
+                .defaultValue(Boolean.TRUE.equals(autoFillEnabled) ? defaultValue : null)
                 .build();
-        
+
         KPI savedKPI = kpiRepository.save(kpi);
 
         // Create collection for this KPI's data, keyed by the KPI's own id (see
@@ -84,9 +90,50 @@ public class KPIService {
         KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
                 .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
 
+        // A manually-entered value always wins and clears any prior auto-filled flag.
+        saveKPIDataPoint(kpi, date, value, false);
+    }
+
+    /**
+     * Cron entry point (habitTracker.updater.KPIDefaultFillService): fills in the KPI's
+     * defaultValue for the given date if, and only if, no data point already exists for it.
+     * Takes an already-resolved KPI (the cron scans all users' KPIs directly via MongoTemplate,
+     * the same way HabitUpdateService does for habits) rather than going through
+     * SecurityUtils.getCurrentUserId(), since there is no authenticated request on a cron thread.
+     * Writes only into this KPI's own collection (kpi.getId()) — never touches another user's data.
+     */
+    @Transactional
+    public boolean fillDefaultIfMissing(KPI kpi, LocalDate date) {
+        if (!Boolean.TRUE.equals(kpi.getAutoFillEnabled()) || kpi.getDefaultValue() == null) {
+            return false;
+        }
+        String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
+        if (dynamicKPIDataRepository.findByDate(date, collectionName).isPresent()) {
+            return false; // already has a value (manual or previously auto-filled) — never overwrite
+        }
+        saveKPIDataPoint(kpi, date, kpi.getDefaultValue(), true);
+        return true;
+    }
+
+    @Transactional
+    public KPIDTO updateDefaultFillSettings(String kpiName, Boolean autoFillEnabled, Double defaultValue) {
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+        if (Boolean.TRUE.equals(autoFillEnabled) && defaultValue == null) {
+            throw new IllegalArgumentException("defaultValue is required when autoFillEnabled is true");
+        }
+
+        kpi.setAutoFillEnabled(Boolean.TRUE.equals(autoFillEnabled));
+        kpi.setDefaultValue(Boolean.TRUE.equals(autoFillEnabled) ? defaultValue : null);
+        kpi.setUpdatedAt(LocalDateTime.now());
+        KPI saved = kpiRepository.save(kpi);
+        return convertToDTO(saved);
+    }
+
+    private void saveKPIDataPoint(KPI kpi, LocalDate date, Double value, boolean autoFilled) {
         String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
 
-        // Check if data for this date already exists
         Optional<KPIData> existingData = dynamicKPIDataRepository.findByDate(date, collectionName);
 
         KPIData kpiData;
@@ -99,8 +146,8 @@ public class KPIService {
                     .value(value)
                     .build();
         }
+        kpiData.setAutoFilled(autoFilled);
 
-        // Calculate EMA
         Double ema = calculateEMA(collectionName, value);
         kpiData.setExponentialMovingAverage(ema);
 
@@ -247,6 +294,8 @@ public class KPIService {
                 .updatedAt(kpi.getUpdatedAt())
                 .active(kpi.getActive())
                 .linkedHabitIds(habitIds != null ? habitIds : new ArrayList<>())
+                .autoFillEnabled(Boolean.TRUE.equals(kpi.getAutoFillEnabled()))
+                .defaultValue(kpi.getDefaultValue())
                 .build();
     }
     
@@ -282,6 +331,7 @@ public class KPIService {
                 .trendDirection(trendDirection)
                 .colorIntensity(colorIntensity)
                 .higherIsBetter(higherIsBetter)
+                .autoFilled(Boolean.TRUE.equals(data.getAutoFilled()))
                 .build();
     }
 }

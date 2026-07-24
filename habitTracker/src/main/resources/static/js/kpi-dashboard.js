@@ -115,6 +115,7 @@ function renderChart(kpiName, data) {
                     tension: 0.2,
                     pointRadius: 4,
                     pointHoverRadius: 6,
+                    pointStyle: data.map(d => d.autoFilled ? 'rectRot' : 'circle'),
                     segment: {
                         borderColor: function(ctx) {
                             // Use the color of the destination point for each segment
@@ -171,7 +172,8 @@ function renderChart(kpiName, data) {
                         label: function(context) {
                             const dataPoint = data[context.dataIndex];
                             if (context.datasetIndex === 0) {
-                                return `Value: ${context.parsed.y.toFixed(2)} (${getTrendText(dataPoint)})`;
+                                const autoFilled = dataPoint.autoFilled ? ' — auto-filled' : '';
+                                return `Value: ${context.parsed.y.toFixed(2)} (${getTrendText(dataPoint)})${autoFilled}`;
                             } else {
                                 return `Trend: ${context.parsed.y.toFixed(2)}`;
                             }

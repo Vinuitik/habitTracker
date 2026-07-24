@@ -35,4 +35,11 @@ public class KPI {
 
     @Indexed
     private String userId;
+
+    // Opt-in: if true, a missed day is auto-filled with defaultValue by the daily cron
+    // (KPIDefaultFillService) instead of being left blank. Off by default — not every KPI
+    // wants a synthetic zero/whatever on days you forgot to log.
+    private Boolean autoFillEnabled;
+
+    private Double defaultValue;
 }
