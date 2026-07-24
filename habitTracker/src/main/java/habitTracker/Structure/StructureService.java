@@ -79,10 +79,10 @@ public class StructureService {
     private boolean isOccurrenceComplete(Habit habit, LocalDate anchor, int freq) {
         LocalDate windowLastDay = anchor.plusDays(freq - 1);
         if (Boolean.TRUE.equals(habit.getDefaultMade())) {
-            return !habitStructureRepository.existsByHabitIdAndCompletedAndStructureDateBetween(
+            return !habitStructureRepository.existsByHabitIdAndCompletedInWindow(
                     habit.getId(), Boolean.FALSE, anchor, windowLastDay);
         }
-        return habitStructureRepository.existsByHabitIdAndCompletedAndStructureDateBetween(
+        return habitStructureRepository.existsByHabitIdAndCompletedInWindow(
                 habit.getId(), Boolean.TRUE, anchor, windowLastDay);
     }
 

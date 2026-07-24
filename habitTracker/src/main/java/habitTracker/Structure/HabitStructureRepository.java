@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -18,6 +19,10 @@ public interface HabitStructureRepository extends MongoRepository<HabitStructure
     void deleteByHabitIdAndStructureDate(Integer habitName, LocalDate date);
     boolean existsByHabitIdAndStructureDate(Integer habitName, LocalDate date);
     // Grace-window resolution: is there a completed occurrence anywhere in [start, end] (inclusive bounds)?
-    boolean existsByHabitIdAndCompletedAndStructureDateBetween(Integer habitId, Boolean completed,
-                                                               LocalDate startDate, LocalDate endDate);
+    // NOTE: hand-written because Spring Data Mongo's derived "Between" keyword compiles to strict
+    // $gt/$lt (breaking single-day windows where start == end), and chaining separate
+    // GreaterThanEqual/LessThanEqual keywords on the same field isn't supported by the query builder.
+    @Query(value = "{ 'habitId': ?0, 'completed': ?1, 'structureDate': { $gte: ?2, $lte: ?3 } }", exists = true)
+    boolean existsByHabitIdAndCompletedInWindow(Integer habitId, Boolean completed,
+                                                 LocalDate startDate, LocalDate endDate);
 }

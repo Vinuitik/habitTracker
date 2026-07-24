@@ -107,7 +107,7 @@ class HabitUpdateServiceUnitTest {
     void completionFromNegative_resetsToOne_recordsLastNeg() {
         // Only yesterday's occurrence is completed; today's window is still open and untouched.
         LocalDate y = TODAY.minusDays(1);
-        when(habitStructureRepository.existsByHabitIdAndCompletedAndStructureDateBetween(
+        when(habitStructureRepository.existsByHabitIdAndCompletedInWindow(
                 eq(1), eq(Boolean.TRUE), eq(y), eq(y))).thenReturn(true);
         run(habit(1, -5, false, y));
         Update u = captureUpdate();
@@ -129,7 +129,7 @@ class HabitUpdateServiceUnitTest {
 
     @Test
     void longPeriod_completedMidWindow_creditsAndAdvancesOnePeriod() {
-        when(habitStructureRepository.existsByHabitIdAndCompletedAndStructureDateBetween(
+        when(habitStructureRepository.existsByHabitIdAndCompletedInWindow(
                 eq(1), eq(Boolean.TRUE), any(), any())).thenReturn(true);
         LocalDate anchor = TODAY.minusDays(30);
         run(habit(60, 0, false, anchor));
@@ -156,7 +156,7 @@ class HabitUpdateServiceUnitTest {
 
     @Test
     void defaultMade_relapse_docksToZeroFromPositive() {
-        when(habitStructureRepository.existsByHabitIdAndCompletedAndStructureDateBetween(
+        when(habitStructureRepository.existsByHabitIdAndCompletedInWindow(
                 eq(1), eq(Boolean.FALSE), any(), any())).thenReturn(true); // relapse present
         run(habit(1, 3, true, TODAY.minusDays(1)));
         assertEquals(0, streakOf(captureUpdate()));

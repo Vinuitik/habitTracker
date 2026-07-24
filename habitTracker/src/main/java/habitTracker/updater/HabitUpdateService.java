@@ -94,7 +94,7 @@ public class HabitUpdateService {
                     success = null;
                 } else {
                     boolean relapsed = habitStructureRepository
-                            .existsByHabitIdAndCompletedAndStructureDateBetween(
+                            .existsByHabitIdAndCompletedInWindow(
                                     habit.getId(), Boolean.FALSE, anchor, windowLastDay);
                     success = !relapsed;
                 }
@@ -102,7 +102,7 @@ public class HabitUpdateService {
                 // Completed anywhere in the window resolves immediately (even mid-window); otherwise
                 // it only lapses once the whole window has elapsed.
                 boolean completed = habitStructureRepository
-                        .existsByHabitIdAndCompletedAndStructureDateBetween(
+                        .existsByHabitIdAndCompletedInWindow(
                                 habit.getId(), Boolean.TRUE, anchor, windowLastDay);
                 if (completed) {
                     success = true;
