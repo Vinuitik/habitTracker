@@ -216,8 +216,8 @@ The `_meta` list and the STATE card are excluded from every card read and from t
 | `create_cards(board, list_name, cards, feature?)` | batch, hoisted schema; two-pass so intra-batch edges resolve |
 | `update_cards([CardUpdate])` | batch, partial; `after`/`est`/`feature`/`importance` |
 | `move_cards([CardMove])` | batch; the manual override |
-| `complete_cards(handles, done=True)` | toggle the `done` label; the only correct way to tick |
-| `park_cards(handles, parked=True)` | toggle the `parked` label; held out of scheduling, not done |
+| `complete_cards(handles, done=True)` | toggle the `done` label + move into `Completed` list; the only correct way to tick |
+| `park_cards(handles, parked=True)` | toggle the `parked` label + move into `Delayed` list; held out of scheduling, not done |
 | `archive_cards(handles)` | close (hide) cards without deleting; for template junk |
 | `split_card([CardSplit])` | break a card up, inherit edges; the cycle repair |
 | `propose_schedule(...)` | read-only dated plan |
@@ -234,11 +234,22 @@ Cards have three orthogonal "not live" states, and conflating them was the origi
 | **parked** | `parked` label | excluded (returns on unpark) | deferred / "not now" |
 | **archived** | Trello `closed=true` | gone from board | hidden junk, restorable |
 
-`complete_cards` / `park_cards` share `_toggle_label` — both just add/remove a board label, creating
-it on first use (so it always sticks; a hand-set label via `update_cards` silently fails if the label
+`complete_cards` / `park_cards` share `_toggle_label` — both add/remove a board label, creating it on
+first use (so it always sticks; a hand-set label via `update_cards` silently fails if the label
 doesn't exist yet). `archive_cards` uses `closed=true`. There is **no hard-delete** by design —
 archive is reversible from the Trello UI. Parked exists so you never have to pass `lists=` on every
 schedule call just to keep a list out of the plan.
+
+**Label is truth, list is visual.** Turning a state ON also moves the card into a dedicated list —
+`Completed` for done, `Delayed` for parked — auto-created on first use via `_ensure_list` (`api.py`),
+same pattern as day lists in `apply_schedule`. This is **purely cosmetic**: `_schedulable` and every
+read tool still key off the label alone, exactly as before. So dragging a card into `Completed` or
+`Delayed` by hand in the Trello UI does **not** exclude it from scheduling — only the label does, and
+only `complete_cards`/`park_cards` (or `update_cards` once the label already exists) set it. Turning a
+state OFF only removes the label; the card is left wherever it sits, since there's no recorded origin
+list to return it to — move it back with `move_cards` by hand. This was a deliberate choice over
+tracking origin lists: less state, one predictable rule ("the label decides"), at the cost of a manual
+step when reopening/unparking a card that's sitting in the parking list.
 
 ### Why `describe_graph` hides done cards
 
@@ -388,6 +399,7 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Done marker | `config.py`/`meta.py` | `DONE_LABEL` + `_is_done()` | label `done` |
 | Parked marker | `config.py`/`meta.py` | `PARKED_LABEL` + `_is_parked()` | label `parked`; held out of scheduling |
 | Label toggle (done/parked) | `tools_cards.py` | `_toggle_label()` | shared add/remove, creates label on first use |
+| Completed/Delayed parking lists | `config.py`/`api.py`/`tools_cards.py` | `COMPLETED_LIST`/`DELAYED_LIST` + `_ensure_list()` + `_toggle_label(park_list=...)` | cosmetic only — label still decides scheduling |
 | Archive (hide) | `tools_cards.py` | `archive_cards()` | Trello `closed=true`; reversible, no hard-delete |
 | Straggler / frozen rule | `graph.py` | `_schedulable()` | past day list + not done/parked → pulled forward |
 | STATE card location | `config.py` | `META_LIST`, `STATE_CARD` | `_meta/STATE` |

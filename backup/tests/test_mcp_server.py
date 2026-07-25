@@ -304,19 +304,23 @@ async def test_update_cards_reports_skipped_unknown_label():
 
 
 async def test_complete_cards_creates_done_label_when_missing():
+    import copy
     cards = [card("c1", "Google SSO", "l-auth")]
     ctx, client = make_async_ctx(
-        async_resp([BOARD]), async_resp(cards),
+        async_resp([copy.deepcopy(BOARD)]), async_resp(cards),  # own copy: this test mutates board.lists
         async_resp([{"name": "urgent", "id": "lbl-u"}]),  # board labels — no "done"
-        post_seq=[async_resp({"id": "lbl-done"})],         # POST /labels creates it
+        post_seq=[async_resp({"id": "lbl-done"}),          # POST /labels creates it
+                  async_resp({"id": "l-completed", "name": "Completed"})],  # POST /lists creates "Completed"
         put_data=async_resp({}),
     )
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         result = await complete_cards(["frm/auth/google-sso"])
     assert result["changed"] == [{"handle": "frm/auth/google-sso", "done": True}]
     assert client.post.call_args_list[0][0][0].endswith("/labels")
-    applied = client.put.call_args_list[0][1]["params"]["idLabels"]
-    assert "lbl-done" in applied
+    assert client.post.call_args_list[1][0][0].endswith("/lists")
+    params = client.put.call_args_list[0][1]["params"]
+    assert "lbl-done" in params["idLabels"]
+    assert params["idList"] == "l-completed"  # moved into the visual Completed list too
 
 
 async def test_complete_cards_reopen_removes_label():
@@ -333,18 +337,23 @@ async def test_complete_cards_reopen_removes_label():
 
 
 async def test_park_cards_applies_parked_label():
+    import copy
     cards = [card("c1", "Google SSO", "l-auth")]
     ctx, client = make_async_ctx(
-        async_resp([BOARD]), async_resp(cards),
+        async_resp([copy.deepcopy(BOARD)]), async_resp(cards),  # own copy: this test mutates board.lists
         async_resp([]),                            # no labels on board yet
-        post_seq=[async_resp({"id": "lbl-parked"})],
+        post_seq=[async_resp({"id": "lbl-parked"}),
+                  async_resp({"id": "l-delayed", "name": "Delayed"})],  # POST /lists creates "Delayed"
         put_data=async_resp({}),
     )
     with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
         result = await park_cards(["frm/auth/google-sso"])
     assert result["changed"] == [{"handle": "frm/auth/google-sso", "parked": True}]
     assert client.post.call_args_list[0][0][0].endswith("/labels")
-    assert "lbl-parked" in client.put.call_args_list[0][1]["params"]["idLabels"]
+    assert client.post.call_args_list[1][0][0].endswith("/lists")
+    params = client.put.call_args_list[0][1]["params"]
+    assert "lbl-parked" in params["idLabels"]
+    assert params["idList"] == "l-delayed"  # moved into the visual Delayed list too
 
 
 async def test_archive_cards_closes_card():

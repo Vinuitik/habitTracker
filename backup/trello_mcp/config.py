@@ -28,6 +28,8 @@ META_LIST = "_meta"       # holds the STATE card; excluded from every read and t
 STATE_CARD = "STATE"
 DONE_LABEL = "done"
 PARKED_LABEL = "parked"   # excluded from scheduling until unparked; not done, just not now
+COMPLETED_LIST = "Completed"  # visual corral for done cards; the LABEL is still what excludes
+DELAYED_LIST = "Delayed"      # them from scheduling, this list is purely where you look on the board
 DEFAULT_PACE = 2.0        # cards/day when no deadline is given
 DEFAULT_IMPORTANCE = 2    # MoSCoW: 3=Must, 2=Should, 1=Could. Absent → Should.
 IMPORTANCE_MIN, IMPORTANCE_MAX = 1, 3

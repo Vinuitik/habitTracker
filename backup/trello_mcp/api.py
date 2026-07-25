@@ -118,6 +118,26 @@ async def _ensure_label(client, board_id: str, name: str, cache: dict) -> str:
     return lid
 
 
+async def _ensure_list(client, board: dict, name: str, cache: dict) -> dict:
+    """Resolve a list by name on the board, creating it (pos='bottom') if absent. Used for the
+    Completed/Delayed parking lists — created the first time a card lands there. Mutates the
+    board dict's `lists` in place so later lookups in the same call see it without a re-fetch."""
+    key = (board["id"], _slug(name))
+    if key in cache:
+        return cache[key]
+    for l in board.get("lists", []):
+        if _slug(l["name"]) == _slug(name):
+            cache[key] = l
+            return l
+    r = await client.post(f"{TRELLO_BASE}/lists",
+                          params={**_auth(), "idBoard": board["id"], "name": name, "pos": "bottom"})
+    r.raise_for_status()
+    lst = r.json()
+    board.setdefault("lists", []).append(lst)
+    cache[key] = lst
+    return lst
+
+
 async def _write_checklist(client, card_id: str, items: list[str]) -> None:
     r = await client.post(f"{TRELLO_BASE}/checklists", params={**_auth(), "idCard": card_id, "name": "Tasks"})
     r.raise_for_status()

@@ -18,17 +18,18 @@ from datetime import datetime, timezone
 
 import httpx
 
-from trello_mcp.config import (DATE_RE, DEFAULT_EST, DEFAULT_IMPORTANCE, DEFAULT_PACE,
-                               DONE_LABEL, IMPORTANCE_MAX, IMPORTANCE_MIN, META_LIST, PARKED_LABEL,
-                               STATE_CARD, TRELLO_API_KEY, TRELLO_BASE, TRELLO_CRON_BOARD_ID,
-                               TRELLO_CRON_BOARD_NAME, TRELLO_TOKEN, ToolError, _auth, mcp)
+from trello_mcp.config import (COMPLETED_LIST, DATE_RE, DEFAULT_EST, DEFAULT_IMPORTANCE,
+                               DEFAULT_PACE, DELAYED_LIST, DONE_LABEL, IMPORTANCE_MAX,
+                               IMPORTANCE_MIN, META_LIST, PARKED_LABEL, STATE_CARD, TRELLO_API_KEY,
+                               TRELLO_BASE, TRELLO_CRON_BOARD_ID, TRELLO_CRON_BOARD_NAME,
+                               TRELLO_TOKEN, ToolError, _auth, mcp)
 from trello_mcp.formatting import (_build_handles, _checklist_counts, _clean, _fmt_num,
                                    _short_due, _slug)
 from trello_mcp.meta import (META_RE, _has_label, _is_done, _is_parked, _parse_meta,
                              _render_meta, _set_meta)
-from trello_mcp.api import (_board_labels, _boards, _cards, _ensure_label, _get, _handle_to_link,
-                            _label_ids, _resolve_board, _resolve_handle, _resolve_list,
-                            _write_checklist)
+from trello_mcp.api import (_board_labels, _boards, _cards, _ensure_label, _ensure_list, _get,
+                            _handle_to_link, _label_ids, _resolve_board, _resolve_handle,
+                            _resolve_list, _write_checklist)
 from trello_mcp.graph import (_build_graph, _cycle_report, _find_cycle, _longest_chain,
                               _schedulable, _schedule, _topo)
 from trello_mcp.models import CardMove, CardSplit, CardUpdate, NewCard, NewList

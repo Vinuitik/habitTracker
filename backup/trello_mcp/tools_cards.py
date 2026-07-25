@@ -4,9 +4,10 @@ Importing this module registers these tools on the shared `mcp` (via @mcp.tool()
 """
 import httpx
 
-from .api import (_archive_empty_day_lists, _cards, _ensure_label, _handle_to_link, _label_ids,
-                  _resolve_board, _resolve_handle, _resolve_list, _write_checklist)
-from .config import DEFAULT_IMPORTANCE, DONE_LABEL, META_LIST, PARKED_LABEL, TRELLO_BASE, _auth, mcp
+from .api import (_archive_empty_day_lists, _cards, _ensure_label, _ensure_list, _handle_to_link,
+                  _label_ids, _resolve_board, _resolve_handle, _resolve_list, _write_checklist)
+from .config import (COMPLETED_LIST, DEFAULT_IMPORTANCE, DELAYED_LIST, DONE_LABEL, META_LIST,
+                     PARKED_LABEL, TRELLO_BASE, _auth, mcp)
 from .formatting import _build_handles, _checklist_counts, _clean, _short_due, _slug
 from .meta import _is_done, _is_parked, _parse_meta, _set_meta
 from .models import CardMove, CardUpdate, NewCard, NewList
@@ -357,21 +358,34 @@ async def move_cards(moves: list[CardMove]) -> dict:
     return _clean({"moved": moved, "errors": errors, "lists_cleaned": cleaned})
 
 
-async def _toggle_label(handles: list[str], label: str, on: bool, key: str) -> dict:
+async def _toggle_label(handles: list[str], label: str, on: bool, key: str,
+                        park_list: str | None = None) -> dict:
     """Add (on=True) or remove a board label across a batch of cards, creating it if needed. Shared
-    by complete_cards and park_cards — both are just 'this card carries label X or not'."""
+    by complete_cards and park_cards — both are just 'this card carries label X or not'.
+
+    The LABEL is the only thing the scheduler and every read tool trust — that never changes here.
+    `park_list`, when given and on=True, ALSO moves the card into that list purely so the board looks
+    tidy when you open it: it is cosmetic, not a second source of truth. Reopening (on=False) only
+    drops the label; the card is left wherever it sits, since there is no recorded origin list to
+    return it to."""
     changed, errors = [], []
     async with httpx.AsyncClient() as client:
-        cache, label_cache = {}, {}
+        cache, label_cache, list_cache = {}, {}, {}
         for h in handles:
             try:
                 board, _, c = await _resolve_handle(client, h, cache)
                 lid = await _ensure_label(client, board["id"], label, label_cache)
                 have = {l["id"] for l in c.get("labels", [])}
                 want = have | {lid} if on else have - {lid}
+                params = {**_auth()}
                 if want != have:
-                    r = await client.put(f"{TRELLO_BASE}/cards/{c['id']}",
-                                         params={**_auth(), "idLabels": ",".join(want)})
+                    params["idLabels"] = ",".join(want)
+                if on and park_list:
+                    dest = await _ensure_list(client, board, park_list, list_cache)
+                    params["idList"] = dest["id"]
+                    params["pos"] = "bottom"
+                if len(params) > 2:  # more than just key+token
+                    r = await client.put(f"{TRELLO_BASE}/cards/{c['id']}", params=params)
                     r.raise_for_status()
                 changed.append({"handle": h, key: on})
             except Exception as e:
@@ -387,8 +401,13 @@ async def complete_cards(handles: list[str], done: bool = True) -> dict:
     named `done` — get_state, describe_graph, and the scheduler all treat a card as finished iff it
     carries that label. This tool creates the `done` label on the board the first time it is needed,
     so it always sticks; setting the label by hand via update_cards silently fails if the label does
-    not already exist. Done cards drop out of scheduling and out of the dependency-candidate set."""
-    return await _toggle_label(handles, DONE_LABEL, done, "done")
+    not already exist. Done cards drop out of scheduling and out of the dependency-candidate set.
+
+    Marking done ALSO moves the card into the `Completed` list (created on first use), purely so the
+    board is visually tidy when you open it — the label is still what the scheduler trusts, so
+    dragging a card into `Completed` by hand in the Trello UI does NOT exclude it; only this tool (or
+    the label) does. Reopening (done=False) only removes the label; the card stays where it is."""
+    return await _toggle_label(handles, DONE_LABEL, done, "done", COMPLETED_LIST if done else None)
 
 
 @mcp.tool()
@@ -398,8 +417,12 @@ async def park_cards(handles: list[str], parked: bool = True) -> dict:
     Parked is 'not now', distinct from done ('finished'). A parked card is held out of scheduling
     and out of describe_graph, but is NOT complete — use this for work you are deferring, or to keep
     a list out of the plan without passing `lists=` on every schedule call. Unpark to bring it back.
-    Creates the `parked` label on the board as needed."""
-    return await _toggle_label(handles, PARKED_LABEL, parked, "parked")
+    Creates the `parked` label on the board as needed.
+
+    Parking ALSO moves the card into the `Delayed` list (created on first use) for the same reason
+    complete_cards uses `Completed` — visual tidiness. The `parked` label is still what actually
+    removes it from scheduling; unparking only removes the label and leaves the card in place."""
+    return await _toggle_label(handles, PARKED_LABEL, parked, "parked", DELAYED_LIST if parked else None)
 
 
 @mcp.tool()
