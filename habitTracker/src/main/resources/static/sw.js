@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -85,13 +85,25 @@ async function handleApiGet(request) {
   });
 }
 
+// Auth-handshake paths (form login, Google OAuth2 initiate + callback, logout) must never be
+// answered with a substituted cached page. Two independent reasons: (1) the OAuth callback URL
+// carries a single-use `code` — Google's token exchange only tolerates one exchange of it, so if
+// the SW's fetch is abandoned (timeout race) but continues in the background, a page reload or
+// retry would hit the same code twice and fail; (2) more importantly, a Set-Cookie header on a
+// response the SW decided to discard in favor of a cached fallback is a Set-Cookie the browser
+// never applies — the session that Google-login just established server-side silently never
+// reaches the client, which is exactly "click Google login, land on a blank/logged-out page."
+const AUTH_PATH_PREFIXES = ['/login', '/logout', '/oauth2', '/register'];
+
+function isAuthPath(request) {
+  return AUTH_PATH_PREFIXES.some((p) => new URL(request.url).pathname.startsWith(p));
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  // GET navigations only — a POST navigation (login/logout form submit) must never be
-  // answered with a cached GET shell page on a timeout/non-ok response; that silently
-  // breaks the real redirect chain instead of surfacing a real error. Let those go straight
+  // GET navigations only, and never on an auth-handshake path — those must always go straight
   // to the network untouched, same as if no service worker existed.
-  if (request.mode === 'navigate' && request.method === 'GET') {
+  if (request.mode === 'navigate' && request.method === 'GET' && !isAuthPath(request)) {
     event.respondWith(handleNavigate(request));
     return;
   }
