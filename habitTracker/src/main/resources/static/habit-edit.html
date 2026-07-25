@@ -99,8 +99,7 @@
   <script src="/editView/edit-habit.js"></script>
   <script>
     async function init() {
-      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
-      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      if (!(await checkAuth())) return;
 
       initTopbar('/habits/list');
 

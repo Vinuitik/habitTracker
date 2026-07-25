@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -87,7 +87,11 @@ async function handleApiGet(request) {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.mode === 'navigate') {
+  // GET navigations only — a POST navigation (login/logout form submit) must never be
+  // answered with a cached GET shell page on a timeout/non-ok response; that silently
+  // breaks the real redirect chain instead of surfacing a real error. Let those go straight
+  // to the network untouched, same as if no service worker existed.
+  if (request.mode === 'navigate' && request.method === 'GET') {
     event.respondWith(handleNavigate(request));
     return;
   }

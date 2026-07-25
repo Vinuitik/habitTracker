@@ -44,7 +44,7 @@
     </div>
 
     <div class="sync-actions">
-      <button id="install-btn" class="btn btn--primary" style="display:none;" onclick="doInstall()">Install App</button>
+      <button id="install-btn" class="btn btn--primary" onclick="doInstall()">Install App</button>
     </div>
 
     <div id="manual-steps" class="card" style="display:none;">
@@ -62,21 +62,27 @@
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      document.getElementById('install-btn').style.display = '';
     });
 
+    // Button is always visible. If the browser has handed us a native install
+    // prompt, fire it. Otherwise the browser doesn't support one (Safari/Firefox)
+    // or hasn't offered it yet — fall back to manual steps right here on click.
     async function doInstall() {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      document.getElementById('install-btn').style.display = 'none';
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        document.getElementById('install-btn').style.display = 'none';
+        return;
+      }
+      showManualSteps();
     }
 
     function showManualSteps() {
       const ua = navigator.userAgent;
       const isIOS = /iPhone|iPad|iPod/.test(ua);
       const isSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS/.test(ua);
+      const isFirefox = /Firefox|FxiOS/.test(ua);
       const list = document.getElementById('manual-steps-list');
 
       let steps;
@@ -88,6 +94,8 @@
         ];
       } else if (isIOS) {
         steps = ['Open this page in Safari (not another browser) — iOS only allows installing from Safari, then follow Share → Add to Home Screen.'];
+      } else if (isFirefox) {
+        steps = ['Sorry — Firefox doesn\'t support one-click app installs. We recommend opening this page in Chrome or Edge instead, where "Install App" installs it directly.'];
       } else {
         steps = [
           'Open the browser menu (⋮ or ⋯).',
@@ -100,18 +108,14 @@
     }
 
     async function init() {
-      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
-      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      if (!(await checkAuth())) return;
       initTopbar(ENV.ROUTES.INSTALL);
 
       const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
       if (standalone) {
         document.getElementById('already-installed').style.display = '';
-        return;
+        document.getElementById('install-btn').style.display = 'none';
       }
-
-      // Give beforeinstallprompt a moment to fire before falling back to manual instructions.
-      setTimeout(() => { if (!deferredPrompt) showManualSteps(); }, 800);
     }
 
     init();

@@ -79,8 +79,14 @@ habittracker-offline (v1)
   `navigator.storage.persist()` but the browser may still refuse.
 - **Hand-written service worker, not Workbox** — this app has no build step/bundler, so
   `vite-plugin-pwa`-style `injectManifest` isn't available; `SHELL_URLS` is a manually
-  maintained list. Bump `sw.js`'s `VERSION` whenever that list or the routing logic changes, or
-  the new SW won't take over until a second load.
+  maintained list. Bump `sw.js`'s `VERSION` whenever that list or the routing logic changes.
+- **Auto-update, no reinstall ever needed**: `sw.js` calls `skipWaiting()`+`clients.claim()`
+  unconditionally, so a version bump takes over as soon as the browser notices the file changed.
+  `registerSW.js` forces that check on every page load and tab-refocus (`registration.update()`)
+  rather than waiting on the browser's own throttled (~24h) background check, and shows a
+  "Reload" banner once the new worker has actually installed over an existing controller. The
+  banner click is the only user action ever required — there is no "uninstall/reinstall the PWA"
+  step for a code update, that's only for install-shell changes (icon, name, manifest fields).
 - **Write failure semantics changed**: pages that used to revert a checkbox/UI state on a
   non-200 response no longer do, since `Outbox.submit()` always "succeeds" from the caller's
   perspective (worst case: locally queued) — only a *thrown exception* (an actual bug, not a

@@ -120,8 +120,7 @@
     }
 
     async function init() {
-      const auth = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
-      if (!auth.ok) { window.location.href = ENV.ROUTES.LOGIN; return; }
+      if (!(await checkAuth())) return;
       initTopbar(ENV.ROUTES.CONNECT_DRIVE);
 
       const params = new URLSearchParams(window.location.search);
