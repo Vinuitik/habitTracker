@@ -34,10 +34,11 @@ from trello_mcp.graph import (_build_graph, _cycle_report, _find_cycle, _longest
                               _schedulable, _schedule, _topo)
 from trello_mcp.models import CardMove, CardSplit, CardUpdate, NewCard, NewList
 from trello_mcp.tools_cards import (_toggle_label, archive_cards, complete_cards, create_cards,
-                                    create_lists, describe_board, get_card, get_cards, move_cards,
-                                    park_cards, update_cards)
+                                    create_lists, describe_board, get_card, get_cards,
+                                    get_cards_detail, move_cards, park_cards, update_cards)
 from trello_mcp.tools_planning import (_plan, apply_schedule, describe_graph, get_state,
-                                       propose_schedule, split_card, update_state)
+                                       propose_parallel_batch, propose_schedule, split_card,
+                                       update_state)
 
 
 # ── Cron: hourly overdue / due-today labelling ────────────────────────────────────

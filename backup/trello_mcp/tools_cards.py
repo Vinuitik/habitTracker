@@ -2,6 +2,8 @@
 
 Importing this module registers these tools on the shared `mcp` (via @mcp.tool()).
 """
+import difflib
+
 import httpx
 
 from .api import (_archive_empty_day_lists, _cards, _ensure_label, _ensure_list, _handle_to_link,
@@ -57,7 +59,8 @@ async def get_cards(
       has_due       True = only cards with a due date, False = only cards without
       include_done  False (default) hides cards labelled `done`
       limit         cap the number of rows (default 50)
-    The _meta/STATE card is never returned — use get_state. Use get_card(handle) for one card."""
+    The _meta/STATE card is never returned — use get_state. Use get_card(handle) for one card's
+    full detail, get_cards_detail(board, handles) for several."""
     async with httpx.AsyncClient() as client:
         cache: dict = {}
         b = await _resolve_board(client, board, cache)
@@ -115,7 +118,8 @@ async def get_cards(
 @mcp.tool()
 async def get_card(handle: str) -> dict:
     """Full detail for one card by handle (board/list/card), including its checklist items.
-    Empty fields are omitted from the response."""
+    Empty fields are omitted from the response. For more than a card or two, use
+    get_cards_detail instead of calling this in a loop — same fields, one board fetch."""
     async with httpx.AsyncClient() as client:
         cache: dict = {}
         board, lst, c = await _resolve_handle(client, handle, cache, checklists=True)
@@ -136,6 +140,45 @@ async def get_card(handle: str) -> dict:
         "checklist": items,
         "url": c.get("shortUrl", ""),
     })
+
+
+@mcp.tool()
+async def get_cards_detail(board: str, handles: list[str]) -> dict:
+    """Full detail for a batch of cards on ONE board, in a single call — same fields as get_card
+    (title, list, description, due, labels, checklist, url), batched. Fetches the board once
+    instead of once per card, so this is the fast path once you need descriptions for more than a
+    card or two. A handle not found on this board is reported in `errors`, not raised."""
+    cards_out, errors = [], []
+    async with httpx.AsyncClient() as client:
+        cache: dict = {}
+        b = await _resolve_board(client, board, cache)
+        all_cards = await _cards(client, b["id"], cache, checklists=True)
+        list_name_by_id = {l["id"]: l["name"] for l in b.get("lists", [])}
+        handle_by_id = _build_handles(all_cards, _slug(b["name"]), list_name_by_id)
+        by_handle = {handle_by_id[c["id"]]: c for c in all_cards}
+
+        for h in handles:
+            c = by_handle.get(h)
+            if c is None:
+                sug = difflib.get_close_matches(h, by_handle.keys(), n=3)
+                hint = f" Did you mean: {', '.join(sug)}?" if sug else ""
+                errors.append({"handle": h, "error": f"No card '{h}' on board '{b['name']}'.{hint}"})
+                continue
+            items = [
+                {"name": it["name"], "done": it["state"] == "complete"}
+                for cl in c.get("checklists", []) for it in cl.get("checkItems", [])
+            ]
+            cards_out.append(_clean({
+                "handle": h,
+                "title": c["name"],
+                "list": list_name_by_id.get(c["idList"], ""),
+                "description": c.get("desc", ""),
+                "due": _short_due(c.get("due")),
+                "labels": [l["name"] for l in c.get("labels", [])],
+                "checklist": items,
+                "url": c.get("shortUrl", ""),
+            }))
+    return _clean({"cards": cards_out, "errors": errors})
 
 
 @mcp.tool()

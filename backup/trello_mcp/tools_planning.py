@@ -11,7 +11,7 @@ from .api import (_archive_empty_day_lists, _cards, _handle_to_link, _resolve_bo
 from .config import (DATE_RE, DEFAULT_IMPORTANCE, DEFAULT_PACE, META_LIST, STATE_CARD,
                      TRELLO_BASE, ToolError, _auth, mcp)
 from .formatting import _build_handles, _clean, _slug
-from .graph import _cycle_report, _schedulable, _schedule
+from .graph import _build_graph, _cycle_report, _schedulable, _schedule
 from .meta import META_RE, _is_done, _is_parked, _parse_meta, _set_meta
 from .models import CardSplit
 
@@ -202,6 +202,42 @@ async def describe_graph(board: str) -> dict:
         "parked_cards": parked_n,
         "in_flight": "\n".join(rows) if rows else "Nothing in flight.",
         "hint": "Depend on these by handle. For what is already built, call get_state.",
+    })
+
+
+@mcp.tool()
+async def propose_parallel_batch(board: str, list_name: str) -> dict:
+    """Within one list, the cards with zero unresolved `after:` edges to OTHER cards in that same
+    list — safe to hand out together right now. READ-ONLY. Reuses the same graph logic as
+    propose_schedule/describe_graph (_build_graph + in-degree), scoped to this list: an edge to a
+    card outside the list (already done, or elsewhere on the board) isn't in scope, so it never
+    blocks here.
+
+      board       board name or slug
+      list_name   the list to slice, typically a day list (YYYY-MM-DD)
+
+    This only sees edges you declared with `after:` on create_cards/update_cards. A blocker stated
+    only in a card's prose description ("depends on X") is invisible to this tool — read the
+    description yourself, or better, convert it to a real `after:` edge so the graph stays
+    authoritative. Excludes cards labelled `done` or `parked`."""
+    async with httpx.AsyncClient() as client:
+        cache: dict = {}
+        b = await _resolve_board(client, board, cache)
+        lst = _resolve_list(b, list_name)
+        all_cards = await _cards(client, b["id"], cache)
+        cards = [c for c in all_cards
+                 if c["idList"] == lst["id"] and not _is_done(c) and not _is_parked(c)]
+
+        by_link, preds, _, _, _ = _build_graph(cards)
+        ready = [by_link[n] for n, ps in preds.items() if not ps]
+        name_by_id = {l["id"]: l["name"] for l in b.get("lists", [])}
+        handles = _build_handles(ready, _slug(b["name"]), name_by_id)
+
+    rows = "\n".join(f"{handles[c['id']]}\t{c['name']}" for c in ready)
+    return _clean({
+        "list": lst["name"],
+        "ready_now": rows if rows else "Nothing ready — every card here is blocked.",
+        "total_in_list": len(cards),
     })
 
 

@@ -29,8 +29,10 @@ from mcp_server import (
     describe_board,
     get_card,
     get_cards,
+    get_cards_detail,
     move_cards,
     park_cards,
+    propose_parallel_batch,
     update_cards,
 )
 
@@ -236,6 +238,37 @@ async def test_get_card_unresolvable_handle_suggests():
     assert "google-sso" in str(e.value)
 
 
+# ── get_cards_detail (batch) ────────────────────────────────────────────────
+
+async def test_get_cards_detail_one_board_fetch_for_the_whole_batch():
+    cards = [
+        card("c1", "Google SSO", "l-auth", desc="Wire OAuth", labels=[{"name": "urgent"}]),
+        card("c2", "Email Login", "l-auth", due="2026-07-20T17:00:00Z"),
+    ]
+    ctx, client = make_async_ctx(async_resp([BOARD]), async_resp(cards))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await get_cards_detail("frm", ["frm/auth/google-sso", "frm/auth/email-login"])
+    assert client.get.call_count == 2  # boards + cards, NOT one round-trip per handle
+    assert result["cards"] == [
+        {"handle": "frm/auth/google-sso", "title": "Google SSO", "list": "Auth",
+         "description": "Wire OAuth", "labels": ["urgent"], "url": "https://trello.com/c/c1"},
+        {"handle": "frm/auth/email-login", "title": "Email Login", "list": "Auth",
+         "due": "2026-07-20", "url": "https://trello.com/c/c2"},
+    ]
+    assert "errors" not in result
+
+
+async def test_get_cards_detail_unknown_handle_reported_not_raised():
+    cards = [card("c1", "Google SSO", "l-auth")]
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await get_cards_detail("frm", ["frm/auth/google-sso", "frm/auth/nope"])
+    assert [c["handle"] for c in result["cards"]] == ["frm/auth/google-sso"]
+    assert len(result["errors"]) == 1
+    assert result["errors"][0]["handle"] == "frm/auth/nope"
+    assert "No card 'frm/auth/nope'" in result["errors"][0]["error"]
+
+
 # ── create_cards (batch) ─────────────────────────────────────────────────────
 
 async def test_create_cards_batch_names_resolved():
@@ -387,6 +420,33 @@ async def test_apply_schedule_positions_day_lists_at_top():
     # the surviving day list is repositioned to the left (pos=top)
     list_puts = [c for c in client.put.call_args_list if "/lists/l-today" in c[0][0]]
     assert list_puts and list_puts[0][1]["params"]["pos"] == "top"
+
+
+# ── propose_parallel_batch ───────────────────────────────────────────────────
+
+async def test_propose_parallel_batch_scopes_edges_to_the_list():
+    cards = [
+        card("c1", "A", "l-auth"),
+        card("c2", "B", "l-auth", desc="```meta\nafter: c1\n```"),          # blocked by c1, in scope
+        card("c3", "C", "l-auth", desc="```meta\nafter: zzz\n```"),         # ref outside scope → ready
+        card("c4", "Done elsewhere", "l-done", labels=[{"name": "done"}]),  # different list, ignored
+    ]
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await propose_parallel_batch("frm", "Auth")
+    assert result["total_in_list"] == 3
+    assert result["ready_now"] == "frm/auth/a\tA\nfrm/auth/c\tC"
+
+
+async def test_propose_parallel_batch_nothing_ready_message():
+    cards = [
+        card("c1", "A", "l-auth", desc="```meta\nafter: c2\n```"),
+        card("c2", "B", "l-auth", desc="```meta\nafter: c1\n```"),  # mutual block (would be a cycle)
+    ]
+    ctx, _ = make_async_ctx(async_resp([BOARD]), async_resp(cards))
+    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
+        result = await propose_parallel_batch("frm", "Auth")
+    assert result["ready_now"] == "Nothing ready — every card here is blocked."
 
 
 # ── cron: empty day-list cleanup ──────────────────────────────────────────────

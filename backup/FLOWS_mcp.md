@@ -14,9 +14,10 @@ meta.py        the ```meta block: _parse_meta/_render_meta/_set_meta + _is_done/
 api.py         live Trello I/O: _resolve_board/_list/_handle, _cards, _label_ids, _ensure_label  → config, formatting
 graph.py       pure scheduling: _build_graph, _topo, _schedule, _schedulable, _cycle_report      → config, meta, formatting
 models.py      pydantic input models + LLM field docs (NewCard, CardUpdate, NewList, CardMove, CardSplit)
-tools_cards.py     @mcp.tool: describe_board, get_cards, get_card, create_lists/cards, update/move,
-                   complete/park/archive_cards                                                   → api, meta, graph, models
-tools_planning.py  @mcp.tool: propose/apply_schedule, describe_graph, get/update_state, split_card → api, graph, meta, models
+tools_cards.py     @mcp.tool: describe_board, get_cards, get_card, get_cards_detail,
+                   create_lists/cards, update/move, complete/park/archive_cards                  → api, meta, graph, models
+tools_planning.py  @mcp.tool: propose/apply_schedule, describe_graph, propose_parallel_batch,
+                   get/update_state, split_card                                                  → api, graph, meta, models
 mcp_server.py  entrypoint: re-exports everything, keeps the cron, runs mcp.run()
 ```
 
@@ -198,9 +199,23 @@ An edge to a card outside the schedulable set is dropped. Usually correct (edge 
 constrains nothing). Genuinely unknown refs are reported in `dangling` rather than silently
 ignored — a missing edge yields a *confidently wrong* schedule.
 
+### `propose_parallel_batch` — in-degree-0 within one list
+
+No new scheduling logic — reuses `_build_graph` exactly as `_schedule` does, but scoped to a single
+list's cards instead of the whole schedulable set. Because `_build_graph` only keeps `after` edges
+whose target is also in the set passed to it, scoping to one list is enough to make "ready" mean
+"in-degree 0 *within this list*": an edge to a card outside the list (done, or elsewhere on the
+board) is never in scope, so it can't block. Same rule `_schedulable` uses for done/parked cards.
+
+**Only sees formal `after:` edges — not prose.** A blocker written only in a card's description
+("depends on Mobile UI shell") is invisible here; the tool has no way to read intent out of free
+text and isn't trying to. If a card is soft-blocked by something not expressed as an `after:` edge,
+either read the description yourself before batching, or convert the blocker to a real edge with
+`update_cards` so the graph — and this tool — stays authoritative.
+
 ---
 
-## Tool Surface (16 tools)
+## Tool Surface (18 tools)
 
 All reads omit-empty (`_clean()` drops `None`/`""`/`[]`/`{}`, keeps `0`/`False`).
 The `_meta` list and the STATE card are excluded from every card read and from the scheduler.
@@ -211,7 +226,8 @@ The `_meta` list and the STATE card are excluded from every card read and from t
 | `describe_graph(board)` | **read second.** Features + in-flight cards + edges. Done cards omitted. |
 | `describe_board(board)` | lists + card counts split open/done/parked. Cheap situational awareness. |
 | `get_cards(...)` | compact lines; filters `list_name`/`feature`/`label`/`text`/`due_before`/`has_due`/`include_done` |
-| `get_card(handle)` | full detail incl. checklist |
+| `get_card(handle)` | full detail incl. checklist, one card |
+| `get_cards_detail(board, handles)` | full detail incl. checklist, batched — one board fetch instead of N |
 | `create_lists([NewList])` | batch; topic or dated |
 | `create_cards(board, list_name, cards, feature?)` | batch, hoisted schema; two-pass so intra-batch edges resolve |
 | `update_cards([CardUpdate])` | batch, partial; `after`/`est`/`feature`/`importance` |
@@ -221,6 +237,7 @@ The `_meta` list and the STATE card are excluded from every card read and from t
 | `archive_cards(handles)` | close (hide) cards without deleting; for template junk |
 | `split_card([CardSplit])` | break a card up, inherit edges; the cycle repair |
 | `propose_schedule(...)` | read-only dated plan |
+| `propose_parallel_batch(board, list_name)` | read-only; in-degree-0 cards within one list — safe to start now |
 | `apply_schedule(...)` | creates day lists + bulk-moves, one call |
 | `update_state(board, content)` | overwrite STATE wholesale |
 
@@ -410,6 +427,8 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Empty day-list cleanup (active) | `api.py` | `_archive_empty_day_lists()` | end of apply/move/archive/split; returns `lists_cleaned` |
 | Cycle reporting | `graph.py` | `_find_cycle()`, `_cycle_report()` | DFS colouring |
 | Compact read columns | `tools_cards.py` | `get_cards` formatting loop | tab-delimited |
+| Batched card detail | `tools_cards.py` | `get_cards_detail()` | one board fetch for N handles; unresolved handles → `errors`, not raised |
+| Parallel-batch readiness | `tools_planning.py` | `propose_parallel_batch()` | in-degree-0 within one list, via `_build_graph`; formal edges only, no prose parsing |
 | Omit-empty rules | `formatting.py` | `_clean()` | drops None/""/[]/{}, keeps 0/False |
 | Checklist name | `api.py` | `_write_checklist` → `POST /checklists name=Tasks` | currently "Tasks" |
 | Batch input schemas | `models.py` | `NewCard` / `CardUpdate` / `CardMove` / `NewList` / `CardSplit` | Pydantic |
