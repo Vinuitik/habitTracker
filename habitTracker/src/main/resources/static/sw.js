@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -71,12 +71,20 @@ async function handleNavigate(request) {
 }
 
 // Stale-while-revalidate for the today/habits/kpi read endpoints.
+// A down origin behind the tunnel answers with a real HTTP 530 (the fetch RESOLVES, it does not
+// throw), and its body is a Cloudflare HTML error page — surfacing that to the caller would break
+// its `.json()`. So only an OK network response is ever returned/cached; any non-ok status is
+// treated as unreachable (→ null) so we fall back to the cached copy, or a friendly offline JSON
+// the pages know how to read, instead of leaking the broken 530.
 async function handleApiGet(request) {
   const cache = await caches.open(API_CACHE);
   const cached = await cache.match(request);
   const network = fetch(request).then((response) => {
-    if (response && response.ok) cache.put(request, response.clone());
-    return response;
+    if (response && response.ok) {
+      cache.put(request, response.clone());
+      return response;
+    }
+    return null; // 5xx / 530 / any non-ok = unreachable → let cache or offline JSON win
   }).catch(() => null);
 
   return cached || (await network) || new Response(JSON.stringify({ offline: true }), {

@@ -250,13 +250,29 @@
 
       initTopbar(ENV.ROUTES.HOME);
 
-      const data = await fetch(ENV.ENDPOINTS.TODAY, { credentials: 'include' }).then(r => r.json());
+      // Resilient read: on a down origin the SW hands back {offline:true} (never a broken 530),
+      // and a truly failed fetch is caught here — either way we render an offline state instead
+      // of crashing on `data.date`/`data.habits` (see js/offline/FLOWS.md).
+      const data = await fetch(ENV.ENDPOINTS.TODAY, { credentials: 'include' })
+        .then(r => r.json())
+        .catch(() => ({ offline: true }));
+
+      const grid = document.getElementById('habit-grid');
+
+      if (data.offline || !data.date) {
+        document.getElementById('today-date').textContent = 'Offline';
+        grid.innerHTML = `
+          <div class="dashboard__empty">
+            <h2>You're offline</h2>
+            <p>Showing the last data this device saw. Any habits you tick will sync when the server is back.</p>
+          </div>`;
+        document.getElementById('today-summary').textContent = 'Offline — last-known state.';
+        return;
+      }
 
       document.getElementById('today-date').textContent =
         new Date(data.date + 'T00:00:00').toLocaleDateString('en-US',
           { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-      const grid = document.getElementById('habit-grid');
 
       if (!data.habits || data.habits.length === 0) {
         grid.innerHTML = `

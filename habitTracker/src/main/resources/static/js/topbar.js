@@ -10,18 +10,28 @@ const NAV_ITEMS = [
 ];
 
 // Auth gate used by every page's init(), in place of a bare `fetch(AUTH_ME)`. The distinction
-// that matters: a real 401/403 means the server was reached and said "you're not logged in" —
-// that's a genuine redirect-to-login. A thrown fetch (offline, server unreachable) is NOT the
-// same thing — the session cookie is still sitting in the browser regardless of connectivity,
-// so we assume it's still valid and let the page render from whatever the service worker has
-// cached. Without this, every page's init() died on the auth check the instant the server was
-// unreachable, before ever rendering the cached data that was sitting there the whole time.
+// that matters: ONLY a real 401/403 means the server was reached and said "you're not logged in" —
+// that's a genuine redirect-to-login. Everything else is "we couldn't tell", so KEEP the session.
+//
+// Why the >=400-that-isn't-401 branch exists (this is the whole "server down breaks the app" bug):
+// when the origin is down behind the Cloudflare tunnel it ANSWERS with an HTTP 530 — the fetch
+// RESOLVES with a non-ok Response, it does NOT throw. The old code did `if (res.ok) return true;
+// else redirect-to-login`, so a 530 sent the user to /login — which the service worker
+// deliberately never serves from cache (auth-handshake path) — landing them on a raw blank error
+// page. navigator.onLine is true the whole time (Wi-Fi is fine, only the origin is dead), so
+// nothing else caught it either. Treat 5xx/530 exactly like a thrown fetch: keep the session and
+// let the page render from whatever the service worker cached.
 async function checkAuth() {
   try {
     const res = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
     if (res.ok) return true;
-    window.location.href = ENV.ROUTES.LOGIN;
-    return false;
+    if (res.status === 401 || res.status === 403) {
+      window.location.href = ENV.ROUTES.LOGIN;
+      return false;
+    }
+    // 5xx / 530 (tunnel up, origin down) / any other status = "couldn't tell" → keep session.
+    console.warn('[auth] /auth/me returned', res.status, '— treating as unreachable, rendering offline');
+    return true;
   } catch (e) {
     console.warn('[auth] /auth/me unreachable — assuming still logged in, rendering offline');
     return true;

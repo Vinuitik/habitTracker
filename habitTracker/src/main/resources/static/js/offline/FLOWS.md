@@ -62,6 +62,26 @@ page on failure/timeout/non-ok response; `GET`s to `/api/today`, `/api/habits*`,
 are stale-while-revalidate, which is what makes "what's due today" / KPI values visible offline
 as last-known-state — no separate IndexedDB read-cache needed for this.
 
+## "Server down" is an HTTP 530, not a dropped connection (the seam that used to break)
+
+Behind the Cloudflare tunnel, "origin down" means the edge ANSWERS with **HTTP 530** — the
+`fetch()` RESOLVES with a non-ok Response, it does NOT throw, and `navigator.onLine` stays `true`
+(Wi-Fi is fine, only the origin is dead). Both signals apps naïvely trust to detect "offline"
+lie here. Three sites treat a non-ok/5xx/530 exactly like a thrown fetch = "unreachable":
+
+- **`topbar.js checkAuth()`** — redirects to `/login` **only** on a real `401/403`. Any other
+  non-ok status (530/5xx) keeps the session and renders from cache. The old `if (res.ok) … else
+  redirect` sent every page to `/login` the instant the origin was down — and the SW never serves
+  `/login` from cache (auth-handshake path), so it landed on a raw blank error page. **This was
+  the "server down breaks the app" bug.**
+- **`sw.js handleApiGet()`** — only an OK network response is returned/cached; a non-ok (530 with
+  a Cloudflare HTML body) becomes `null` so the cached copy — or the friendly `{offline:true}`
+  JSON — wins, instead of leaking a 530 whose HTML body breaks the caller's `.json()`.
+- **`sw.js handleNavigate()`** — already network-first with a 4s timeout, falling back to the
+  cached shell on throw, timeout, OR non-ok Response.
+- **Page reads** (`index.html init()`) tolerate `{offline:true}` / a missing `date`: render a
+  clean "You're offline" state instead of `new Date(undefined)` → "Invalid Date".
+
 ## IndexedDB schema (`db.js`)
 
 ```
@@ -87,6 +107,10 @@ habittracker-offline (v1)
   "Reload" banner once the new worker has actually installed over an existing controller. The
   banner click is the only user action ever required — there is no "uninstall/reinstall the PWA"
   step for a code update, that's only for install-shell changes (icon, name, manifest fields).
+  Detection uses TWO gated-on-`hadController` signals: `updatefound`→statechange `activated`
+  (new worker activates while the page is open) AND `controllerchange` (the canonical takeover
+  signal, catches a worker that activated before the listener attached). `showUpdateBanner()`
+  dedupes, so both firing is harmless.
 - **Write failure semantics changed**: pages that used to revert a checkbox/UI state on a
   non-200 response no longer do, since `Outbox.submit()` always "succeeds" from the caller's
   perspective (worst case: locally queued) — only a *thrown exception* (an actual bug, not a
@@ -110,4 +134,7 @@ habittracker-offline (v1)
 | IndexedDB schema | `db.js` `open()` |
 | Service worker shell precache list | `../../sw.js` `SHELL_URLS` (+ bump `VERSION`) |
 | API stale-while-revalidate routes | `../../sw.js` `API_PREFIXES` |
-| SW update detection | `../registerSW.js` |
+| Auth 530-vs-401 gate (redirect only on 401/403) | `js/topbar.js` `checkAuth()` |
+| API GET non-ok→cache/offline-JSON fallback | `../../sw.js` `handleApiGet()` |
+| Offline-state render on a page | `index.html` `init()` (`data.offline`/`!data.date` branch) |
+| SW update detection (`updatefound` + `controllerchange`) | `../registerSW.js` |

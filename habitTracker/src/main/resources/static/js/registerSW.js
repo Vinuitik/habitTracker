@@ -39,6 +39,13 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       if (document.visibilityState === 'visible') registration.update().catch(() => {});
     });
 
+    // Two detection paths, both gated on "there was already a controller" so a first install is
+    // never mistaken for an update:
+    //   (a) updatefound → the new worker reaches 'activated' while this page is open;
+    //   (b) controllerchange → the canonical "a new SW took control" signal (OO's primary path).
+    // (b) catches the case (a) misses: a worker that finished installing/activating before this
+    // listener was attached (fast skipWaiting()+clients.claim() takeover). showUpdateBanner()
+    // dedupes, so both firing is harmless.
     const hadController = !!navigator.serviceWorker.controller;
     registration.addEventListener('updatefound', () => {
       const installing = registration.installing;
@@ -48,6 +55,9 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
           showUpdateBanner();
         }
       });
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) showUpdateBanner();
     });
   }).catch((err) => console.warn('[sw] registration failed:', err));
 }
