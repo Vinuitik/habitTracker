@@ -15,6 +15,18 @@
 		reverse_proxy mongo-backup:8091
 	}
 
+	# MCP connectors (Claude/ChatGPT/Gemini) probe these well-known OAuth discovery
+	# paths before deciding whether to do OAuth. We use token-auth, not OAuth, so
+	# they must get a clean 404 here — otherwise they fall through to javaapp,
+	# whose Spring Security redirects unauthenticated requests to /login (302 HTML),
+	# which connectors can't parse as "no OAuth" and silently die on.
+	handle /.well-known/oauth-protected-resource* {
+		respond 404
+	}
+	handle /.well-known/oauth-authorization-server* {
+		respond 404
+	}
+
 	reverse_proxy javaapp:8089 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
