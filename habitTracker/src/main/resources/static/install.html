@@ -51,10 +51,34 @@
       <div class="card__title">Install manually</div>
       <ol class="sync-steps" id="manual-steps-list"></ol>
     </div>
+
+    <div class="card">
+      <div class="card__title">Reset app data</div>
+      <div class="card__body">
+        A website can't remove its own icon from your desktop or home screen — that's an OS
+        permission no site is allowed to touch, on any PWA, anywhere. This button does everything
+        else a reinstall would: wipes the offline cache, the queued-but-unsent edits, and the
+        installed background worker, then reloads fresh from the server. Use it if the app seems
+        stuck on an old version or is behaving strangely offline.
+      </div>
+    </div>
+
+    <div class="sync-actions">
+      <button id="reset-btn" class="btn btn--danger" onclick="resetAppData()">Reset app data</button>
+    </div>
+    <div id="reset-remaining" class="card" style="display:none;">
+      <div class="card__title">Last step (manual, takes 2 seconds)</div>
+      <div class="card__body" id="reset-remaining-text"></div>
+    </div>
   </main>
 
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
+  <script src="/js/offline/db.js"></script>
+  <script src="/js/offline/crypto.js"></script>
+  <script src="/js/offline/connectivity.js"></script>
+  <script src="/js/offline/driveClient.js"></script>
+  <script src="/js/offline/outbox.js"></script>
   <script src="/js/registerSW.js"></script>
   <script>
     let deferredPrompt = null;
@@ -105,6 +129,48 @@
       }
       list.innerHTML = steps.map((s) => `<li>${s}</li>`).join('');
       document.getElementById('manual-steps').style.display = '';
+    }
+
+    // Wipes everything a webpage IS allowed to touch: the service worker, Cache Storage, and the
+    // local IndexedDB write-queue. Flushes the queue first (best-effort) so an edit that hasn't
+    // synced yet doesn't get silently deleted by the reset. Cannot and does not touch the OS-level
+    // installed icon/shortcut — no website has that permission, on this app or any other.
+    async function resetAppData() {
+      const btn = document.getElementById('reset-btn');
+      btn.disabled = true;
+      btn.textContent = 'Resetting…';
+
+      try { await Outbox.flush(); } catch (e) {}
+
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      if ('indexedDB' in window) {
+        await new Promise((resolve) => {
+          const req = indexedDB.deleteDatabase('habittracker-offline');
+          req.onsuccess = resolve;
+          req.onerror = resolve;
+          req.onblocked = resolve;
+        });
+      }
+
+      const remainingText = document.getElementById('reset-remaining-text');
+      const ua = navigator.userAgent;
+      if (/iPhone|iPad|iPod/.test(ua)) {
+        remainingText.textContent = 'If you added this to your home screen, press and hold the icon → Remove App.';
+      } else if (/Android/.test(ua)) {
+        remainingText.textContent = 'If you added this to your home screen, press and hold the icon → Uninstall.';
+      } else {
+        remainingText.textContent = 'If this was installed as a desktop app, right-click its icon (taskbar/Start menu/Applications) → Uninstall — or open chrome://apps, right-click the app → Remove.';
+      }
+      document.getElementById('reset-remaining').style.display = '';
+      btn.textContent = 'Done — reloading…';
+      setTimeout(() => window.location.reload(), 1500);
     }
 
     async function init() {
