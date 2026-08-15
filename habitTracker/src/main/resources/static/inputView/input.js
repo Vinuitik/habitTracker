@@ -45,7 +45,12 @@ document.addEventListener('DOMContentLoaded', () => {
             'X-XSRF-TOKEN': getCsrfToken()
         },
         body: JSON.stringify(habitIds)
-    }).then(res => res.json())
+    // Origin-down behind the tunnel answers with a real HTTP 530 whose body is Cloudflare's HTML
+    // error page, not JSON — res.json() on that throws "Unexpected token '<'". This POST isn't
+    // covered by the service worker's stale-while-revalidate (GET-only), so on a non-ok response
+    // just skip the streak-color refresh instead of crashing; the server-rendered values stay as-is.
+    }).then(res => res.ok ? res.json() : [])
+        .catch(() => [])
         .then(streaks => {
             console.log('Fetched streaks:', streaks);
             // streaks should be an array of { habitId, streak }

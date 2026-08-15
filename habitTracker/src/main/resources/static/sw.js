@@ -1,25 +1,55 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v4';
+const VERSION = 'v6';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
 const SHELL_URLS = [
   '/js/env.js',
   '/js/topbar.js',
+  '/js/registerSW.js',
+  // The offline write pipeline itself — if these fail to load offline, Outbox/Connectivity/
+  // DriveClient never exist, so a "mark done" tap has nothing to queue into and just throws.
+  '/js/offline/db.js',
+  '/js/offline/crypto.js',
+  '/js/offline/connectivity.js',
+  '/js/offline/driveClient.js',
+  '/js/offline/outbox.js',
   '/styles/tokens.css',
   '/styles/reset.css',
   '/styles/atoms/button.css',
+  '/styles/atoms/input.css',
   '/styles/organisms/topbar.css',
   '/styles/pages/dashboard.css',
-  '/index.html',
-  '/habits-list.html',
-  '/habit-table.html',
-  '/kpi-list.html',
-  '/kpi-dashboard.html',
-  '/connect-drive.html',
-  '/install.html',
+  '/styles/pages/rules.css',
   '/site.webmanifest',
+  '/android-chrome-192x192.png',
+  '/android-chrome-512x512.png',
+  '/apple-touch-icon.png',
+  '/favicon-32x32.png',
+  '/favicon-16x16.png',
+];
+
+// Top-level pages, precached under the NAVIGABLE route (PageController's @GetMapping path), not
+// the static filename it forwards to. A `forward:` is server-side only — the browser's navigation
+// request URL is always the route (e.g. `/habits/table`), never the file it resolves to
+// (`habit-table.html`). Caching under the filename meant cache.match(request) in handleNavigate()
+// never hit for any page but the one aliased at the final `/index.html` fallback — every offline
+// page switch silently landed back on Today instead of the page you tapped. Path-variable routes
+// (`/habits/edit/{id}`, `/habits/info/{id}`) can't be precached this way and still fall back to
+// the Today shell offline, same as before.
+const PAGE_ROUTES = [
+  '/', '/landing',
+  '/today', '/habit',
+  '/habits/list',
+  '/habits/table',
+  '/habits/rules',
+  '/habits/add',
+  '/kpis',
+  '/kpis/create',
+  '/kpis/dashboard',
+  '/connect-drive',
+  '/install',
 ];
 
 // Same-origin API GETs worth serving stale while a fresh copy loads in the background —
@@ -29,7 +59,7 @@ const API_PREFIXES = ['/api/today', '/api/habits', '/api/kpis'];
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE).then((cache) =>
-      Promise.all(SHELL_URLS.map((url) => cache.add(url).catch(() => {})))
+      Promise.all([...SHELL_URLS, ...PAGE_ROUTES].map((url) => cache.add(url).catch(() => {})))
     ).then(() => self.skipWaiting())
   );
 });
@@ -64,7 +94,7 @@ async function handleNavigate(request) {
   } catch (e) {
     const cache = await caches.open(SHELL_CACHE);
     const cached = await cache.match(request) || await cache.match(new URL(request.url).pathname)
-      || await cache.match('/index.html');
+      || await cache.match('/today');
     if (cached) return cached;
     throw e;
   }

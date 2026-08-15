@@ -309,11 +309,15 @@
 
       // Load streaks
       const ids = data.habits.map(h => String(h.id));
+      // Origin-down (530) answers with Cloudflare's HTML error page, not JSON — this POST isn't
+      // covered by the service worker's stale-while-revalidate (GET-only), so r.json() on a
+      // non-ok response would throw "Unexpected token '<'". Skip the streak refresh instead of
+      // crashing; server-rendered streak values stay as-is.
       fetch(ENV.ENDPOINTS.HABITS_STREAKS, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
         body: JSON.stringify(ids)
-      }).then(r => r.json()).then(streaks => {
+      }).then(r => r.ok ? r.json() : []).catch(() => []).then(streaks => {
         streaks.forEach(({ key, value, frequency }) => {
           const card = document.querySelector(`.habit-card[data-id="${key}"]`);
           if (!card) return;
