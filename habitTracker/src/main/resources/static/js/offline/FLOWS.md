@@ -100,6 +100,25 @@ habittracker-offline (v1)
 - **Hand-written service worker, not Workbox** — this app has no build step/bundler, so
   `vite-plugin-pwa`-style `injectManifest` isn't available; `SHELL_URLS` is a manually
   maintained list. Bump `sw.js`'s `VERSION` whenever that list or the routing logic changes.
+  **This list is the actual offline failure mode in practice**: it's easy to add a new page or
+  a new shared script (a new offline/*.js module, a new nav page) and forget to add it here —
+  the asset then 530s uncached with no fallback the next time the origin is down, instead of
+  failing loudly at dev time. Confirmed in production (2026-08-15): `SHELL_URLS` had every page
+  built after `v3` but was missing all six offline-pipeline scripts (`db.js`, `crypto.js`,
+  `connectivity.js`, `driveClient.js`, `outbox.js`, `registerSW.js`) plus `rule-setting.html` and
+  the manifest icons — so on an origin-down test, `Outbox` never loaded, and any write attempt
+  threw instead of queuing. Fixed in `v5`. When adding a `<script src>`/`<link href>` that's
+  loaded on any shell page, add it to `SHELL_URLS` in the same commit.
+  **Second bug found alongside it (same date, `v6`)**: `SHELL_URLS` cached top-level pages under
+  their static filename (`/habit-table.html`) but `PageController` only ever forwards to that
+  filename server-side — the browser's navigation request is always the route
+  (`/habits/table`). `handleNavigate()`'s `cache.match(request)` therefore never matched any page
+  but the one aliased at the final fallback, so switching pages while offline always silently
+  landed back on Today regardless of which page you tapped. Fixed by adding `PAGE_ROUTES` — the
+  same pages, precached under their actual `@GetMapping` path instead of the filename. When adding
+  a new `@GetMapping` in `PageController.java` with no path variable, add its route to
+  `PAGE_ROUTES` in `sw.js` in the same commit (routes with `{id}` still fall back to Today, same
+  as before — precaching per-id content isn't worth it here).
 - **Auto-update, no reinstall ever needed**: `sw.js` calls `skipWaiting()`+`clients.claim()`
   unconditionally, so a version bump takes over as soon as the browser notices the file changed.
   `registerSW.js` forces that check on every page load and tab-refocus (`registration.update()`)
@@ -110,7 +129,14 @@ habittracker-offline (v1)
   Detection uses TWO gated-on-`hadController` signals: `updatefound`→statechange `activated`
   (new worker activates while the page is open) AND `controllerchange` (the canonical takeover
   signal, catches a worker that activated before the listener attached). `showUpdateBanner()`
-  dedupes, so both firing is harmless.
+  dedupes, so both firing is harmless. Both signals also call `TopbarUpdate.markAvailable()`
+  (`topbar.js`), which lights up a persistent `.topbar__update` button injected into every page's
+  topbar — the banner is a one-shot toast that's easy to miss or dismiss; the topbar button stays
+  lit until you click it (reload) so there's always a durable place to check/act, not just the
+  moment the toast happened to be visible. `window.TopbarUpdate` is set explicitly (not a bare
+  `const`) specifically so `registerSW.js`, loaded after `topbar.js`, can see it via
+  `window.TopbarUpdate` — a top-level `const`/`let` in a classic script does NOT attach to
+  `window`, so skipping this would make the guard always false and the button would never light.
 - **Write failure semantics changed**: pages that used to revert a checkbox/UI state on a
   non-200 response no longer do, since `Outbox.submit()` always "succeeds" from the caller's
   perspective (worst case: locally queued) — only a *thrown exception* (an actual bug, not a
@@ -132,9 +158,11 @@ habittracker-offline (v1)
 | Drive mailbox filename convention | `driveClient.js` `pushBatch()` |
 | Crypto params (must match Java) | `crypto.js` ⇄ `habitTracker.sync.VaultEncryptionService` |
 | IndexedDB schema | `db.js` `open()` |
-| Service worker shell precache list | `../../sw.js` `SHELL_URLS` (+ bump `VERSION`) |
+| Service worker shell precache list (assets/scripts) | `../../sw.js` `SHELL_URLS` (+ bump `VERSION`) |
+| Service worker page precache list (navigable routes) | `../../sw.js` `PAGE_ROUTES` — must mirror `PageController.java` `@GetMapping`s (+ bump `VERSION`) |
 | API stale-while-revalidate routes | `../../sw.js` `API_PREFIXES` |
 | Auth 530-vs-401 gate (redirect only on 401/403) | `js/topbar.js` `checkAuth()` |
 | API GET non-ok→cache/offline-JSON fallback | `../../sw.js` `handleApiGet()` |
 | Offline-state render on a page | `index.html` `init()` (`data.offline`/`!data.date` branch) |
 | SW update detection (`updatefound` + `controllerchange`) | `../registerSW.js` |
+| Persistent update-available topbar button | `js/topbar.js` `TopbarUpdate`/`initTopbar()`, styled in `styles/organisms/topbar.css` `.topbar__update` |
