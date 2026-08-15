@@ -53,11 +53,15 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       installing.addEventListener('statechange', () => {
         if (installing.state === 'activated' && hadController) {
           showUpdateBanner();
+          if (window.TopbarUpdate) TopbarUpdate.markAvailable();
         }
       });
     });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hadController) showUpdateBanner();
+      if (hadController) {
+        showUpdateBanner();
+        if (window.TopbarUpdate) TopbarUpdate.markAvailable();
+      }
     });
   }).catch((err) => console.warn('[sw] registration failed:', err));
 }

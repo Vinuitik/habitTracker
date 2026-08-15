@@ -38,6 +38,26 @@ async function checkAuth() {
   }
 }
 
+// Persistent "new version available" control, injected into every page's topbar so there's
+// always somewhere to look/click — no more relying on catching a one-shot toast. registerSW.js
+// calls TopbarUpdate.markAvailable() the moment it detects a new worker has taken over; if that
+// fires before initTopbar() has run yet (race — SW check happens on script load, topbar renders
+// inside each page's own init()), the pending flag below makes the button render already-lit.
+let updateAvailablePending = false;
+let updateButtonEl = null;
+
+function applyUpdateButtonState() {
+  if (!updateButtonEl) return;
+  updateButtonEl.hidden = !updateAvailablePending;
+}
+
+window.TopbarUpdate = {
+  markAvailable() {
+    updateAvailablePending = true;
+    applyUpdateButtonState();
+  },
+};
+
 /* Call initTopbar(activeRoute) after DOM is ready.
    activeRoute: one of the ENV.ROUTES values, e.g. ENV.ROUTES.HABITS_LIST */
 function initTopbar(activeRoute) {
@@ -64,4 +84,21 @@ function initTopbar(activeRoute) {
   // Keep brand link in sync
   const brand = document.querySelector('.topbar__brand');
   if (brand) brand.setAttribute('href', ENV.ROUTES.HOME);
+
+  // Inject the update button once, right before the sign-out form.
+  if (!document.querySelector('.topbar__update')) {
+    const inner = document.querySelector('.topbar__inner');
+    const signoutForm = document.getElementById('logout-form');
+    if (inner) {
+      updateButtonEl = document.createElement('button');
+      updateButtonEl.type = 'button';
+      updateButtonEl.className = 'topbar__update';
+      updateButtonEl.hidden = true;
+      updateButtonEl.title = 'A new version is ready — click to reload';
+      updateButtonEl.innerHTML = '<span class="topbar__update-dot"></span>Update';
+      updateButtonEl.addEventListener('click', () => window.location.reload());
+      inner.insertBefore(updateButtonEl, signoutForm || null);
+      applyUpdateButtonState();
+    }
+  }
 }
