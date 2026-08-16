@@ -228,7 +228,7 @@ async def propose_parallel_batch(board: str, list_name: str) -> dict:
         cards = [c for c in all_cards
                  if c["idList"] == lst["id"] and not _is_done(c) and not _is_parked(c)]
 
-        by_link, preds, _, _, _ = _build_graph(cards)
+        by_link, preds, _, _, _, _ = _build_graph(cards)
         ready = [by_link[n] for n, ps in preds.items() if not ps]
         name_by_id = {l["id"]: l["name"] for l in b.get("lists", [])}
         handles = _build_handles(ready, _slug(b["name"]), name_by_id)

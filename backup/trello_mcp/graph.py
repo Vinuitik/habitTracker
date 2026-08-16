@@ -4,7 +4,6 @@ The scheduler: importance-ranked topological sort (a max-priority frontier) → 
 of that order across the window. Precedence is a hard constraint; importance only ranks the
 ready frontier. See FLOWS_mcp.md § Scheduling.
 """
-import heapq
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -13,15 +12,16 @@ from .formatting import _slug
 from .meta import _is_done, _is_parked, _parse_meta
 
 
-def _build_graph(cards: list[dict]) -> tuple[dict, dict, dict, dict, list[dict]]:
-    """cards → (by_link, preds, ests, imps, dangling). Edges pointing outside the set (typically to
-    an already-done card) are dropped: a dependency on finished work constrains nothing. Edges
-    to genuinely unknown refs are reported rather than silently ignored — a missing edge yields
-    a confidently wrong schedule, which is worse than no schedule."""
+def _build_graph(cards: list[dict]) -> tuple[dict, dict, dict, dict, dict, list[dict]]:
+    """cards → (by_link, preds, ests, imps, feats, dangling). Edges pointing outside the set
+    (typically to an already-done card) are dropped: a dependency on finished work constrains
+    nothing. Edges to genuinely unknown refs are reported rather than silently ignored — a missing
+    edge yields a confidently wrong schedule, which is worse than no schedule."""
     by_link = {c["shortLink"]: c for c in cards}
     preds: dict[str, list[str]] = {}
     ests: dict[str, float] = {}
     imps: dict[str, int] = {}
+    feats: dict[str, str] = {}
     dangling: list[dict] = []
     for c in cards:
         link = c["shortLink"]
@@ -30,10 +30,11 @@ def _build_graph(cards: list[dict]) -> tuple[dict, dict, dict, dict, list[dict]]
         preds[link] = [a for a in after if a in by_link]
         ests[link] = meta["est"] if meta["est"] is not None else DEFAULT_EST
         imps[link] = meta["importance"] if meta["importance"] is not None else DEFAULT_IMPORTANCE
+        feats[link] = meta["feature"] or ""
         for a in after:
             if a not in by_link:
                 dangling.append({"card": c["name"], "unknown_ref": a})
-    return by_link, preds, ests, imps, dangling
+    return by_link, preds, ests, imps, feats, dangling
 
 
 def _find_cycle(preds: dict[str, list[str]]) -> list[str] | None:
@@ -64,19 +65,29 @@ def _find_cycle(preds: dict[str, list[str]]) -> list[str] | None:
     return None
 
 
-def _topo(preds: dict[str, list[str]], imps: dict[str, int] | None = None
+def _topo(preds: dict[str, list[str]], imps: dict[str, int] | None = None,
+          feats: dict[str, str] | None = None
           ) -> tuple[list[str] | None, dict[str, list[str]]]:
-    """Kahn's, but the ready frontier is a MAX-PRIORITY queue on importance rather than FIFO.
+    """Kahn's, but the ready frontier picks by (importance, feature-affinity, link) instead of FIFO.
     Returns (order, succs); order is None iff a cycle exists.
 
-    Precedence stays hard: only in-degree-0 nodes are ever popped, so a card never precedes its
-    prerequisites regardless of importance. Importance only decides which of the CURRENTLY-ready
-    cards comes next — as each card is scheduled it unlocks its successors, which then compete in the
-    frontier (the 'moving frontier'). Ties break by shortLink for determinism. With imps=None this is
-    a plain deterministic topo sort (ties by link).
+    Precedence stays hard: only in-degree-0 nodes are ever eligible, so a card never precedes its
+    prerequisites regardless of importance or feature. Importance is primary — a Must in another
+    feature always jumps ahead. Feature-affinity is the tie-break among equal importance: once a
+    card from feature F is picked, other ready F cards outrank equally-important cards from other
+    features, so a solo dev works one feature to the end of its ready work before hopping to the
+    next, and only a genuinely higher-importance card interrupts that. Ties within (importance,
+    affinity) break by shortLink for determinism. With imps=feats=None this is a plain deterministic
+    topo sort (ties by link).
+
+    Frontier membership is a plain set re-scanned each pop rather than a heap: 'ready' cards compete
+    on a key (feature-affinity) that changes every time a card is popped, which a heap can't
+    re-prioritize without stale entries. At board scale (~20-30 cards) an O(n^2) scan costs nothing
+    and stays simple.
 
     The even-bucketing in _schedule then maps this order onto days, so a card ranked earlier here —
-    a Must, or a plain blocker of something a Must depends on — lands on an earlier day."""
+    a Must, or a plain blocker of something a Must depends on, or a card continuing the feature
+    already in progress — lands on an earlier day."""
     succs: dict[str, list[str]] = defaultdict(list)
     indeg = {n: 0 for n in preds}
     for n, ps in preds.items():
@@ -84,19 +95,22 @@ def _topo(preds: dict[str, list[str]], imps: dict[str, int] | None = None
             succs[p].append(n)
             indeg[n] += 1
 
-    def key(n: str) -> tuple:
-        return (-(imps[n] if imps else 0), n)  # higher importance first, then stable by link
-
-    frontier = [n for n, d in indeg.items() if d == 0]
-    heapq.heapify(h := [key(n) + (n,) for n in frontier])
+    frontier = {n for n, d in indeg.items() if d == 0}
     order: list[str] = []
-    while h:
-        n = heapq.heappop(h)[-1]
+    current_feature: str | None = None
+    while frontier:
+        def key(n: str) -> tuple:
+            imp = -(imps[n] if imps else 0)
+            aff = 0 if (feats and current_feature is not None and feats[n] == current_feature) else 1
+            return (imp, aff, n)
+        n = min(frontier, key=key)
+        frontier.remove(n)
         order.append(n)
+        current_feature = feats[n] if feats else None
         for s in succs[n]:
             indeg[s] -= 1
             if indeg[s] == 0:
-                heapq.heappush(h, key(s) + (s,))
+                frontier.add(s)
     return (order if len(order) == len(preds) else None), succs
 
 
@@ -111,24 +125,26 @@ def _longest_chain(order: list[str], preds: dict[str, list[str]]) -> int:
 
 def _schedule(cards: list[dict], deadline: str | None = None, start: str | None = None,
               pace: float = DEFAULT_PACE) -> dict:
-    """Importance-ranked topological sort, then slice the ordered sequence into even buckets.
+    """Importance-and-feature-ranked topological sort, then slice the ordered sequence into even
+    buckets.
 
     Cards are atomic steps: `est` is a load weight, not a duration, and nothing occupies more than a
-    day. Sort so every dependency precedes its dependents (importance ranks the frontier), then walk
-    the sequence assigning each card the day at its position in the CUMULATIVE weight. That is
-    perfectly even and automatically dependency-safe: a card's day is monotonic in its position, so a
-    predecessor always lands on the same day as its dependent or earlier (never later). Cards that
-    share a day are still emitted in dependency order, and apply_schedule keeps that order.
+    day. Sort so every dependency precedes its dependents (importance ranks the frontier, feature
+    affinity keeps a solo dev on one feature at a time — see _topo), then walk the sequence assigning
+    each card the day at its position in the CUMULATIVE weight. That is perfectly even and
+    automatically dependency-safe: a card's day is monotonic in its position, so a predecessor always
+    lands on the same day as its dependent or earlier (never later). Cards that share a day are still
+    emitted in dependency + feature order, and apply_schedule keeps that order.
 
     Two modes:
       deadline given → window is fixed; `intensity` (cards/day) reports how hard you are pushing.
       no deadline    → window = enough days at `pace` cards/day; reports the implied end date.
     """
-    by_link, preds, ests, imps, dangling = _build_graph(cards)
+    by_link, preds, ests, imps, feats, dangling = _build_graph(cards)
     if not by_link:
         return {"error": "No cards to schedule."}
 
-    order, _ = _topo(preds, imps)  # importance ranks the ready frontier; precedence stays hard
+    order, _ = _topo(preds, imps, feats)  # importance + feature-affinity rank the frontier
     if order is None:
         return {"cycle": _find_cycle(preds) or [], "by_link": by_link}
 
@@ -160,11 +176,11 @@ def _schedule(cards: list[dict], deadline: str | None = None, start: str | None 
     rows = [{
         "link": n,
         "card": by_link[n]["name"],
-        "feature": _parse_meta(by_link[n].get("desc"))["feature"] or "",
+        "feature": feats[n],
         "date": (start_d + timedelta(days=day_of[n])).isoformat(),
         "est": ests[n],
         "importance": imps[n],
-    } for n in order]  # importance-ranked topological order — apply_schedule relies on it
+    } for n in order]  # importance-and-feature-ranked topological order — apply_schedule relies on it
 
     return {
         "rows": rows,

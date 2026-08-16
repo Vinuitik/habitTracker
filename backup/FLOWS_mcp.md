@@ -8,7 +8,7 @@ The server was split out of a single 1300-line file into the `trello_mcp/` packa
 (a DAG — no cycles):
 
 ```
-config.py      env, constants, _auth, the shared `mcp` (FastMCP instance), ToolError
+config.py      env, constants, _auth, SERVER_INSTRUCTIONS, the shared `mcp` (FastMCP instance), ToolError
 formatting.py  pure helpers: _slug, _clean, _build_handles, _fmt_num, _short_due, _checklist_counts
 meta.py        the ```meta block: _parse_meta/_render_meta/_set_meta + _is_done/_is_parked   → config, formatting
 api.py         live Trello I/O: _resolve_board/_list/_handle, _cards, _label_ids, _ensure_label  → config, formatting
@@ -81,9 +81,14 @@ The board is a planning system, not just a card store. Four rules carry it:
 1. **A card is one atomic step**, finishable in a sitting — never a whole feature. Small cards
    schedule cleanly and beat procrastination.
 2. **Topic lists stage features; day lists (`YYYY-MM-DD`) are what you work from.** Planning writes
-   into a topic list; `apply_schedule` moves cards into dated lists. A day mixes features.
-3. **Done is the `done` label.** Not "sits in a past list" — an unfinished card in a past day list
-   is a *straggler* and gets pulled forward.
+   into a topic list; `apply_schedule` moves cards into dated lists. Single-developer workflow, so a
+   day is feature-affine by default (see *Scheduling* → frontier priority): the scheduler finishes
+   one feature's ready work before hopping to the next, and only a strictly higher-importance card
+   from another feature interrupts that. A day can still mix features when that happens, or near a
+   feature boundary — it is a bias, not a hard partition.
+3. **Done is the `done` label, set only by `complete_cards`.** Not "sits in a past list" — an
+   unfinished card in a past day list is a *straggler* and gets pulled forward. `update_cards` has
+   no `labels` field; there is no other way to set it.
 4. **The STATE card is what the app IS**; the graph is what's left to do. See below.
 
 ### Handles vs shortLinks
@@ -136,23 +141,35 @@ _plan ──► _resolve_board ──► _cards ──► _schedulable ──►
                                                             └─ even bucketing → days
 ```
 
-### Priority: importance ranks the frontier
+### Priority: importance, then feature affinity, ranks the frontier
 
-`_topo` is Kahn's algorithm with the ready frontier as a **max-priority queue on importance** (a
-`heapq`, key `(-importance, shortLink)`) instead of FIFO. Precedence stays hard — only in-degree-0
-nodes are ever popped, so a card never precedes its prerequisites regardless of importance. Importance
-only decides which of the *currently-unblocked* cards comes next; as each is scheduled it unlocks its
-successors, which then compete in the moving frontier.
+`_topo` is Kahn's algorithm with the ready frontier picked each step by
+`(-importance, feature_affinity, shortLink)` instead of FIFO. Precedence stays hard — only
+in-degree-0 nodes are ever eligible, so a card never precedes its prerequisites regardless of
+importance or feature. The frontier is a plain `set`, re-scanned with `min(key=...)` each pop rather
+than a `heapq`: feature affinity depends on *which card was just picked*, a key that changes every
+iteration, and a heap can't re-prioritize already-pushed entries without going stale. At board scale
+(~20-30 cards) the O(n²) scan costs nothing.
 
 - **Importance is MoSCoW 1–3** (`3` Must / `2` Should / `1` Could), stored as `importance:` in the
   meta block. Absent → `DEFAULT_IMPORTANCE` (2) at read time; never written on read (like `est`).
-- **No backward propagation.** We deliberately do *not* compute an "effective importance" over
-  descendants. Precedence already forces a blocker to run before what it blocks, so ranking by own
-  importance within the frontier was judged enough — propagation was declined as overengineering.
+  Importance is the **primary** key — a Must in another feature always jumps ahead, whatever is
+  currently being worked.
+- **Feature affinity is the tie-break** among equal importance: `feature_affinity(n)` is `0` if
+  `n`'s `feature:` matches the feature of the card just scheduled, else `1`. This is what makes a
+  solo dev's schedule stay on one feature until its ready work runs dry before hopping to the next,
+  addressing the original team-era design ("a day mixes features") which cost real context-switching
+  once it was one person working the board. It is a soft bias, not a partition — precedence and
+  importance both still win when they conflict with it.
+- **No backward propagation of importance.** We deliberately do *not* compute an "effective
+  importance" over descendants. Precedence already forces a blocker to run before what it blocks, so
+  ranking by own importance within the frontier was judged enough — propagation was declined as
+  overengineering.
 - **Ties break by shortLink** for determinism (no critical-path tie-break).
 
-The even-bucketing below then maps this importance-ranked order onto days, so a Must lands earlier
-than a Could that was ready at the same time. It **never** reorders across a real edge.
+The even-bucketing below then maps this order onto days, so a Must lands earlier than a Could that
+was ready at the same time, and same-feature cards land on adjacent days by default. Neither **ever**
+reorders across a real edge.
 
 ### `_schedule` — the placement
 
@@ -230,7 +247,7 @@ The `_meta` list and the STATE card are excluded from every card read and from t
 | `get_cards_detail(board, handles)` | full detail incl. checklist, batched — one board fetch instead of N |
 | `create_lists([NewList])` | batch; topic or dated |
 | `create_cards(board, list_name, cards, feature?)` | batch, hoisted schema; two-pass so intra-batch edges resolve |
-| `update_cards([CardUpdate])` | batch, partial; `after`/`est`/`feature`/`importance` |
+| `update_cards([CardUpdate])` | batch, partial; `after`/`est`/`feature`/`importance`; **no `labels` field** — use `complete_cards`/`park_cards` for done/parked |
 | `move_cards([CardMove])` | batch; the manual override |
 | `complete_cards(handles, done=True)` | toggle the `done` label + move into `Completed` list; the only correct way to tick |
 | `park_cards(handles, parked=True)` | toggle the `parked` label + move into `Delayed` list; held out of scheduling, not done |
@@ -252,21 +269,23 @@ Cards have three orthogonal "not live" states, and conflating them was the origi
 | **archived** | Trello `closed=true` | gone from board | hidden junk, restorable |
 
 `complete_cards` / `park_cards` share `_toggle_label` — both add/remove a board label, creating it on
-first use (so it always sticks; a hand-set label via `update_cards` silently fails if the label
-doesn't exist yet). `archive_cards` uses `closed=true`. There is **no hard-delete** by design —
-archive is reversible from the Trello UI. Parked exists so you never have to pass `lists=` on every
-schedule call just to keep a list out of the plan.
+first use so it always sticks. `archive_cards` uses `closed=true`. There is **no hard-delete** by
+design — archive is reversible from the Trello UI. Parked exists so you never have to pass `lists=`
+on every schedule call just to keep a list out of the plan.
 
 **Label is truth, list is visual.** Turning a state ON also moves the card into a dedicated list —
 `Completed` for done, `Delayed` for parked — auto-created on first use via `_ensure_list` (`api.py`),
 same pattern as day lists in `apply_schedule`. This is **purely cosmetic**: `_schedulable` and every
 read tool still key off the label alone, exactly as before. So dragging a card into `Completed` or
-`Delayed` by hand in the Trello UI does **not** exclude it from scheduling — only the label does, and
-only `complete_cards`/`park_cards` (or `update_cards` once the label already exists) set it. Turning a
-state OFF only removes the label; the card is left wherever it sits, since there's no recorded origin
-list to return it to — move it back with `move_cards` by hand. This was a deliberate choice over
-tracking origin lists: less state, one predictable rule ("the label decides"), at the cost of a manual
-step when reopening/unparking a card that's sitting in the parking list.
+`Delayed` by hand in the Trello UI does **not** exclude it from scheduling — only the label does.
+`update_cards` has no `labels` field at all (removed — it used to let an agent set `done`/`parked`
+directly once the label already existed on the board, which set the label but skipped the list move,
+producing a card that read as "done" to the scheduler but never visibly moved). `complete_cards` /
+`park_cards` are now the *only* way to set or clear these labels. Turning a state OFF only removes
+the label; the card is left wherever it sits, since there's no recorded origin list to return it to —
+move it back with `move_cards` by hand. This was a deliberate choice over tracking origin lists: less
+state, one predictable rule ("the label decides"), at the cost of a manual step when
+reopening/unparking a card that's sitting in the parking list.
 
 ### Why `describe_graph` hides done cards
 
@@ -390,11 +409,12 @@ endpoint at Caddy; it is a *query param*, so it appears in Caddy access logs.
 claude mcp add trello --transport http "https://habittrackerdima.me/mcp?token=$MCP_TOKEN"
 ```
 
-Session shape:
+Session shape (also sent to the client as the server's MCP `instructions`, see
+`config.SERVER_INSTRUCTIONS`, so a fresh session sees this without reading FLOWS first):
 ```
 get_state → describe_graph → create_lists + create_cards → propose_schedule → apply_schedule
                                                                    │
-                                         ship steps → label `done` → update_state
+                                       ship steps → complete_cards → update_state
 ```
 
 ---
@@ -407,13 +427,13 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Handle format / slug rules | `formatting.py` | `_slug()`, `_build_handles()` | kebab `board/list/card`, `~id4` on collision |
 | Fuzzy-suggestion behaviour | `api.py` | `difflib.get_close_matches` in the 3 resolvers | on any unresolved name/handle |
 | Spreading algorithm | `graph.py` | `cum` loop in `_schedule()` | even bucketing of the topo order by cumulative weight |
-| Frontier priority | `graph.py` | `_topo(preds, imps)` heap key | `(-importance, shortLink)`; importance ranks ready set |
+| Frontier priority | `graph.py` | `_topo(preds, imps, feats)` `key()` | `(-importance, feature_affinity, shortLink)`; importance primary, same-feature-as-last-picked is the tie-break |
 | Importance default / range | `config.py` | `DEFAULT_IMPORTANCE`, `IMPORTANCE_MIN/MAX` | 2, clamped 1–3; MoSCoW |
 | Longest-chain (info) | `graph.py` | `_longest_chain()` | reported as `chain`/`stacked_chain`, not a constraint |
 | Default pace | `config.py` | `DEFAULT_PACE` | 2 cards/day when no deadline |
 | Default estimate | `config.py` | `DEFAULT_EST` | 1 |
 | "too big" threshold | `tools_cards.py`/`graph.py` | `est > 1` in `create_cards` / `_schedule` | advice → `split_card` |
-| Done marker | `config.py`/`meta.py` | `DONE_LABEL` + `_is_done()` | label `done` |
+| Done marker | `config.py`/`meta.py` | `DONE_LABEL` + `_is_done()` | label `done`; set ONLY by `complete_cards` — `CardUpdate` has no `labels` field |
 | Parked marker | `config.py`/`meta.py` | `PARKED_LABEL` + `_is_parked()` | label `parked`; held out of scheduling |
 | Label toggle (done/parked) | `tools_cards.py` | `_toggle_label()` | shared add/remove, creates label on first use |
 | Completed/Delayed parking lists | `config.py`/`api.py`/`tools_cards.py` | `COMPLETED_LIST`/`DELAYED_LIST` + `_ensure_list()` + `_toggle_label(park_list=...)` | cosmetic only — label still decides scheduling |
@@ -431,7 +451,8 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Parallel-batch readiness | `tools_planning.py` | `propose_parallel_batch()` | in-degree-0 within one list, via `_build_graph`; formal edges only, no prose parsing |
 | Omit-empty rules | `formatting.py` | `_clean()` | drops None/""/[]/{}, keeps 0/False |
 | Checklist name | `api.py` | `_write_checklist` → `POST /checklists name=Tasks` | currently "Tasks" |
-| Batch input schemas | `models.py` | `NewCard` / `CardUpdate` / `CardMove` / `NewList` / `CardSplit` | Pydantic |
+| Batch input schemas | `models.py` | `NewCard` / `CardUpdate` / `CardMove` / `NewList` / `CardSplit` | Pydantic; only `NewCard` carries `labels` (creation time) |
+| MCP server instructions | `config.py` | `SERVER_INSTRUCTIONS` (passed to `FastMCP(..., instructions=...)`) | sent to every client at `initialize`; steers toward `complete_cards`/`park_cards` before an agent reads FLOWS |
 | MCP server port | `mcp_server.py` | `mcp.run(port=...)` + `caddy/Caddyfile` | 8091 |
 | Route prefix / auth | — | `caddy/Caddyfile` `handle /mcp*` + `MCP_TOKEN` | no prefix strip |
 | Cron interval / board / logic | `mcp_server.py` | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()`, `_cron_archive_empty_day_lists()` | 1h, two sweeps |

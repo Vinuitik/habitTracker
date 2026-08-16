@@ -321,19 +321,11 @@ async def test_create_cards_flags_too_big():
 
 # ── labels & completion ──────────────────────────────────────────────────────
 
-async def test_update_cards_reports_skipped_unknown_label():
-    cards = [card("c1", "Google SSO", "l-auth")]
-    ctx, client = make_async_ctx(
-        async_resp([BOARD]), async_resp(cards),
-        async_resp([{"name": "urgent", "id": "lbl-u"}]),  # board labels — no "done"
-        put_data=async_resp({}),
-    )
-    with patch("mcp_server.httpx.AsyncClient", return_value=ctx):
-        result = await update_cards([CardUpdate(handle="frm/auth/google-sso", labels=["done"])])
-    entry = result["updated"][0]
-    assert entry["labels_skipped"] == ["done"]
-    assert "labels" not in entry["applied"]   # no false success
-    assert "complete_cards" in entry["hint"]
+def test_card_update_has_no_labels_field():
+    # The only way to touch the done/parked label is complete_cards / park_cards. update_cards
+    # used to expose a `labels` field that let an agent fake completion without moving the card
+    # into Completed — structurally removed so that footgun can't come back.
+    assert "labels" not in CardUpdate.model_fields
 
 
 async def test_complete_cards_creates_done_label_when_missing():
@@ -539,6 +531,36 @@ def test_importance_never_overrides_dependency():
     p = mcp_server._schedule(cards, start="2026-07-17", pace=1)
     day = {r["card"]: r["date"] for r in p["rows"]}
     assert day["blocker"] < day["must"]
+
+
+def test_feature_affinity_clusters_same_feature_cards():
+    # Two independent two-card chains, equal importance throughout. Once feature A is started,
+    # its own next-ready card should beat an equally-important card from feature B — a solo dev
+    # finishes what they're on before hopping, instead of the scheduler interleaving features.
+    cards = [
+        gcard("a1", "a1", feature="A", importance=2),
+        gcard("a2", "a2", ("a1",), feature="A", importance=2),
+        gcard("b1", "b1", feature="B", importance=2),
+        gcard("b2", "b2", ("b1",), feature="B", importance=2),
+    ]
+    p = mcp_server._schedule(cards, start="2026-07-17", pace=1)
+    order = [r["card"] for r in p["rows"]]
+    # Whichever feature starts first, its pair stays adjacent instead of interleaving.
+    assert order in (["a1", "a2", "b1", "b2"], ["b1", "b2", "a1", "a2"])
+
+
+def test_higher_importance_interrupts_feature_streak():
+    # x unlocks both a2 (same feature, Should) and b_must (other feature, Must) at the same time.
+    # Even though the scheduler just started feature A, importance still wins: b_must jumps ahead
+    # of a2. Feature affinity only breaks ties among EQUAL importance.
+    cards = [
+        gcard("x", "x", feature="A", importance=2),
+        gcard("a2", "a2", ("x",), feature="A", importance=2),
+        gcard("b_must", "b_must", ("x",), feature="B", importance=3),
+    ]
+    p = mcp_server._schedule(cards, start="2026-07-17", pace=1)
+    day = {r["card"]: r["date"] for r in p["rows"]}
+    assert day["x"] < day["b_must"] < day["a2"]
 
 
 def test_absent_importance_defaults_to_two_in_rows():

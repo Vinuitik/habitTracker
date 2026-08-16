@@ -45,7 +45,6 @@ class CardUpdate(BaseModel):
     handle: str
     title: str | None = None
     description: str | None = None
-    labels: list[str] | None = Field(default=None, description="Replaces all labels when given")
     due: str | None = Field(default=None, description="ISO 8601 to set, the string 'null' to clear, omit to leave unchanged")
     checklist: list[str] | None = Field(default=None, description="Replaces the checklist when given")
     after: list[str] | None = Field(default=None, description=_AFTER_DOC + " Replaces all edges when given; pass [] to clear.")

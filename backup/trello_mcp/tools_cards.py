@@ -292,14 +292,19 @@ async def create_cards(
 @mcp.tool()
 async def update_cards(updates: list[CardUpdate]) -> dict:
     """Update one or more cards in a single call (batch), each addressed by handle.
-    Only the fields you set are changed. `labels` and `checklist` replace wholesale when given.
+    Only the fields you set are changed. `checklist` replaces wholesale when given.
     `due='null'` clears the due date. Per-card failures are collected in `errors`.
 
     `after`, `est`, `feature`, and `importance` edit the planning meta — see propose_schedule.
-    Setting one leaves the others intact; `after=[]` clears the card's dependencies."""
+    Setting one leaves the others intact; `after=[]` clears the card's dependencies.
+
+    This tool CANNOT touch labels — there is no `labels` field. To mark a card done or parked,
+    call `complete_cards` / `park_cards`: they are the only tools that set the `done`/`parked`
+    label, and they also move the card into `Completed`/`Delayed` so the board stays truthful.
+    Setting those labels by any other path is exactly the bug this split prevents."""
     updated, errors = [], []
     async with httpx.AsyncClient() as client:
-        cache, label_cache = {}, {}
+        cache: dict = {}
         for u in updates:
             try:
                 board, lst, c = await _resolve_handle(client, u.handle, cache)
@@ -343,16 +348,6 @@ async def update_cards(updates: list[CardUpdate]) -> dict:
                     r = await client.put(f"{TRELLO_BASE}/cards/{cid}", params=scalar)
                     r.raise_for_status()
 
-                skipped_labels = []
-                if u.labels is not None:
-                    ids, skipped_labels = await _label_ids(client, board["id"], u.labels, label_cache)
-                    r = await client.put(f"{TRELLO_BASE}/cards/{cid}", params={**_auth(), "idLabels": ",".join(ids)})
-                    r.raise_for_status()
-                    # Report only what actually stuck. A name that isn't a board label is dropped by
-                    # Trello, so claiming applied:["labels"] for it would be a false success.
-                    if ids:
-                        applied.append("labels")
-
                 if u.checklist is not None:
                     ex = await client.get(f"{TRELLO_BASE}/cards/{cid}/checklists", params=_auth())
                     ex.raise_for_status()
@@ -361,12 +356,7 @@ async def update_cards(updates: list[CardUpdate]) -> dict:
                     await _write_checklist(client, cid, u.checklist)
                     applied.append("checklist")
 
-                entry = {"handle": u.handle, "applied": applied}
-                if skipped_labels:
-                    entry["labels_skipped"] = skipped_labels
-                    entry["hint"] = ("These are not labels on the board and were dropped. To mark a "
-                                     "card done use complete_cards, which creates the label as needed.")
-                updated.append(entry)
+                updated.append({"handle": u.handle, "applied": applied})
             except Exception as e:
                 errors.append({"handle": u.handle, "error": str(e)})
     return _clean({"updated": updated, "errors": errors})
