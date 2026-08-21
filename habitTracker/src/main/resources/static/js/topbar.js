@@ -96,7 +96,10 @@ function initTopbar(activeRoute) {
       updateButtonEl.hidden = true;
       updateButtonEl.title = 'A new version is ready — click to reload';
       updateButtonEl.innerHTML = '<span class="topbar__update-dot"></span>Update';
-      updateButtonEl.addEventListener('click', () => window.location.reload());
+      updateButtonEl.addEventListener('click', () => {
+        if (window.applyUpdate) window.applyUpdate();
+        else window.location.reload();
+      });
       inner.insertBefore(updateButtonEl, signoutForm || null);
       applyUpdateButtonState();
     }

@@ -2,12 +2,14 @@
 // already loads env.js. Secure-context only: the self-signed dev cert blocks SW registration
 // in Chrome, so first install must happen over the real Cloudflare-tunnel domain.
 //
-// Update flow: sw.js's own install/activate handlers already call skipWaiting()+clients.claim()
-// (see sw.js), so a new deploy (bump VERSION there) takes over as soon as the browser notices the
-// byte diff — no reinstall of the PWA is ever needed. The only thing that was missing client-side
-// was surfacing it: registration.update() below forces that check on every load/focus instead of
-// waiting on the browser's own (throttled, up to 24h) background check, and the
-// 'controllerchange' listener shows a reload prompt once the new worker actually takes control.
+// Update flow: a new sw.js (bump VERSION there) installs and then WAITS — it does not take over
+// on its own (see sw.js). registration.update() below forces the browser to check for that new
+// worker on every load/focus instead of waiting on its own throttled (up to 24h) background
+// check. Once a worker is sitting in `registration.waiting`, we only ever notify (banner / topbar
+// dot) — the actual swap happens exclusively through applyUpdate(), which the user triggers by
+// clicking Reload/Update. That's deliberate: auto-activating used to yank any open tab onto a
+// fresh deploy the moment it was detected, which broke if the new build's hashed assets hadn't
+// finished propagating behind the tunnel yet (a Cloudflare 530 mid-deploy leaves the tab dead).
 function showUpdateBanner() {
   if (document.getElementById('sw-update-banner')) return;
 
@@ -23,13 +25,31 @@ function showUpdateBanner() {
     <span class="update-banner__text">A new version is ready.</span>
     <button class="btn btn--primary" type="button">Reload</button>
   `;
-  banner.querySelector('button').addEventListener('click', () => window.location.reload());
+  banner.querySelector('button').addEventListener('click', () => window.applyUpdate());
   document.body.appendChild(banner);
   requestAnimationFrame(() => banner.classList.add('update-banner--visible'));
 }
 
+let swRegistration = null;
+
+// The one path that hands control to the new worker: tell it to skipWaiting, then reload once it
+// actually becomes the controller. Only ever called from a user click (banner Reload / topbar
+// Update button) — never automatically.
+window.applyUpdate = function applyUpdate() {
+  const waiting = swRegistration && swRegistration.waiting;
+  if (!waiting) {
+    window.location.reload();
+    return;
+  }
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  }, { once: true });
+  waiting.postMessage('SKIP_WAITING');
+};
+
 if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('/sw.js').then((registration) => {
+    swRegistration = registration;
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist();
     }
@@ -39,29 +59,23 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       if (document.visibilityState === 'visible') registration.update().catch(() => {});
     });
 
-    // Two detection paths, both gated on "there was already a controller" so a first install is
-    // never mistaken for an update:
-    //   (a) updatefound → the new worker reaches 'activated' while this page is open;
-    //   (b) controllerchange → the canonical "a new SW took control" signal (OO's primary path).
-    // (b) catches the case (a) misses: a worker that finished installing/activating before this
-    // listener was attached (fast skipWaiting()+clients.claim() takeover). showUpdateBanner()
-    // dedupes, so both firing is harmless.
-    const hadController = !!navigator.serviceWorker.controller;
+    // Gated on "there's already a controller" so a first install is never mistaken for an update.
+    const notifyIfWaiting = () => {
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        showUpdateBanner();
+        if (window.TopbarUpdate) TopbarUpdate.markAvailable();
+      }
+    };
+
+    // Catches a worker that finished installing before this listener was attached.
+    notifyIfWaiting();
+
     registration.addEventListener('updatefound', () => {
       const installing = registration.installing;
       if (!installing) return;
       installing.addEventListener('statechange', () => {
-        if (installing.state === 'activated' && hadController) {
-          showUpdateBanner();
-          if (window.TopbarUpdate) TopbarUpdate.markAvailable();
-        }
+        if (installing.state === 'installed') notifyIfWaiting();
       });
-    });
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hadController) {
-        showUpdateBanner();
-        if (window.TopbarUpdate) TopbarUpdate.markAvailable();
-      }
     });
   }).catch((err) => console.warn('[sw] registration failed:', err));
 }

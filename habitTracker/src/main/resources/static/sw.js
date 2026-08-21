@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v6';
+const VERSION = 'v7';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -57,11 +57,19 @@ const PAGE_ROUTES = [
 const API_PREFIXES = ['/api/today', '/api/habits', '/api/kpis'];
 
 self.addEventListener('install', (event) => {
+  // No self.skipWaiting() here — a freshly installed worker must sit in "waiting" until a client
+  // explicitly hands it control (see the 'message' listener below). Auto-activating meant any open
+  // tab got swapped onto a new deploy the instant it was detected, with no way back if the new
+  // build's hashed assets hadn't finished propagating behind the tunnel (a Cloudflare 530 mid-deploy).
   event.waitUntil(
     caches.open(SHELL_CACHE).then((cache) =>
       Promise.all([...SHELL_URLS, ...PAGE_ROUTES].map((url) => cache.add(url).catch(() => {})))
-    ).then(() => self.skipWaiting())
+    )
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
