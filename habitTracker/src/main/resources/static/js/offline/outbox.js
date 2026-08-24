@@ -63,14 +63,27 @@ const Outbox = (() => {
     return { via: 'queued' };
   }
 
+  // Queued items resolve silently otherwise — a flush that just returns leaves the user with no
+  // sign the pending write ever left the device, which reads as broken even when it isn't.
+  function notifySynced(count) {
+    if (count > 0 && typeof window !== 'undefined' && window.Toast) {
+      window.Toast.show(count === 1 ? 'Synced 1 pending update' : `Synced ${count} pending updates`);
+    }
+  }
+
   async function flush() {
     const queued = await OfflineDB.all();
     if (queued.length === 0) return;
 
     if (await Connectivity.isServerReachable()) {
+      let sent = 0;
       for (const intent of queued) {
-        if (await sendDirect(intent)) await OfflineDB.remove(intent.requestId);
+        if (await sendDirect(intent)) {
+          await OfflineDB.remove(intent.requestId);
+          sent++;
+        }
       }
+      notifySynced(sent);
       return;
     }
 
@@ -79,6 +92,7 @@ const Outbox = (() => {
       try {
         await DriveClient.pushBatch(queued); // one batch file for everything still queued
         for (const intent of queued) await OfflineDB.remove(intent.requestId);
+        notifySynced(queued.length);
       } catch (e) {
         // leave queued, retried on the next flush
       }

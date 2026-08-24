@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v7';
+const VERSION = 'v8';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -8,6 +8,8 @@ const SHELL_URLS = [
   '/js/env.js',
   '/js/topbar.js',
   '/js/registerSW.js',
+  '/js/atoms/toast.js',
+  '/styles/atoms/toast.css',
   // The offline write pipeline itself — if these fail to load offline, Outbox/Connectivity/
   // DriveClient never exist, so a "mark done" tap has nothing to queue into and just throws.
   '/js/offline/db.js',
