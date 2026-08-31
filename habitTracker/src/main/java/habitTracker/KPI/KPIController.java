@@ -104,6 +104,19 @@ public class KPIController {
         }
     }
 
+    // M12 manual reset: clears proxyStatus back to ACTIVE and zeroes consecutiveProxyFailures for
+    // the current user's own KPI. The only supported way out of NEEDS_REPAIR until the real
+    // auto-repair pipeline (M8) exists.
+    @PutMapping("/{name}/proxy/reset")
+    public ResponseEntity<?> resetProxyHealth(@PathVariable String name) {
+        try {
+            KPIDTO updated = kpiService.resetProxyHealth(name);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // M3 confirm-inbox: this user's pending (awaiting-confirmation) proxy-written KPIData points,
     // across all their KPIs. Backs the /today page's confirm/edit chips.
     @GetMapping("/pending")

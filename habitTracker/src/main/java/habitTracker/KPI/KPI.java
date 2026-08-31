@@ -61,4 +61,21 @@ public class KPI {
     // flow itself is a later milestone).
     @Builder.Default
     private Double confirmSampleRate = 0.2;
+
+    // M12 maintenance loop: health of this KPI's automatic proxy. ACTIVE (default) means the
+    // nightly proxy-fill step keeps calling the provider as normal. NEEDS_REPAIR means
+    // ProxyHealthService's circuit breaker tripped (consecutiveProxyFailures reached the
+    // configured threshold, or a fetched value was flagged anomalous) and the proxy-fill step
+    // skips this KPI until a human resets it (KPIService.resetProxyHealth). Same
+    // pre-M12-document backward-compat pattern as proxyType: field initializer + @Builder.Default
+    // so a doc that predates this field reads back as ACTIVE, not null.
+    @Builder.Default
+    private ProxyStatus proxyStatus = ProxyStatus.ACTIVE;
+
+    // Consecutive Optional.empty()/exception results from this KPI's ProxyProvider.fetchValue,
+    // tracked by ProxyHealthService. Reset to 0 on any successful (non-anomalous) fetch. Not
+    // meaningful once proxyStatus is NEEDS_REPAIR from an anomaly trip, since that path doesn't
+    // touch this counter.
+    @Builder.Default
+    private Integer consecutiveProxyFailures = 0;
 }

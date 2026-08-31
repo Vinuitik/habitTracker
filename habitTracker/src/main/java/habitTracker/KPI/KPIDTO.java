@@ -27,4 +27,6 @@ public class KPIDTO {
     private ProxyType proxyType;
     private Map<String, String> proxyConfig;
     private Double confirmSampleRate;
+    private ProxyStatus proxyStatus;
+    private Integer consecutiveProxyFailures;
 }

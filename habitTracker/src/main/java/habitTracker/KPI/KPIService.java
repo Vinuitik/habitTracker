@@ -175,6 +175,26 @@ public class KPIService {
         return convertToDTO(saved);
     }
 
+    /**
+     * M12 manual reset: clears the proxy circuit breaker back to ACTIVE and zeroes the failure
+     * counter for the current user's own KPI. This is the only supported way back from
+     * NEEDS_REPAIR until the real auto-repair pipeline (M8) exists — see CapabilityRepairTrigger.
+     * Scoped via findByNameAndUserId like every other KPI mutation here, so a user can never reset
+     * another user's KPI (a mismatched name/userId simply resolves to nothing and 400s).
+     */
+    @Transactional
+    public KPIDTO resetProxyHealth(String kpiName) {
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+
+        kpi.setProxyStatus(ProxyStatus.ACTIVE);
+        kpi.setConsecutiveProxyFailures(0);
+        kpi.setUpdatedAt(LocalDateTime.now());
+        KPI saved = kpiRepository.save(kpi);
+        return convertToDTO(saved);
+    }
+
     private void saveKPIDataPoint(KPI kpi, LocalDate date, Double value, boolean autoFilled, KPIDataSource source) {
         String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
 
@@ -435,6 +455,8 @@ public class KPIService {
                 .proxyType(kpi.getProxyType() != null ? kpi.getProxyType() : ProxyType.NONE)
                 .proxyConfig(kpi.getProxyConfig())
                 .confirmSampleRate(kpi.getConfirmSampleRate() != null ? kpi.getConfirmSampleRate() : 0.2)
+                .proxyStatus(kpi.getProxyStatus() != null ? kpi.getProxyStatus() : ProxyStatus.ACTIVE)
+                .consecutiveProxyFailures(kpi.getConsecutiveProxyFailures() != null ? kpi.getConsecutiveProxyFailures() : 0)
                 .build();
     }
     

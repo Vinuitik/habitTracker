@@ -109,6 +109,30 @@ async function deleteKPI(kpiName) {
     }
 }
 
+// M12: clears a KPI's proxy circuit breaker (proxyStatus NEEDS_REPAIR -> ACTIVE,
+// consecutiveProxyFailures -> 0) so the nightly proxy-fill step resumes calling its provider.
+async function resetProxyHealth(kpiName) {
+    try {
+        const response = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/proxy/reset`, {
+            method: 'PUT',
+            headers: { 'X-XSRF-TOKEN': getCsrfToken() }
+        });
+
+        if (response.ok) {
+            showMessage(`Proxy reset for "${kpiName}"`, 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            const result = await response.json().catch(() => ({ error: 'Failed to reset proxy.' }));
+            showMessage(result.error || 'Failed to reset proxy.', 'error');
+        }
+    } catch (error) {
+        console.error('Error resetting proxy health:', error);
+        showMessage('Failed to reset proxy. Please try again.', 'error');
+    }
+}
+
 function showMessage(message, type) {
     // Remove existing alerts
     const existingAlerts = document.querySelectorAll('.alert');
