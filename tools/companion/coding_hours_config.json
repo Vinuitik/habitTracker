@@ -1,0 +1,19 @@
+{
+  "_comment": "Window-title substrings (case-insensitive) that count as 'coding' time. Edit freely — no restart needed beyond the next capability run. Matched against the full foreground window title, e.g. 'main.py - habitTracker - Visual Studio Code'.",
+  "codingWindowSubstrings": [
+    "Visual Studio Code",
+    "VS Code",
+    "IntelliJ IDEA",
+    "PyCharm",
+    "WebStorm",
+    "Android Studio",
+    "Cursor",
+    "Sublime Text",
+    "Windows Terminal",
+    "PowerShell",
+    "cmd.exe",
+    "Git Bash",
+    "Vim",
+    "Neovim"
+  ]
+}
