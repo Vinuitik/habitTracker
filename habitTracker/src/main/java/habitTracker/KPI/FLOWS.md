@@ -34,6 +34,15 @@ Set via:
 
 Both paths validate: `defaultValue` is required whenever `autoFillEnabled = true` (`KPIService.createKPI()` / `updateDefaultFillSettings()`).
 
+## Habit links (post-creation)
+
+`habitIds` can also be set at creation (`POST /api/kpis/create`) and re-set any time after via
+`PUT /api/kpis/{name}/habits` → `KPIService.updateKPIHabitMappings()` — full replace (deletes this
+user's existing `KPIHabitMapping` rows for the KPI, then inserts the given `habitIds`, `[]`/`null`
+clears all links). 404-equivalent `IllegalArgumentException` if the KPI name isn't owned by the
+caller. UI: `static/kpi-list.html` "Manage Habits" button → `openManageHabitsModal()`, reusing the
+same `/api/kpis/available-habits` list as the create form.
+
 ## EMA calculation
 
 `KPIService.calculateEMA()` — 14-day EMA (smoothing factor `2/15`) over the last 30 points (`DynamicKPIDataRepository.findTopNOrderByDateDesc(30, ...)`). First point in a collection gets `EMA = value`. Drives `KPIDataDTO.trendDirection`/`colorIntensity` (see `convertToDataDTO`) and the dashboard chart's point coloring (`static/js/kpi-dashboard.js` `getTrendColor()`).
@@ -58,3 +67,5 @@ Two copies exist per page (`templates/kpi-*.html` and `static/kpi-*.html`); `Pag
 | Auto-filled chart marker | `static/js/kpi-dashboard.js` `renderChart()` `pointStyle` | diamond vs circle |
 | Auto-fill UI (create) | `static/kpi-create.html` | checkbox + conditional number input |
 | Auto-fill UI (edit) | `static/kpi-list.html` `openAutoFillModal()` | modal → `PUT /api/kpis/{name}/default-fill` |
+| Habit links, post-creation | `KPIService.updateKPIHabitMappings()` | `PUT /api/kpis/{name}/habits`, full replace |
+| Habit links UI (edit) | `static/kpi-list.html` `openManageHabitsModal()` | modal → `PUT /api/kpis/{name}/habits` |

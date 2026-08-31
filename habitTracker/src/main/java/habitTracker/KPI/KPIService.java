@@ -244,8 +244,11 @@ public class KPIService {
     }
 
     @Transactional
-    public void updateKPIHabitMappings(String kpiName, List<Integer> habitIds) {
+    public KPIDTO updateKPIHabitMappings(String kpiName, List<Integer> habitIds) {
         String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+
         // Remove existing mappings (scoped to this user's own mappings for this KPI name)
         kpiHabitMappingRepository.deleteByKpiNameAndUserId(kpiName, userId);
 
@@ -260,6 +263,8 @@ public class KPIService {
                     .collect(Collectors.toList());
             kpiHabitMappingRepository.saveAll(mappings);
         }
+
+        return convertToDTO(kpi);
     }
 
     private Double calculateEMA(String collectionName, Double currentValue) {

@@ -55,6 +55,20 @@ public class KPIController {
         }
     }
 
+    @PutMapping("/{name}/habits")
+    public ResponseEntity<?> updateHabitMappings(@PathVariable String name, @RequestBody Map<String, Object> body) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Integer> habitIds = body.get("habitIds") != null
+                    ? ((List<?>) body.get("habitIds")).stream().map(v -> ((Number) v).intValue()).collect(Collectors.toList())
+                    : null;
+            KPIDTO updated = kpiService.updateKPIHabitMappings(name, habitIds);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PutMapping("/{name}/default-fill")
     public ResponseEntity<?> updateDefaultFill(@PathVariable String name, @RequestBody Map<String, Object> body) {
         try {

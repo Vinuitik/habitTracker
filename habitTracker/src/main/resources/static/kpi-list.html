@@ -69,6 +69,28 @@
     </div>
   </div>
 
+  <!-- Manage Habits Modal -->
+  <div class="modal-overlay" id="manageHabitsModal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title">Linked Habits</span>
+        <button class="modal-box__close" onclick="closeManageHabitsModal()">&#x2715;</button>
+      </div>
+      <form id="manageHabitsForm" class="modal-box__fields">
+        <input type="hidden" id="manageHabitsKpiName" name="kpiName">
+        <div class="form-group">
+          <div class="checkbox-group" id="manageHabitsList">
+            <span style="font-size:var(--text-sm);color:var(--color-text-muted);">Loading…</span>
+          </div>
+        </div>
+        <div class="modal-box__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn btn--ghost" onclick="closeManageHabitsModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Auto-Fill Settings Modal -->
   <div class="modal-overlay" id="autoFillModal">
     <div class="modal-box">
@@ -123,6 +145,60 @@
     window.addEventListener('click', e => {
       if (e.target === document.getElementById('addDataModal')) closeModal();
       if (e.target === document.getElementById('autoFillModal')) closeAutoFillModal();
+      if (e.target === document.getElementById('manageHabitsModal')) closeManageHabitsModal();
+    });
+
+    async function openManageHabitsModal(kpiName, linkedHabitIds) {
+      document.getElementById('manageHabitsKpiName').value = kpiName;
+      const container = document.getElementById('manageHabitsList');
+      container.innerHTML = `<span style="font-size:var(--text-sm);color:var(--color-text-muted);">Loading…</span>`;
+      document.getElementById('manageHabitsModal').classList.add('open');
+
+      const habits = await fetch('/api/kpis/available-habits', { credentials: 'include' }).then(r => r.json());
+      const linked = new Set(linkedHabitIds || []);
+
+      if (!habits || habits.length === 0) {
+        container.innerHTML = `<span style="font-size:var(--text-sm);color:var(--color-text-muted);">No active habits. <a href="/habits/add" style="color:var(--color-accent);">Create one first</a>.</span>`;
+        return;
+      }
+
+      container.innerHTML = '';
+      habits.forEach(h => {
+        const div = document.createElement('div');
+        div.className = 'checkbox-option';
+        div.innerHTML = `
+          <input type="checkbox" id="manageHabit${h.id}" name="manageHabitIds" value="${h.id}" ${linked.has(h.id) ? 'checked' : ''}>
+          <label for="manageHabit${h.id}">${h.name}</label>`;
+        container.appendChild(div);
+      });
+    }
+
+    function closeManageHabitsModal() {
+      document.getElementById('manageHabitsModal').classList.remove('open');
+    }
+
+    document.getElementById('manageHabitsForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const kpiName = document.getElementById('manageHabitsKpiName').value;
+      const checkedHabits = Array.from(document.querySelectorAll('input[name="manageHabitIds"]:checked'))
+        .map(cb => parseInt(cb.value, 10));
+
+      const res = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/habits`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-XSRF-TOKEN': csrf()
+        },
+        body: JSON.stringify({ habitIds: checkedHabits })
+      });
+
+      if (res.ok) {
+        closeManageHabitsModal();
+        window.location.reload();
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Failed to save habit links' }));
+        alert(err.error || 'Failed to save habit links.');
+      }
     });
 
     function openAutoFillModal(kpiName, autoFillEnabled, defaultValue) {
@@ -241,6 +317,7 @@
             <button class="btn btn--primary btn--sm" onclick="addData('${kpi.name}')">Add Data</button>
             <button class="btn btn--ghost btn--sm" onclick="viewData('${kpi.name}')">View Charts</button>
             <button class="btn btn--ghost btn--sm" onclick="openAutoFillModal('${kpi.name}', ${!!kpi.autoFillEnabled}, ${kpi.defaultValue != null ? kpi.defaultValue : 'null'})">Auto-Fill</button>
+            <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
           </div>`;
         grid.appendChild(card);
