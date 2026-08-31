@@ -68,7 +68,8 @@ public class SecurityConfig {
                     "/css/**", "/js/**", "/styles/**",
                     "/inputView/**", "/listView/**", "/editView/**",
                     "/tableView/**", "/addHabitView/**",
-                    "/*.html", "/*.css", "/*.js", "/*.png", "/*.ico", "/*.webmanifest"
+                    "/*.html", "/*.css", "/*.js", "/*.png", "/*.ico", "/*.webmanifest",
+                    "/api/sync/pair"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
@@ -89,6 +90,11 @@ public class SecurityConfig {
             .csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                // /api/sync/pair is called by the companion script, not a browser — it has no
+                // session and never receives the XSRF-TOKEN cookie, so it can't carry a CSRF
+                // token. That's fine: the pairing code itself is the anti-forgery credential
+                // here (single-use, short-lived, see SyncController.pair()).
+                .ignoringRequestMatchers("/api/sync/pair")
             )
             .addFilterAfter(new CsrfCookieFilter(), UsernamePasswordAuthenticationFilter.class);
         return http.build();

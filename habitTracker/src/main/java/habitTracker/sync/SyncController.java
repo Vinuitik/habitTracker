@@ -17,6 +17,7 @@ public class SyncController {
     private final DriveOAuthService driveOAuthService;
     private final UserSyncSettingsRepository syncSettingsRepository;
     private final DriveService driveService;
+    private final PairingCodeService pairingCodeService;
 
     @GetMapping("/oauth/url")
     public ResponseEntity<Map<String, String>> oauthUrl(@RequestParam String origin) {
@@ -83,6 +84,50 @@ public class SyncController {
             // UI can prompt a reconnect, rather than silently failing every offline push.
             return ResponseEntity.ok(Map.of("connected", false, "error", "reconnect_required"));
         }
+    }
+
+    // Session-authed: user must be looking at their own logged-in web session to mint a code.
+    // The code itself becomes the credential handed to the companion device next.
+    @PostMapping("/generate-pairing-code")
+    public ResponseEntity<Map<String, Object>> generatePairingCode() {
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (syncSettingsRepository.findByUserId(userId).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "Connect Google Drive before pairing a device"));
+        }
+        String code = pairingCodeService.generateCode(userId);
+        return ResponseEntity.ok(Map.of("code", code, "expiresInSeconds", 600));
+    }
+
+    // Deliberately UNAUTHENTICATED — no session exists on this call. The caller is a companion
+    // script on a different device entirely, not a browser. Security instead comes from the code
+    // itself: single-use (PairingCodeService.redeem() removes it atomically on first use),
+    // short-lived (10 min), and only ever handed out to someone who was looking at their own
+    // logged-in session a moment earlier (generatePairingCode() above). This is the only endpoint
+    // in this controller that hands mailboxFolderId/encryptionKey to a non-browser client — every
+    // other consumer of that data is either server-side (MailboxConsumeService) or a browser with
+    // an active session (/status).
+    @PostMapping("/pair")
+    public ResponseEntity<Map<String, Object>> pair(@RequestBody Map<String, String> body) {
+        String code = body.get("code");
+        if (code == null || code.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing code"));
+        }
+        Optional<String> userId = pairingCodeService.redeem(code);
+        if (userId.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Invalid or expired code"));
+        }
+        Optional<UserSyncSettings> settingsOpt = syncSettingsRepository.findByUserId(userId.get());
+        if (settingsOpt.isEmpty()) {
+            // Drive was disconnected between code generation and redemption.
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "Drive is no longer connected"));
+        }
+        UserSyncSettings settings = settingsOpt.get();
+        return ResponseEntity.ok(Map.of(
+                "mailboxFolderId", settings.getMailboxFolderId(),
+                "encryptionKey", settings.getEncryptionKey()
+        ));
     }
 
     private String origin(jakarta.servlet.http.HttpServletRequest request) {

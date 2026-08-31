@@ -1,6 +1,6 @@
 # Offline Drive-Sync Flows
 
-Files: `UserSyncSettings.java`, `UserSyncSettingsRepository.java`, `ConsumedSyncRequest.java`, `ConsumedSyncRequestRepository.java`, `VaultEncryptionService.java`, `DriveService.java`, `DriveOAuthService.java`, `MailboxConsumeService.java`, `SyncController.java`
+Files: `UserSyncSettings.java`, `UserSyncSettingsRepository.java`, `ConsumedSyncRequest.java`, `ConsumedSyncRequestRepository.java`, `VaultEncryptionService.java`, `DriveService.java`, `DriveOAuthService.java`, `MailboxConsumeService.java`, `SyncController.java`, `PairingCodeService.java`
 
 ## Why this exists
 
@@ -107,7 +107,42 @@ To rotate a user's key: clearing `UserSyncSettings.encryptionKey` and forcing a 
 orphan any already-queued Drive files encrypted under the old key — not implemented; would need
 a migration path if this becomes necessary.
 
-## Endpoints (`SyncController`, `/api/sync/**`, session-authed)
+## Device pairing (M5 — companion devices get their own mailbox access)
+
+```
+static/connect-drive.html "Pair a device" button
+  → POST /api/sync/generate-pairing-code          (session-authed)
+      PairingCodeService.generateCode(userId): 8-char human-typeable code, 10-min TTL,
+      in-memory (same shape as DriveOAuthService.pendingStates, extended with a userId)
+  → code shown on screen
+  → user types it into tools/companion/pair.py running on another device
+  → POST /api/sync/pair {code}                    (DELIBERATELY UNAUTHENTICATED — see below)
+      PairingCodeService.redeem(code): atomic map.remove() → single-use, checks TTL
+      → 200 {mailboxFolderId, encryptionKey} for that userId's UserSyncSettings
+  → companion now does its OWN Google OAuth-for-installed-apps flow (loopback redirect,
+    same pattern gcloud/rclone use) to get its OWN Drive refresh token — this never touches
+    or is touched by the server's refresh token in UserSyncSettings.driveRefreshToken.
+  → companion writes mailbox files exactly like static/js/offline/outbox.js does — same
+    MailboxBatch/SyncRequest JSON shape, same AES-256-GCM wire format — using its own
+    locally-refreshed Drive access token. MailboxConsumeService can't tell a companion's
+    file from a browser's; both are just files in the mailbox folder.
+```
+
+**Why `POST /api/sync/pair` is unauthenticated**: the caller is a script on a different device
+with no session and no CSRF cookie — it can never look like a normal authenticated browser
+request. The pairing code itself is the credential instead: single-use (`redeem()` removes it
+from the map on first successful lookup, so a replay always misses), short-lived (10 min), and
+was only ever handed out to someone who was looking at their own logged-in web session a moment
+before (`generatePairingCode()` requires a session). `SecurityConfig.webFilterChain()` both
+`permitAll()`s and CSRF-`ignoringRequestMatchers()`s this one path — both are required, since
+permitAll alone doesn't bypass CSRF enforcement for a POST.
+
+To change the pairing code TTL/format: `PairingCodeService` (`DEFAULT_TTL_MS`, `CODE_CHARS`,
+`CODE_LENGTH`). See `tools/companion/README.md` for the companion script and manual end-to-end
+verification steps (a real device pairing can't be exercised in this repo's test environment —
+there are no real Google OAuth credentials here).
+
+## Endpoints (`SyncController`, `/api/sync/**`, session-authed unless noted)
 
 | Method | Path | Description |
 |---|---|---|
@@ -115,6 +150,8 @@ a migration path if this becomes necessary.
 | `GET` | `/oauth/callback?code&state` | Code exchange, persists this user's `UserSyncSettings`, 302 redirect |
 | `POST` | `/disconnect` | Deletes this user's `UserSyncSettings` row |
 | `GET` | `/status` | `{connected, driveAccessToken, driveAccessTokenExpiresAt, mailboxFolderId, encryptionKey}` — mints a fresh bridge token on every call |
+| `POST` | `/generate-pairing-code` | `{code, expiresInSeconds}` — 409 if Drive isn't connected yet |
+| `POST` | `/pair` | **Unauthenticated.** `{code}` → `{mailboxFolderId, encryptionKey}`, or 400 if invalid/expired/already used |
 
 `GET /api/ping` (`habitTracker.PingController`, top-level, unauthenticated) is the cheap
 reachability probe `static/js/offline/connectivity.js` uses to distinguish "server down" from
@@ -160,3 +197,6 @@ reachability probe `static/js/offline/connectivity.js` uses to distinguish "serv
 | Bridge token lifetime + payload | `SyncController.status()` |
 | Drive REST calls | `DriveService` (list/upload/download/delete/find-or-create-folder) |
 | Credential source | `application.properties` `google.oauth.client-id/client-secret` ← `GOOGLE_OAUTH_CLIENT_ID/SECRET` env |
+| Pairing code TTL / format | `PairingCodeService.DEFAULT_TTL_MS` / `CODE_CHARS` / `CODE_LENGTH` |
+| Pairing endpoint auth/CSRF exemption | `SecurityConfig.webFilterChain()` — `/api/sync/pair` in both `permitAll()` and `ignoringRequestMatchers()` |
+| Companion script | `tools/companion/pair.py` (+ `README.md` for manual verification) |
