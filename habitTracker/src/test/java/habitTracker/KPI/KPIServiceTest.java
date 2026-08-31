@@ -36,13 +36,16 @@ class KPIServiceTest {
     @Mock
     private KPICollectionNameUtil collectionNameUtil;
 
+    @Mock
+    private SampleRandomSource randomSource;
+
     private KPIService kpiService;
     private MockedStatic<SecurityUtils> securityUtils;
 
     @BeforeEach
     void setUp() {
         kpiService = new KPIService(kpiRepository, dynamicKPIDataRepository,
-                                   kpiHabitMappingRepository, collectionNameUtil);
+                                   kpiHabitMappingRepository, collectionNameUtil, randomSource);
         securityUtils = mockStatic(SecurityUtils.class);
         securityUtils.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
     }
@@ -458,5 +461,155 @@ class KPIServiceTest {
             kpiService.updateDefaultFillSettings(kpiName, true, 70.0));
 
         verify(kpiRepository, never()).save(any(KPI.class));
+    }
+
+    // ── M3: confirm-sampling (rollForPending, exercised via addKPIDataForUser) ───────────────
+
+    @Test
+    void testAddKPIDataForUser_ProxySource_SampleHit_SetsPending() {
+        String kpiName = "Cards";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        KPI mockKPI = KPI.builder().id(kpiId).name(kpiName).userId(USER_ID).confirmSampleRate(0.2).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        when(dynamicKPIDataRepository.findByDate(date, collectionName)).thenReturn(Optional.empty());
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName)).thenReturn(Arrays.asList());
+        // rate is 0.2 — any roll below it is a "hit"
+        when(randomSource.nextDouble()).thenReturn(0.1);
+
+        kpiService.addKPIDataForUser(USER_ID, kpiName, date, 5.0, KPIDataSource.PROXY_TRELLO);
+
+        verify(dynamicKPIDataRepository).save(argThat(d ->
+            KPIDataSource.PROXY_TRELLO.equals(d.getSource()) && Boolean.TRUE.equals(d.getPending())), eq(collectionName));
+    }
+
+    @Test
+    void testAddKPIDataForUser_ProxySource_SampleMiss_CommitsNormally() {
+        String kpiName = "Cards";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        KPI mockKPI = KPI.builder().id(kpiId).name(kpiName).userId(USER_ID).confirmSampleRate(0.2).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        when(dynamicKPIDataRepository.findByDate(date, collectionName)).thenReturn(Optional.empty());
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName)).thenReturn(Arrays.asList());
+        // rate is 0.2 — any roll at/above it is a "miss"
+        when(randomSource.nextDouble()).thenReturn(0.9);
+
+        kpiService.addKPIDataForUser(USER_ID, kpiName, date, 5.0, KPIDataSource.PROXY_TRELLO);
+
+        verify(dynamicKPIDataRepository).save(argThat(d ->
+            KPIDataSource.PROXY_TRELLO.equals(d.getSource()) && Boolean.FALSE.equals(d.getPending())), eq(collectionName));
+        verify(randomSource).nextDouble();
+    }
+
+    @Test
+    void testAddKPIDataForUser_ManualSource_NeverSampled_PendingAlwaysFalse() {
+        String kpiName = "Weight";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        KPI mockKPI = KPI.builder().id(kpiId).name(kpiName).userId(USER_ID).confirmSampleRate(1.0).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        when(dynamicKPIDataRepository.findByDate(date, collectionName)).thenReturn(Optional.empty());
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName)).thenReturn(Arrays.asList());
+
+        kpiService.addKPIDataForUser(USER_ID, kpiName, date, 70.0, KPIDataSource.MANUAL);
+
+        verify(dynamicKPIDataRepository).save(argThat(d ->
+            KPIDataSource.MANUAL.equals(d.getSource()) && Boolean.FALSE.equals(d.getPending())), eq(collectionName));
+        verifyNoInteractions(randomSource);
+    }
+
+    // ── M3: confirm / edit ownership + behavior ───────────────────────────────────────────────
+
+    @Test
+    void testConfirmKPIData_ClearsPending_KeepsSource() {
+        String kpiName = "Cards";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        KPI mockKPI = KPI.builder().id(kpiId).name(kpiName).userId(USER_ID).higherIsBetter(true).build();
+        KPIData pendingData = KPIData.builder().id("data1").date(date).value(5.0)
+                .source(KPIDataSource.PROXY_TRELLO).pending(true).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        when(dynamicKPIDataRepository.findByDate(date, collectionName)).thenReturn(Optional.of(pendingData));
+        when(dynamicKPIDataRepository.save(any(KPIData.class), eq(collectionName)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        KPIDataDTO result = kpiService.confirmKPIData(kpiName, date);
+
+        assertFalse(result.getPending());
+        assertEquals(KPIDataSource.PROXY_TRELLO, result.getSource());
+        assertEquals(5.0, result.getValue());
+        verify(dynamicKPIDataRepository).save(argThat(d -> Boolean.FALSE.equals(d.getPending())), eq(collectionName));
+    }
+
+    @Test
+    void testConfirmKPIData_CannotConfirmAnotherUsersKPIWithSameName() {
+        String kpiName = "Weight";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> kpiService.confirmKPIData(kpiName, date));
+
+        verify(dynamicKPIDataRepository, never()).findByDate(any(), anyString());
+        verify(dynamicKPIDataRepository, never()).save(any(KPIData.class), anyString());
+    }
+
+    @Test
+    void testEditKPIData_OverwritesValue_ClearsPending_SetsSourceManual() {
+        String kpiName = "Cards";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        String kpiId = "kpi123";
+        String collectionName = "kpi_data_kpi123";
+        KPI mockKPI = KPI.builder().id(kpiId).name(kpiName).userId(USER_ID).higherIsBetter(true).build();
+        KPIData pendingData = KPIData.builder().id("data1").date(date).value(5.0)
+                .source(KPIDataSource.PROXY_TRELLO).pending(true).build();
+
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.of(mockKPI));
+        when(collectionNameUtil.toCollectionName(kpiId)).thenReturn(collectionName);
+        // First lookup (inside saveKPIDataPoint) sees the existing pending point; the re-fetch
+        // after save returns the updated version — simulate that with successive stubbing.
+        when(dynamicKPIDataRepository.findByDate(date, collectionName))
+                .thenReturn(Optional.of(pendingData))
+                .thenReturn(Optional.of(KPIData.builder().id("data1").date(date).value(9.0)
+                        .source(KPIDataSource.MANUAL).pending(false).build()));
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(30, collectionName)).thenReturn(Arrays.asList());
+
+        KPIDataDTO result = kpiService.editKPIData(kpiName, date, 9.0);
+
+        assertEquals(9.0, result.getValue());
+        assertFalse(result.getPending());
+        assertEquals(KPIDataSource.MANUAL, result.getSource());
+        verify(dynamicKPIDataRepository).save(argThat(d ->
+            d.getValue().equals(9.0) && KPIDataSource.MANUAL.equals(d.getSource()) && Boolean.FALSE.equals(d.getPending())),
+            eq(collectionName));
+    }
+
+    @Test
+    void testEditKPIData_CannotEditAnotherUsersKPIWithSameName() {
+        String kpiName = "Weight";
+        LocalDate date = LocalDate.of(2024, 1, 1);
+        when(kpiRepository.findByNameAndUserId(kpiName, USER_ID)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> kpiService.editKPIData(kpiName, date, 9.0));
+
+        verify(dynamicKPIDataRepository, never()).save(any(KPIData.class), anyString());
+    }
+
+    @Test
+    void testEditKPIData_NullValue_Throws() {
+        assertThrows(IllegalArgumentException.class, () -> kpiService.editKPIData("Cards", LocalDate.now(), null));
+        verify(kpiRepository, never()).findByNameAndUserId(anyString(), anyString());
     }
 }

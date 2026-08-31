@@ -22,6 +22,7 @@ public class KPIService {
     private final DynamicKPIDataRepository dynamicKPIDataRepository;
     private final KPIHabitMappingRepository kpiHabitMappingRepository;
     private final KPICollectionNameUtil collectionNameUtil;
+    private final SampleRandomSource randomSource;
     
     @Transactional
     public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds,
@@ -190,12 +191,98 @@ public class KPIService {
                     .build();
         }
         kpiData.setAutoFilled(autoFilled);
-        kpiData.setSource(source != null ? source : KPIDataSource.MANUAL);
+        KPIDataSource resolvedSource = source != null ? source : KPIDataSource.MANUAL;
+        kpiData.setSource(resolvedSource);
+        kpiData.setPending(rollForPending(kpi, resolvedSource));
 
         Double ema = calculateEMA(collectionName, value);
         kpiData.setExponentialMovingAverage(ema);
 
         dynamicKPIDataRepository.save(kpiData, collectionName);
+    }
+
+    /**
+     * M3: decides whether a just-written point should be flagged `pending` for manual
+     * confirmation rather than trusted outright. Only ever applies to proxy-sourced points
+     * (PROXY_TRELLO / PROXY_CAPABILITY) — a manual entry or the default-fill cron's AUTOFILL is
+     * never sampled, since there's no "guess" to double-check there. Uses kpi.confirmSampleRate
+     * (0.2 by default) as the hit probability, via the injected SampleRandomSource rather than
+     * Math.random() directly so the decision is deterministically testable.
+     */
+    private boolean rollForPending(KPI kpi, KPIDataSource source) {
+        if (source != KPIDataSource.PROXY_TRELLO && source != KPIDataSource.PROXY_CAPABILITY) {
+            return false;
+        }
+        double rate = kpi.getConfirmSampleRate() != null ? kpi.getConfirmSampleRate() : 0.2;
+        if (rate <= 0) return false;
+        if (rate >= 1) return true;
+        return randomSource.nextDouble() < rate;
+    }
+
+    /**
+     * All pending (awaiting manual confirmation) KPIData points across every active KPI owned by
+     * the current user, newest first. Backs the /today confirm-inbox.
+     */
+    public List<KPIDataDTO> getPendingKPIData() {
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) return new ArrayList<>();
+
+        List<KPI> kpis = kpiRepository.findByActiveAndUserId(true, userId);
+        List<KPIDataDTO> result = new ArrayList<>();
+        for (KPI kpi : kpis) {
+            String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
+            boolean higherIsBetter = Boolean.TRUE.equals(kpi.getHigherIsBetter());
+            dynamicKPIDataRepository.findByPending(true, collectionName)
+                    .forEach(d -> result.add(convertToDataDTO(d, kpi.getName(), higherIsBetter)));
+        }
+        result.sort((a, b) -> b.getDate().compareTo(a.getDate()));
+        return result;
+    }
+
+    /**
+     * Confirm action: accepts the proxy-written value as-is. Clears `pending`, leaves `source`
+     * untouched (still e.g. PROXY_TRELLO) since the value itself wasn't corrected, just verified.
+     * Scoped to the current user's own KPI (findByNameAndUserId) — a user cannot confirm another
+     * user's KPIData, even a same-named KPI, since that resolves to a different id-keyed
+     * collection entirely.
+     */
+    @Transactional
+    public KPIDataDTO confirmKPIData(String kpiName, LocalDate date) {
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+
+        String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
+        KPIData data = dynamicKPIDataRepository.findByDate(date, collectionName)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "No KPI data found for '" + kpiName + "' on " + date));
+
+        data.setPending(false);
+        KPIData saved = dynamicKPIDataRepository.save(data, collectionName);
+        return convertToDataDTO(saved, kpiName, Boolean.TRUE.equals(kpi.getHigherIsBetter()));
+    }
+
+    /**
+     * Edit action: a human correction overwrites the proxy's guess. Clears `pending` and — this
+     * is a real business rule, not incidental — resets `source` to MANUAL, since the value no
+     * longer reflects what the proxy actually reported. Same per-user ownership scoping as
+     * confirmKPIData.
+     */
+    @Transactional
+    public KPIDataDTO editKPIData(String kpiName, LocalDate date, Double value) {
+        if (value == null) {
+            throw new IllegalArgumentException("value is required");
+        }
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+
+        saveKPIDataPoint(kpi, date, value, false, KPIDataSource.MANUAL);
+
+        String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
+        KPIData saved = dynamicKPIDataRepository.findByDate(date, collectionName)
+                .orElseThrow(() -> new IllegalStateException("KPIData not found immediately after save"));
+        return convertToDataDTO(saved, kpiName, Boolean.TRUE.equals(kpi.getHigherIsBetter()));
     }
 
     public List<KPIDataDTO> getKPIDataForDateRange(String kpiName, LocalDate startDate, LocalDate endDate) {

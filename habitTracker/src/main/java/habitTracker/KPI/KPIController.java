@@ -104,6 +104,37 @@ public class KPIController {
         }
     }
 
+    // M3 confirm-inbox: this user's pending (awaiting-confirmation) proxy-written KPIData points,
+    // across all their KPIs. Backs the /today page's confirm/edit chips.
+    @GetMapping("/pending")
+    public List<KPIDataDTO> pendingKPIData() {
+        return kpiService.getPendingKPIData();
+    }
+
+    // Confirm action: accept the proxy value as-is, just clears `pending`.
+    @PutMapping("/{name}/data/{date}/confirm")
+    public ResponseEntity<?> confirmKPIData(@PathVariable String name, @PathVariable LocalDate date) {
+        try {
+            KPIDataDTO updated = kpiService.confirmKPIData(name, date);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Edit action: human correction overwrites the value, clears `pending`, sets source=MANUAL.
+    @PutMapping("/{name}/data/{date}")
+    public ResponseEntity<?> editKPIData(@PathVariable String name, @PathVariable LocalDate date,
+                                          @RequestBody Map<String, Object> body) {
+        try {
+            Double value = body.get("value") != null ? ((Number) body.get("value")).doubleValue() : null;
+            KPIDataDTO updated = kpiService.editKPIData(name, date, value);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/{name}/data")
     public ResponseEntity<?> getKPIData(@PathVariable String name,
                                         @RequestParam(defaultValue = "weekly") String period,

@@ -51,6 +51,16 @@ public class DynamicKPIDataRepository {
     }
     
     /**
+     * Find all points with the given `pending` flag, newest first — backs the /today
+     * confirm-inbox (pending=true) for a single KPI's collection.
+     */
+    public List<KPIData> findByPending(boolean pending, String collectionName) {
+        Query query = new Query(Criteria.where("pending").is(pending))
+                .with(Sort.by(Sort.Direction.DESC, "date"));
+        return mongoTemplate.find(query, KPIData.class, collectionName);
+    }
+
+    /**
      * Find top N records ordered by date descending (for EMA calculation)
      */
     public List<KPIData> findTopNOrderByDateDesc(int limit, String collectionName) {

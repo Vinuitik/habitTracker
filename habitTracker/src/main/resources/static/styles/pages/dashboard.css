@@ -33,6 +33,88 @@
   margin-top: var(--space-2);
 }
 
+/* ── Confirm-inbox (M3: sampled proxy KPI values awaiting review) ── */
+.confirm-inbox {
+  margin-bottom: var(--space-8);
+}
+
+.confirm-inbox__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-warning);
+  text-transform: uppercase;
+  margin-bottom: var(--space-3);
+}
+
+.confirm-inbox__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.confirm-chip {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.confirm-chip__info {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 160px;
+}
+
+.confirm-chip__kpi {
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.confirm-chip__source {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-warning);
+  background: rgba(212, 160, 23, 0.12);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+}
+
+.confirm-chip__date {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.confirm-chip__value-row {
+  flex: 1;
+  min-width: 80px;
+}
+
+.confirm-chip__value {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--color-text-primary);
+}
+
+.confirm-chip__value-input {
+  max-width: 120px;
+}
+
+.confirm-chip__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 /* ── Habit grid ── */
 .habit-grid {
   display: grid;

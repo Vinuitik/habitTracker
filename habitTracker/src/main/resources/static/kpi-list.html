@@ -69,6 +69,30 @@
     </div>
   </div>
 
+  <!-- Confirm-Sample-Rate Settings Modal (M3) -->
+  <div class="modal-overlay" id="confirmRateModal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title">Confirm Sample Rate</span>
+        <button class="modal-box__close" onclick="closeConfirmRateModal()">&#x2715;</button>
+      </div>
+      <form id="confirmRateForm" class="modal-box__fields">
+        <input type="hidden" id="confirmRateKpiName" name="kpiName">
+        <input type="hidden" id="confirmRateProxyType" name="proxyType">
+        <input type="hidden" id="confirmRateProxyConfig" name="proxyConfig">
+        <div class="form-group">
+          <label class="form-group__label" for="confirmRateInput">Percent of proxy-written values flagged for review</label>
+          <input class="input" type="number" min="0" max="100" step="1" id="confirmRateInput" name="confirmSampleRatePercent">
+          <span class="form-group__hint">Applies only to values a proxy provider (e.g. Trello) writes automatically — manual entries are never sampled. 0% trusts every proxy value outright; 100% flags all of them for confirmation on the Today page.</span>
+        </div>
+        <div class="modal-box__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn btn--ghost" onclick="closeConfirmRateModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Manage Habits Modal -->
   <div class="modal-overlay" id="manageHabitsModal">
     <div class="modal-box">
@@ -146,6 +170,51 @@
       if (e.target === document.getElementById('addDataModal')) closeModal();
       if (e.target === document.getElementById('autoFillModal')) closeAutoFillModal();
       if (e.target === document.getElementById('manageHabitsModal')) closeManageHabitsModal();
+      if (e.target === document.getElementById('confirmRateModal')) closeConfirmRateModal();
+    });
+
+    function openConfirmRateModal(kpiName, proxyType, proxyConfig, confirmSampleRate) {
+      document.getElementById('confirmRateKpiName').value = kpiName;
+      document.getElementById('confirmRateProxyType').value = proxyType || 'NONE';
+      document.getElementById('confirmRateProxyConfig').value = JSON.stringify(proxyConfig || null);
+      const rate = (confirmSampleRate != null ? confirmSampleRate : 0.2) * 100;
+      document.getElementById('confirmRateInput').value = Math.round(rate);
+      document.getElementById('confirmRateModal').classList.add('open');
+    }
+
+    function closeConfirmRateModal() {
+      document.getElementById('confirmRateModal').classList.remove('open');
+    }
+
+    document.getElementById('confirmRateForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const kpiName = document.getElementById('confirmRateKpiName').value;
+      const proxyType = document.getElementById('confirmRateProxyType').value;
+      const proxyConfig = JSON.parse(document.getElementById('confirmRateProxyConfig').value || 'null');
+      const percent = parseFloat(document.getElementById('confirmRateInput').value);
+
+      if (Number.isNaN(percent) || percent < 0 || percent > 100) {
+        alert('Enter a percentage between 0 and 100.');
+        return;
+      }
+
+      const res = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/proxy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+        body: JSON.stringify({
+          proxyType,
+          proxyConfig,
+          confirmSampleRate: percent / 100
+        })
+      });
+
+      if (res.ok) {
+        closeConfirmRateModal();
+        window.location.reload();
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Failed to save confirm sample rate' }));
+        alert(err.error || 'Failed to save confirm sample rate.');
+      }
     });
 
     async function openManageHabitsModal(kpiName, linkedHabitIds) {
@@ -317,6 +386,7 @@
             <button class="btn btn--primary btn--sm" onclick="addData('${kpi.name}')">Add Data</button>
             <button class="btn btn--ghost btn--sm" onclick="viewData('${kpi.name}')">View Charts</button>
             <button class="btn btn--ghost btn--sm" onclick="openAutoFillModal('${kpi.name}', ${!!kpi.autoFillEnabled}, ${kpi.defaultValue != null ? kpi.defaultValue : 'null'})">Auto-Fill</button>
+            <button class="btn btn--ghost btn--sm" onclick='openConfirmRateModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || null)}, ${kpi.confirmSampleRate != null ? kpi.confirmSampleRate : 0.2})'>Confirm Rate</button>
             <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
           </div>`;

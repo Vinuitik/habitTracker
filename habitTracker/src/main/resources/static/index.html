@@ -40,6 +40,12 @@
       <div class="dashboard__summary" id="today-summary"></div>
     </div>
 
+    <!-- Confirm-inbox: KPI points a proxy provider wrote, sampled for manual review -->
+    <section class="confirm-inbox" id="confirm-inbox" hidden>
+      <div class="confirm-inbox__label">Confirm KPI values</div>
+      <div class="confirm-inbox__list" id="confirm-inbox-list"></div>
+    </section>
+
     <div class="habit-grid" id="habit-grid"></div>
   </main>
 
@@ -310,10 +316,122 @@
       });
     }
 
+    const SOURCE_LABEL = {
+      PROXY_TRELLO: 'Trello',
+      PROXY_CAPABILITY: 'Proxy',
+      AUTOFILL: 'Auto-fill',
+      MANUAL: 'Manual'
+    };
+
+    function makePendingChip(item) {
+      const chip = document.createElement('div');
+      chip.className = 'confirm-chip';
+      chip.dataset.kpiName = item.kpiName;
+      chip.dataset.date = item.date;
+
+      chip.innerHTML = `
+        <div class="confirm-chip__info">
+          <span class="confirm-chip__kpi">${item.kpiName}</span>
+          <span class="confirm-chip__source">${SOURCE_LABEL[item.source] || item.source}</span>
+          <span class="confirm-chip__date">${item.date}</span>
+        </div>
+        <div class="confirm-chip__value-row">
+          <span class="confirm-chip__value" id="value-display">${item.value}</span>
+          <input class="input input--sm confirm-chip__value-input" type="number" step="any"
+            value="${item.value}" hidden>
+        </div>
+        <div class="confirm-chip__actions">
+          <button type="button" class="btn btn--primary btn--sm" data-action="confirm">Confirm</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="edit">Edit</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="save" hidden>Save</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="cancel" hidden>Cancel</button>
+        </div>`;
+
+      const valueDisplay = chip.querySelector('.confirm-chip__value');
+      const valueInput    = chip.querySelector('.confirm-chip__value-input');
+      const confirmBtn = chip.querySelector('[data-action="confirm"]');
+      const editBtn     = chip.querySelector('[data-action="edit"]');
+      const saveBtn     = chip.querySelector('[data-action="save"]');
+      const cancelBtn   = chip.querySelector('[data-action="cancel"]');
+
+      function setEditing(on) {
+        valueDisplay.hidden = on;
+        valueInput.hidden = !on;
+        confirmBtn.hidden = on;
+        editBtn.hidden = on;
+        saveBtn.hidden = !on;
+        cancelBtn.hidden = !on;
+        if (on) { valueInput.value = item.value; valueInput.focus(); }
+      }
+
+      confirmBtn.addEventListener('click', async () => {
+        confirmBtn.disabled = true;
+        try {
+          const res = await fetch(ENV.ENDPOINTS.KPI_CONFIRM(item.kpiName, item.date), {
+            method: 'PUT', credentials: 'include',
+            headers: { 'X-XSRF-TOKEN': csrf() }
+          });
+          if (!res.ok) throw new Error('confirm failed');
+          if (window.Toast) Toast.show(`${item.kpiName} confirmed`);
+          removeChip();
+        } catch {
+          confirmBtn.disabled = false;
+          if (window.Toast) Toast.show('Failed to confirm — try again', 'error');
+        }
+      });
+
+      editBtn.addEventListener('click', () => setEditing(true));
+      cancelBtn.addEventListener('click', () => setEditing(false));
+
+      saveBtn.addEventListener('click', async () => {
+        const newValue = parseFloat(valueInput.value);
+        if (Number.isNaN(newValue)) return;
+        saveBtn.disabled = true;
+        try {
+          const res = await fetch(ENV.ENDPOINTS.KPI_EDIT_DATA(item.kpiName, item.date), {
+            method: 'PUT', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+            body: JSON.stringify({ value: newValue })
+          });
+          if (!res.ok) throw new Error('edit failed');
+          if (window.Toast) Toast.show(`${item.kpiName} updated`);
+          removeChip();
+        } catch {
+          saveBtn.disabled = false;
+          if (window.Toast) Toast.show('Failed to save — try again', 'error');
+        }
+      });
+
+      function removeChip() {
+        chip.remove();
+        const list = document.getElementById('confirm-inbox-list');
+        if (list && list.children.length === 0) {
+          document.getElementById('confirm-inbox').hidden = true;
+        }
+      }
+
+      return chip;
+    }
+
+    async function loadConfirmInbox() {
+      const pending = await fetch(ENV.ENDPOINTS.KPI_PENDING, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => []);
+
+      const section = document.getElementById('confirm-inbox');
+      const list = document.getElementById('confirm-inbox-list');
+      if (!pending || pending.length === 0) { section.hidden = true; return; }
+
+      list.innerHTML = '';
+      pending.forEach(item => list.appendChild(makePendingChip(item)));
+      section.hidden = false;
+    }
+
     async function init() {
       if (!(await checkAuth())) return;
 
       initTopbar(ENV.ROUTES.HOME);
+      loadConfirmInbox();
 
       // Resilient read: on a down origin the SW hands back {offline:true} (never a broken 530),
       // and a truly failed fetch is caught here — either way we render an offline state instead
