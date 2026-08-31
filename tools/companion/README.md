@@ -1,10 +1,12 @@
-# HabitTracker companion (M5 — device pairing)
+# HabitTracker companion (M5 device pairing, M6 capability-deploy polling)
 
 A minimal script that pairs a device with your HabitTracker account and can write one
 hand-authored test file into your Drive mailbox, proving the pairing handshake and
-`MailboxConsumeService` both work end to end. This is the foundation M6+ build on for actual
-push-proxy capabilities (see `docs/designs/kpi-tracking-agent.md`) — this milestone does not run
-any capability code, it only proves a device can pair and write.
+`MailboxConsumeService` both work end to end (M5). M6 adds the reverse channel:
+`poll-capabilities` checks a second, separate Drive folder the server can write
+`{capabilityId, version, sourceCode}` files into, and updates a local per-capability version
+cache — still no capability code actually runs as a result; that's a later milestone (M8/M9, see
+`docs/designs/kpi-tracking-agent.md`). M6 only proves the delivery/version-tracking mechanics.
 
 Windows-first (any platform with Python 3.9+ works the same way — no OS-specific code was used).
 
@@ -65,18 +67,39 @@ python pair.py show-config
 Prints the non-secret parts of the local config (server URL, mailbox folder id, device id) for
 sanity-checking — secrets are withheld from the printout.
 
+```powershell
+python pair.py poll-capabilities
+```
+
+M6. Checks this account's `_capability_deploy` Drive folder (a separate folder from the inbound
+mailbox — server writes here, this device only ever reads) for capability files, decrypts each
+with the same per-user key, and compares its `version` field against
+`~/.habittracker_companion/capabilities.json`: strictly newer versions are downloaded and cached,
+the current version is skipped, and older/malformed payloads are rejected and logged — never
+raises on a single bad file. Prints one `ACCEPT`/`SKIP`/`REJECT` line per file found. If this
+account has never had a capability deployed to it, `capabilityDeployFolderId` will be `null` (it's
+created lazily server-side on first deploy) and this command has nothing to do — re-run
+`python pair.py pair` after a first deploy to pick up the folder id.
+
 ## Automated tests
 
 ```powershell
 python -m unittest test_pair -v
+python -m unittest test_capability_deploy -v
 ```
 
-Runs entirely against local mock servers standing in for both the HabitTracker server
-(`/api/sync/pair`) and Google's OAuth token endpoint — **no real Google credentials are used or
-needed**, since none exist in the dev/CI environment. Covers: pairing-code redemption
+`test_pair.py` runs entirely against local mock servers standing in for both the HabitTracker
+server (`/api/sync/pair`) and Google's OAuth token endpoint — **no real Google credentials are
+used or needed**, since none exist in the dev/CI environment. Covers: pairing-code redemption
 (valid/invalid), the full loopback OAuth flow end to end (including the actual localhost redirect
 capture, not just the token exchange), the refresh-token grant, and the AES-256-GCM mailbox wire
 format round-tripping exactly the way `VaultEncryptionService` expects it.
+
+`test_capability_deploy.py` covers the M6 reverse channel: `evaluate_capability_version()` as a
+pure function (skip/accept/reject decisions, including malformed-payload rejection), and
+`poll_capability_deploy()` end to end against a local mock standing in for the Drive v3 REST API's
+list+download endpoints, seeded with payloads encrypted exactly the way
+`CapabilityDeployService`/`VaultEncryptionService` produce them server-side.
 
 ## Manual verification (do this once against the real deployment — cannot be automated here)
 
@@ -136,3 +159,23 @@ failure mode instead.
 - **Local config storage**: plain JSON at `~/.habittracker_companion/config.json`, `chmod 600`
   best-effort. No OS keychain integration — consistent with "minimal", matches the milestone's
   scope (prove pairing works, not harden secret storage).
+
+### M6 additions
+
+- **Capability version is a plain positive integer**, not semver — not specified upstream beyond
+  "version field." Simplest possible "strictly newer" rule for both sides; revisit if capabilities
+  ever need coordinated multi-part version numbers.
+- **`_capability_deploy` folder is created lazily** (on the server's first
+  `CapabilityDeployService.deployCapability()` call), unlike `_mailbox_requests` which is created
+  eagerly at connect time. A freshly-paired device gets `capabilityDeployFolderId: null` until
+  this account's first deploy and must re-run `pair` afterward to pick it up — not automatic. This
+  keeps every already-connected user's Drive free of an empty folder for a feature that doesn't
+  execute anything yet.
+- **Local capabilities cache** (`~/.habittracker_companion/capabilities.json`): plain JSON,
+  `{capabilityId: {version, sourceCode, updatedAt}}`, no chmod (not treated as a secrets file the
+  way `config.json` is — `sourceCode` isn't a credential).
+- **No delete/cleanup of `_capability_deploy` files** on either side — every poll re-lists and
+  re-downloads every historical file, forever. Unlike the inbound mailbox (which self-cleans via
+  delete-on-success), nothing here deletes anything. Fine at this milestone's scale; flagged in
+  `FLOWS.md` as needing either a companion-side delete-after-cache-update step or a server-side
+  retention policy if deploy volume grows.

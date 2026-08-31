@@ -13,9 +13,16 @@ See README.md for setup (Google OAuth client credentials) and manual end-to-end 
 steps — this script cannot be exercised against real Google/Drive in an automated test
 environment with no real OAuth credentials, so those steps are for a human to run once.
 
+M6 adds the reverse channel: the server can write {capabilityId, version, sourceCode} files into
+a second, separate Drive subfolder ("_capability_deploy") for this account, and `poll-capabilities`
+below checks it, comparing each file's version against a local cache and downloading+storing only
+strictly newer versions. No capability actually runs as a result of this — that's a later
+milestone; this only proves the delivery channel works.
+
 Usage:
     python pair.py pair --server https://habittrackerdima.me
     python pair.py write-test-kpi --kpi-name Steps --value 1234 --date 2026-08-31
+    python pair.py poll-capabilities
     python pair.py show-config
 """
 import argparse
@@ -46,6 +53,7 @@ DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
 
 CONFIG_DIR = Path(os.environ.get("HABITTRACKER_COMPANION_HOME", Path.home() / ".habittracker_companion"))
 CONFIG_FILE = CONFIG_DIR / "config.json"
+CAPABILITIES_CACHE_FILE = CONFIG_DIR / "capabilities.json"  # M6 — local cache of deployed capability versions
 
 IV_BYTES = 12  # matches VaultEncryptionService: wire format is [12B IV][ciphertext + 16B GCM tag]
 
@@ -67,16 +75,39 @@ def save_config(config):
         pass
 
 
+# M6 — local cache of {capabilityId: {version, sourceCode, updatedAt}}, one entry per capability
+# this device has ever seen deployed to it. Plain JSON, same directory/permissions treatment as
+# CONFIG_FILE — not a secrets file (sourceCode isn't secret the way refreshToken/encryptionKey
+# are), but kept local-only regardless since nothing external ever needs to read it.
+
+def load_capabilities_cache():
+    if not CAPABILITIES_CACHE_FILE.exists():
+        return {}
+    return json.loads(CAPABILITIES_CACHE_FILE.read_text())
+
+
+def save_capabilities_cache(cache):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CAPABILITIES_CACHE_FILE.write_text(json.dumps(cache, indent=2))
+
+
 # ── Step 1: redeem the pairing code (POST /api/sync/pair — unauthenticated by server design) ──
 
 def redeem_pairing_code(server, code):
     """Calls the server's unauthenticated pairing endpoint. Returns {mailboxFolderId,
-    encryptionKey} or raises RuntimeError with the server's error message."""
+    encryptionKey, capabilityDeployFolderId} or raises RuntimeError with the server's error
+    message. capabilityDeployFolderId (M6) may be None — it's only set once the server has
+    deployed at least one capability to this account (CapabilityDeployService creates it lazily),
+    so a freshly-paired device with nothing deployed yet gets None and simply can't poll."""
     resp = requests.post(f"{server.rstrip('/')}/api/sync/pair", json={"code": code}, timeout=15)
     body = resp.json()
     if resp.status_code != 200:
         raise RuntimeError(body.get("error", f"pairing failed (HTTP {resp.status_code})"))
-    return {"mailboxFolderId": body["mailboxFolderId"], "encryptionKey": body["encryptionKey"]}
+    return {
+        "mailboxFolderId": body["mailboxFolderId"],
+        "encryptionKey": body["encryptionKey"],
+        "capabilityDeployFolderId": body.get("capabilityDeployFolderId"),
+    }
 
 
 # ── Step 2: this device's OWN Google OAuth-for-installed-apps flow ─────────────────────────────
@@ -225,6 +256,123 @@ def upload_mailbox_file(access_token, mailbox_folder_id, wire_bytes, filename):
     return file_id
 
 
+# ── M6: capability-deploy channel (server -> device) ────────────────────────────────────────
+#
+# Reverse direction of the mailbox above: the SERVER writes {capabilityId, version, sourceCode}
+# files into the account's "_capability_deploy" Drive folder (CapabilityDeployService, same
+# VaultEncryptionService wire format), and this device polls that folder, decides per file
+# whether it's new information, and updates a local per-capability version cache. No capability
+# actually executes as a result of this — that's M8/M9; this is delivery only.
+
+def decrypt_wire(encryption_key_b64, wire_bytes):
+    """Inverse of encrypt_for_mailbox() / VaultEncryptionService.decrypt(): same
+    [12B IV][ciphertext + 16B GCM tag] wire format, just not mailbox-specific — used for any
+    payload encrypted under the account's per-user key, including capability-deploy files."""
+    key = base64.b64decode(encryption_key_b64)
+    iv, ciphertext = wire_bytes[:IV_BYTES], wire_bytes[IV_BYTES:]
+    return AESGCM(key).decrypt(iv, ciphertext, None)
+
+
+def list_drive_files(access_token, folder_id):
+    """Mirrors DriveService.listFiles(): GET .../files?q='<folder>' in parents and trashed=false.
+    Returns a list of {"id": ..., "name": ...} dicts."""
+    query = f"'{folder_id}' in parents and trashed=false"
+    url = (f"{DRIVE_FILES_URL}?q={urllib.parse.quote(query)}"
+           f"&fields={urllib.parse.quote('files(id,name)')}&spaces=drive")
+    resp = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
+    resp.raise_for_status()
+    return resp.json().get("files", [])
+
+
+def download_drive_file(access_token, file_id):
+    """Mirrors DriveService.downloadFile(): GET .../files/{id}?alt=media."""
+    resp = requests.get(f"{DRIVE_FILES_URL}/{file_id}?alt=media",
+                         headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
+    resp.raise_for_status()
+    return resp.content
+
+
+def evaluate_capability_version(cached_version, remote_payload):
+    """Pure decision function, no I/O — the thing under test for the "version-comparison logic"
+    requirement. Given the locally-cached version for a capability (None if never seen) and a
+    decoded remote {capabilityId, version, sourceCode} payload, decides what to do with it.
+
+    version is a plain positive integer (matches CapabilityDeployService: monotonically
+    increasing per capability, not semver) — "newer" is just a bigger integer.
+
+    Returns (decision, reason) where decision is one of "accept" / "skip" / "reject":
+      accept — first time seeing this capability, or version > cached_version
+      skip   — version == cached_version (already current, not an error)
+      reject — version < cached_version (refuse a downgrade), or the payload is malformed
+               (missing/wrong-typed capabilityId, version, or sourceCode)
+    """
+    if not isinstance(remote_payload, dict):
+        return "reject", "payload is not an object"
+
+    capability_id = remote_payload.get("capabilityId")
+    version = remote_payload.get("version")
+    source_code = remote_payload.get("sourceCode")
+
+    if not isinstance(capability_id, str) or not capability_id:
+        return "reject", "malformed payload: missing/invalid capabilityId"
+    if not isinstance(source_code, str) or not source_code:
+        return "reject", "malformed payload: missing/invalid sourceCode"
+    # bool is a subclass of int in Python — exclude it explicitly so True/False can't pass as a version.
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        return "reject", "malformed payload: version must be a positive integer"
+
+    if cached_version is None:
+        return "accept", "first version seen for this capability"
+    if version > cached_version:
+        return "accept", f"newer version ({version} > {cached_version})"
+    if version == cached_version:
+        return "skip", "already current"
+    return "reject", f"older version ({version} < {cached_version}) — refusing downgrade"
+
+
+def poll_capability_deploy(access_token, folder_id, encryption_key_b64, cache=None):
+    """Lists the account's _capability_deploy Drive folder, decrypts each file, and updates the
+    local capabilities cache (capabilities.json) with any strictly-newer versions found. A single
+    corrupt/undecryptable/malformed file is rejected and skipped, never raises — one bad file must
+    not block the rest of the folder.
+
+    cache: pass an explicit dict to operate on (and NOT persist to disk) for testing; omit to
+    load/save CAPABILITIES_CACHE_FILE as a normal poll would.
+
+    Returns a list of (filename, decision, reason) tuples — "accept"/"skip"/"reject" per file,
+    for CLI display and test assertions.
+    """
+    persist = cache is None
+    if cache is None:
+        cache = load_capabilities_cache()
+
+    results = []
+    for f in list_drive_files(access_token, folder_id):
+        try:
+            wire = download_drive_file(access_token, f["id"])
+            payload = json.loads(decrypt_wire(encryption_key_b64, wire))
+        except Exception as e:
+            results.append((f["name"], "reject", f"undecryptable/corrupt file: {e}"))
+            continue
+
+        capability_id = payload.get("capabilityId") if isinstance(payload, dict) else None
+        cached_entry = cache.get(capability_id) if isinstance(capability_id, str) else None
+        cached_version = cached_entry.get("version") if cached_entry else None
+
+        decision, reason = evaluate_capability_version(cached_version, payload)
+        if decision == "accept":
+            cache[capability_id] = {
+                "version": payload["version"],
+                "sourceCode": payload["sourceCode"],
+                "updatedAt": int(time.time() * 1000),
+            }
+        results.append((f["name"], decision, reason))
+
+    if persist:
+        save_capabilities_cache(cache)
+    return results
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────────────────────
 
 def cmd_pair(args):
@@ -249,6 +397,7 @@ def cmd_pair(args):
         "server": args.server,
         "mailboxFolderId": creds["mailboxFolderId"],
         "encryptionKey": creds["encryptionKey"],
+        "capabilityDeployFolderId": creds.get("capabilityDeployFolderId"),  # M6, may be None
         "clientId": client_id,
         "clientSecret": client_secret,
         "refreshToken": tokens["refresh_token"],
@@ -274,6 +423,27 @@ def cmd_write_test_kpi(args):
     file_id = upload_mailbox_file(access_token, config["mailboxFolderId"], wire, filename)
     print(f"Wrote {filename} (Drive file id {file_id}) — "
           f"MailboxConsumeService will pick it up on its next pass (every 15 min, or on boot).")
+
+
+def cmd_poll_capabilities(args):
+    config = load_config()
+    if not config:
+        print("Not paired yet — run `python pair.py pair` first.", file=sys.stderr)
+        sys.exit(1)
+
+    folder_id = config.get("capabilityDeployFolderId")
+    if not folder_id:
+        print("No capability-deploy folder yet — nothing has been deployed to this account. "
+              "Re-run `python pair.py pair` after a capability has been deployed to pick up the folder id.")
+        return
+
+    access_token = refresh_access_token(config["clientId"], config["clientSecret"], config["refreshToken"])
+    results = poll_capability_deploy(access_token, folder_id, config["encryptionKey"])
+    if not results:
+        print("Nothing in the capability-deploy folder.")
+        return
+    for filename, decision, reason in results:
+        print(f"{decision.upper():6} {filename} — {reason}")
 
 
 def cmd_show_config(args):
@@ -306,6 +476,10 @@ def main():
 
     p_show = sub.add_parser("show-config", help="Print the non-secret parts of the local config")
     p_show.set_defaults(func=cmd_show_config)
+
+    p_poll = sub.add_parser("poll-capabilities",
+                             help="Check the capability-deploy folder for new/updated capability versions (M6)")
+    p_poll.set_defaults(func=cmd_poll_capabilities)
 
     args = parser.parse_args()
     args.func(args)
