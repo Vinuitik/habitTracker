@@ -410,6 +410,10 @@
         const autoFillBadge = kpi.autoFillEnabled
           ? `<span class="kpi-card__direction" style="color:var(--color-accent);background:var(--color-accent-dim);">Auto-fill: ${kpi.defaultValue}</span>`
           : null;
+        const needsRepair = kpi.proxyStatus === 'NEEDS_REPAIR';
+        const needsRepairBadge = needsRepair
+          ? `<span class="kpi-card__direction" style="color:var(--color-danger);background:rgba(224,92,92,0.12);">Proxy needs repair</span>`
+          : null;
 
         const card = document.createElement('div');
         card.className = 'kpi-card';
@@ -422,6 +426,7 @@
                   ${kpi.higherIsBetter ? '↑ Higher better' : '↓ Lower better'}
                 </span>
                 ${autoFillBadge || ''}
+                ${needsRepairBadge || ''}
               </div>
             </div>
             ${kpi.description ? `<div class="kpi-card__desc" style="margin-top:var(--space-2);">${kpi.description}</div>` : ''}
@@ -436,6 +441,7 @@
             <button class="btn btn--ghost btn--sm" onclick='openConfirmRateModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || null)}, ${kpi.confirmSampleRate != null ? kpi.confirmSampleRate : 0.2})'>Confirm Rate</button>
             <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
             <button class="btn btn--ghost btn--sm" onclick='openProxyModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || {})})'>Data Source</button>
+            ${needsRepair ? `<button class="btn btn--ghost btn--sm" onclick="resetProxyHealth('${kpi.name}')">Reset Proxy</button>` : ''}
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
           </div>`;
         grid.appendChild(card);
