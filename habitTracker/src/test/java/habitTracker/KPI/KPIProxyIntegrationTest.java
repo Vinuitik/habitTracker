@@ -25,9 +25,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * End-to-end for M1's proxy mechanism: create a KPI wired to ProxyType.TRELLO_CARD_COUNT (which
- * resolves to StubTrelloCardCountProxyProvider — no real Trello call yet), run one pass of the
- * nightly proxy-fill step, and verify exactly one KPIData was written with source=PROXY_TRELLO.
+ * End-to-end for the proxy mechanism's DI wiring: create a KPI wired to ProxyType.TRELLO_CARD_COUNT
+ * (which the real ProxyProviderRegistry now resolves to TrelloCardCountProvider — see M2), run one
+ * pass of the nightly proxy-fill step, and verify it degrades gracefully (writes nothing, doesn't
+ * throw) when no Trello credentials are on file for the user — exactly the "one user's bad/missing
+ * Trello setup can't break the nightly batch for everyone else" requirement. The actual successful
+ * fetch-and-write path (real credentials + a fake Trello server) is covered end-to-end by
+ * TrelloCardCountProviderIntegrationTest instead, to keep this file's Testcontainers-only setup as
+ * the lightweight version.
  * A plain KPI (proxyType defaults to NONE) is included alongside it to confirm the step leaves
  * ordinary manual KPIs untouched, matching KPIProxyFillServiceTest's unit-level regression check.
  */
@@ -58,15 +63,17 @@ class KPIProxyIntegrationTest {
     }
 
     @Test
-    void proxyFillPass_writesExactlyOneKPIData_withStubProviderSource_andSkipsManualKPI() throws Exception {
+    void proxyFillPass_noTrelloCredentials_skipsGracefully_andLeavesManualKPIUntouched() throws Exception {
         UserPrincipal alice = auth.register("alice-proxy1@test.com");
 
-        // Wired to the stub TRELLO_CARD_COUNT provider
+        // Wired to TRELLO_CARD_COUNT, but alice has never connected a Trello account —
+        // TrelloCardCountProvider must resolve via the registry and then no-op, not throw.
         mockMvc.perform(post("/api/kpis/create")
                         .with(auth.session(alice)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"Cards","higherIsBetter":true,"habitIds":[],"proxyType":"TRELLO_CARD_COUNT"}
+                                {"name":"Cards","higherIsBetter":true,"habitIds":[],"proxyType":"TRELLO_CARD_COUNT",
+                                 "proxyConfig":{"boardId":"board-1","listId":"list-1"}}
                                 """))
                 .andExpect(status().isOk());
 
@@ -79,15 +86,14 @@ class KPIProxyIntegrationTest {
                                 """))
                 .andExpect(status().isOk());
 
-        // One full nightly-job pass of the new proxy step
+        // One full nightly-job pass of the proxy step — must not throw despite alice having no
+        // Trello credentials on file.
         kpiProxyFillService.fillFromProxies();
 
         mockMvc.perform(get("/api/kpis/Cards/data").param("period", "alltime")
                         .with(auth.session(alice)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].value").value(1.0))
-                .andExpect(jsonPath("$[0].source").value("PROXY_TRELLO"));
+                .andExpect(jsonPath("$.length()").value(0));
 
         mockMvc.perform(get("/api/kpis/Weight/data").param("period", "alltime")
                         .with(auth.session(alice)))

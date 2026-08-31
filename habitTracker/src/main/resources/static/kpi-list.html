@@ -119,6 +119,52 @@
     </div>
   </div>
 
+  <!-- Proxy (Automatic Data Source) Settings Modal -->
+  <div class="modal-overlay" id="proxyModal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title">Automatic Data Source</span>
+        <button class="modal-box__close" onclick="closeProxyModal()">&#x2715;</button>
+      </div>
+      <form id="proxyForm" class="modal-box__fields">
+        <input type="hidden" id="proxyKpiName" name="kpiName">
+        <div class="form-group">
+          <label class="form-group__label" for="proxyTypeInput">Source</label>
+          <select class="input" id="proxyTypeInput" name="proxyType">
+            <option value="NONE">None — log manually</option>
+            <option value="TRELLO_CARD_COUNT">Trello card count</option>
+          </select>
+          <span class="form-group__hint">A nightly job fills in the previous day's value automatically instead of you logging it.</span>
+        </div>
+        <div id="proxyTrelloGroup" style="display:none;">
+          <div class="form-group">
+            <label class="form-group__label" for="proxyBoardIdInput">Board ID</label>
+            <input class="input" type="text" id="proxyBoardIdInput" name="boardId" placeholder="Trello board id">
+          </div>
+          <div class="form-group">
+            <label class="form-group__label" for="proxyListIdInput">"Done" List ID</label>
+            <input class="input" type="text" id="proxyListIdInput" name="listId" placeholder="Trello list id — cards moved here are counted">
+          </div>
+          <div class="form-group">
+            <span class="form-group__hint" id="proxyTrelloStatus">Checking Trello connection…</span>
+          </div>
+          <div class="form-group">
+            <label class="form-group__label" for="proxyApiKeyInput">Trello API Key</label>
+            <input class="input" type="text" id="proxyApiKeyInput" name="apiKey" placeholder="Leave blank to keep existing">
+          </div>
+          <div class="form-group">
+            <label class="form-group__label" for="proxyTokenInput">Trello Token</label>
+            <input class="input" type="password" id="proxyTokenInput" name="token" placeholder="Leave blank to keep existing">
+          </div>
+        </div>
+        <div class="modal-box__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn btn--ghost" onclick="closeProxyModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
   <script src="/js/atoms/toast.js"></script>
@@ -146,6 +192,7 @@
       if (e.target === document.getElementById('addDataModal')) closeModal();
       if (e.target === document.getElementById('autoFillModal')) closeAutoFillModal();
       if (e.target === document.getElementById('manageHabitsModal')) closeManageHabitsModal();
+      if (e.target === document.getElementById('proxyModal')) closeProxyModal();
     });
 
     async function openManageHabitsModal(kpiName, linkedHabitIds) {
@@ -318,6 +365,7 @@
             <button class="btn btn--ghost btn--sm" onclick="viewData('${kpi.name}')">View Charts</button>
             <button class="btn btn--ghost btn--sm" onclick="openAutoFillModal('${kpi.name}', ${!!kpi.autoFillEnabled}, ${kpi.defaultValue != null ? kpi.defaultValue : 'null'})">Auto-Fill</button>
             <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
+            <button class="btn btn--ghost btn--sm" onclick='openProxyModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || {})})'>Data Source</button>
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
           </div>`;
         grid.appendChild(card);
@@ -325,6 +373,77 @@
 
       container.appendChild(grid);
     }
+
+    function openProxyModal(kpiName, proxyType, proxyConfig) {
+      document.getElementById('proxyKpiName').value = kpiName;
+      document.getElementById('proxyTypeInput').value = proxyType || 'NONE';
+      document.getElementById('proxyBoardIdInput').value = (proxyConfig && proxyConfig.boardId) || '';
+      document.getElementById('proxyListIdInput').value = (proxyConfig && proxyConfig.listId) || '';
+      document.getElementById('proxyApiKeyInput').value = '';
+      document.getElementById('proxyTokenInput').value = '';
+      document.getElementById('proxyTrelloGroup').style.display = proxyType === 'TRELLO_CARD_COUNT' ? '' : 'none';
+      document.getElementById('proxyModal').classList.add('open');
+
+      const statusEl = document.getElementById('proxyTrelloStatus');
+      statusEl.textContent = 'Checking Trello connection…';
+      fetch('/api/integrations/trello/credentials', { credentials: 'include' })
+        .then(r => r.json())
+        .then(s => { statusEl.textContent = s.configured ? 'Trello connected — leave key/token blank to keep it.' : 'No Trello account connected yet.'; })
+        .catch(() => { statusEl.textContent = ''; });
+    }
+
+    function closeProxyModal() {
+      document.getElementById('proxyModal').classList.remove('open');
+      document.getElementById('proxyForm').reset();
+    }
+
+    document.getElementById('proxyTypeInput').addEventListener('change', function(e) {
+      document.getElementById('proxyTrelloGroup').style.display = e.target.value === 'TRELLO_CARD_COUNT' ? '' : 'none';
+    });
+
+    document.getElementById('proxyForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const kpiName = document.getElementById('proxyKpiName').value;
+      const proxyType = document.getElementById('proxyTypeInput').value;
+      const boardId = document.getElementById('proxyBoardIdInput').value.trim();
+      const listId = document.getElementById('proxyListIdInput').value.trim();
+      const apiKey = document.getElementById('proxyApiKeyInput').value.trim();
+      const token = document.getElementById('proxyTokenInput').value.trim();
+
+      if (proxyType === 'TRELLO_CARD_COUNT' && !listId) {
+        alert('Enter the Trello "done" list ID, or set Source back to None.');
+        return;
+      }
+
+      if (proxyType === 'TRELLO_CARD_COUNT' && apiKey && token) {
+        const credRes = await fetch('/api/integrations/trello/credentials', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+          body: JSON.stringify({ apiKey, token })
+        });
+        if (!credRes.ok) {
+          alert('Failed to save Trello credentials. Check the API key/token and try again.');
+          return;
+        }
+      }
+
+      const res = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/proxy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+        body: JSON.stringify({
+          proxyType: proxyType,
+          proxyConfig: proxyType === 'TRELLO_CARD_COUNT' ? { boardId, listId } : null
+        })
+      });
+
+      if (res.ok) {
+        closeProxyModal();
+        window.location.reload();
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Failed to save data source settings' }));
+        alert(err.error || 'Failed to save data source settings.');
+      }
+    });
 
     // Override showMessage from kpi-list.js to use our flash
     window.showMessage = (msg, type) => showFlash(msg, type);
