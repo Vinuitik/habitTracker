@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @AllArgsConstructor
@@ -23,4 +24,7 @@ public class KPIDTO {
     private List<Integer> linkedHabitIds; // list of linked habit IDs
     private Boolean autoFillEnabled;
     private Double defaultValue;
+    private ProxyType proxyType;
+    private Map<String, String> proxyConfig;
+    private Double confirmSampleRate;
 }

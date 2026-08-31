@@ -12,13 +12,16 @@ public class UpdateScheduler {
     private final LastRunDateService lastRunDateService;
     private final HabitUpdateService habitUpdateService;
     private final KPIDefaultFillService kpiDefaultFillService;
+    private final KPIProxyFillService kpiProxyFillService;
 
     public UpdateScheduler(LastRunDateService lastRunDateService,
                            HabitUpdateService habitUpdateService,
-                           KPIDefaultFillService kpiDefaultFillService) {
+                           KPIDefaultFillService kpiDefaultFillService,
+                           KPIProxyFillService kpiProxyFillService) {
         this.lastRunDateService = lastRunDateService;
         this.habitUpdateService = habitUpdateService;
         this.kpiDefaultFillService = kpiDefaultFillService;
+        this.kpiProxyFillService = kpiProxyFillService;
     }
 
     @PostConstruct
@@ -43,6 +46,9 @@ public class UpdateScheduler {
             // Single unified pass: rolls each habit's grace window forward, crediting/docking the
             // streak and advancing curDate as occurrences resolve.
             habitUpdateService.updateAllHabits();
+            // Proxy fill runs before default fill so a live proxy value takes precedence over a
+            // KPI's static defaultValue when both happen to be configured on the same KPI.
+            kpiProxyFillService.fillFromProxies();
             kpiDefaultFillService.fillMissingDefaults();
             System.out.println("Updater ran successfully for " + java.time.LocalDate.now());
         } catch (Exception e) {
