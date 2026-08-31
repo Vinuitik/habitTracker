@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Document(collection = "kpis")
 @CompoundIndex(def = "{'name': 1, 'userId': 1}", unique = true)
@@ -42,4 +43,22 @@ public class KPI {
     private Boolean autoFillEnabled;
 
     private Double defaultValue;
+
+    // Opt-in: how this KPI's value is filled in automatically, if at all. NONE (default) means
+    // purely manual entry — zero behavior change for every KPI that existed before M1. The field
+    // initializer plus @Builder.Default cover both "built without specifying it" and "read from a
+    // pre-M1 Mongo doc that predates this field entirely" (Spring Data's converter leaves fields
+    // absent from the source document at whatever the no-arg constructor set them to).
+    @Builder.Default
+    private ProxyType proxyType = ProxyType.NONE;
+
+    // Provider-specific settings, e.g. {"boardId": "...", "listId": "..."} for TRELLO_CARD_COUNT.
+    // Null/empty until a proxyType is configured; each ProxyProvider interprets its own keys.
+    private Map<String, String> proxyConfig;
+
+    // Fraction of resolved proxy values that should be flagged for manual confirmation rather
+    // than trusted outright — not yet wired into any logic in M1 (schema only; the confirmation
+    // flow itself is a later milestone).
+    @Builder.Default
+    private Double confirmSampleRate = 0.2;
 }

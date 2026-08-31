@@ -26,6 +26,16 @@ public class KPIService {
     @Transactional
     public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds,
                              Boolean autoFillEnabled, Double defaultValue) {
+        return createKPI(name, description, higherIsBetter, habitIds, autoFillEnabled, defaultValue,
+                ProxyType.NONE, null, null);
+    }
+
+    // Proxy-aware overload (M1). The 6-arg overload above delegates here with proxyType=NONE so
+    // every pre-M1 call site (and its tests) keeps working unchanged.
+    @Transactional
+    public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds,
+                             Boolean autoFillEnabled, Double defaultValue,
+                             ProxyType proxyType, Map<String, String> proxyConfig, Double confirmSampleRate) {
         String userId = SecurityUtils.getCurrentUserId();
         if (userId != null ? kpiRepository.existsByNameAndUserId(name, userId) : kpiRepository.existsByName(name)) {
             throw new IllegalArgumentException("KPI with name '" + name + "' already exists");
@@ -44,6 +54,9 @@ public class KPIService {
                 .userId(userId)
                 .autoFillEnabled(Boolean.TRUE.equals(autoFillEnabled))
                 .defaultValue(Boolean.TRUE.equals(autoFillEnabled) ? defaultValue : null)
+                .proxyType(proxyType != null ? proxyType : ProxyType.NONE)
+                .proxyConfig(proxyConfig)
+                .confirmSampleRate(confirmSampleRate != null ? confirmSampleRate : 0.2)
                 .build();
 
         KPI savedKPI = kpiRepository.save(kpi);
@@ -94,11 +107,19 @@ public class KPIService {
     // doesn't read SecurityUtils.getCurrentUserId() internally.
     @Transactional
     public void addKPIDataForUser(String userId, String kpiName, LocalDate date, Double value) {
+        addKPIDataForUser(userId, kpiName, date, value, KPIDataSource.MANUAL);
+    }
+
+    // Source-aware variant used by the nightly proxy-fill step (habitTracker.updater.
+    // KPIProxyFillService) to tag a written value with where it actually came from
+    // (PROXY_TRELLO / PROXY_CAPABILITY) instead of always recording MANUAL.
+    @Transactional
+    public void addKPIDataForUser(String userId, String kpiName, LocalDate date, Double value, KPIDataSource source) {
         KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
                 .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
 
-        // A manually-entered value always wins and clears any prior auto-filled flag.
-        saveKPIDataPoint(kpi, date, value, false);
+        // A manually-entered (or proxy-fetched) value always wins and clears any prior auto-filled flag.
+        saveKPIDataPoint(kpi, date, value, false, source != null ? source : KPIDataSource.MANUAL);
     }
 
     /**
@@ -118,7 +139,7 @@ public class KPIService {
         if (dynamicKPIDataRepository.findByDate(date, collectionName).isPresent()) {
             return false; // already has a value (manual or previously auto-filled) — never overwrite
         }
-        saveKPIDataPoint(kpi, date, kpi.getDefaultValue(), true);
+        saveKPIDataPoint(kpi, date, kpi.getDefaultValue(), true, KPIDataSource.AUTOFILL);
         return true;
     }
 
@@ -138,7 +159,22 @@ public class KPIService {
         return convertToDTO(saved);
     }
 
-    private void saveKPIDataPoint(KPI kpi, LocalDate date, Double value, boolean autoFilled) {
+    @Transactional
+    public KPIDTO updateProxySettings(String kpiName, ProxyType proxyType, Map<String, String> proxyConfig,
+                                       Double confirmSampleRate) {
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+
+        kpi.setProxyType(proxyType != null ? proxyType : ProxyType.NONE);
+        kpi.setProxyConfig(proxyConfig);
+        kpi.setConfirmSampleRate(confirmSampleRate != null ? confirmSampleRate : 0.2);
+        kpi.setUpdatedAt(LocalDateTime.now());
+        KPI saved = kpiRepository.save(kpi);
+        return convertToDTO(saved);
+    }
+
+    private void saveKPIDataPoint(KPI kpi, LocalDate date, Double value, boolean autoFilled, KPIDataSource source) {
         String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
 
         Optional<KPIData> existingData = dynamicKPIDataRepository.findByDate(date, collectionName);
@@ -154,6 +190,7 @@ public class KPIService {
                     .build();
         }
         kpiData.setAutoFilled(autoFilled);
+        kpiData.setSource(source != null ? source : KPIDataSource.MANUAL);
 
         Double ema = calculateEMA(collectionName, value);
         kpiData.setExponentialMovingAverage(ema);
@@ -308,6 +345,9 @@ public class KPIService {
                 .linkedHabitIds(habitIds != null ? habitIds : new ArrayList<>())
                 .autoFillEnabled(Boolean.TRUE.equals(kpi.getAutoFillEnabled()))
                 .defaultValue(kpi.getDefaultValue())
+                .proxyType(kpi.getProxyType() != null ? kpi.getProxyType() : ProxyType.NONE)
+                .proxyConfig(kpi.getProxyConfig())
+                .confirmSampleRate(kpi.getConfirmSampleRate() != null ? kpi.getConfirmSampleRate() : 0.2)
                 .build();
     }
     
@@ -344,6 +384,8 @@ public class KPIService {
                 .colorIntensity(colorIntensity)
                 .higherIsBetter(higherIsBetter)
                 .autoFilled(Boolean.TRUE.equals(data.getAutoFilled()))
+                .source(data.getSource() != null ? data.getSource() : KPIDataSource.MANUAL)
+                .pending(Boolean.TRUE.equals(data.getPending()))
                 .build();
     }
 }

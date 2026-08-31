@@ -21,4 +21,6 @@ public class KPIDataDTO {
     private String colorIntensity; // "low", "medium", "high" for color strength
     private Boolean higherIsBetter; // true if higher values are better, false otherwise
     private Boolean autoFilled; // true if synthesized by the default-fill cron rather than entered manually
+    private KPIDataSource source; // MANUAL / AUTOFILL / PROXY_TRELLO / PROXY_CAPABILITY
+    private Boolean pending; // true if written by a proxy provider and still awaiting manual confirmation
 }

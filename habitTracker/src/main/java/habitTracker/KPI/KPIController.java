@@ -48,7 +48,14 @@ public class KPIController {
                     : null;
             Boolean autoFillEnabled = (Boolean) body.get("autoFillEnabled");
             Double defaultValue = body.get("defaultValue") != null ? ((Number) body.get("defaultValue")).doubleValue() : null;
-            kpiService.createKPI(name, description, higherIsBetter, habitIds, autoFillEnabled, defaultValue);
+            ProxyType proxyType = body.get("proxyType") != null
+                    ? ProxyType.valueOf(((String) body.get("proxyType")).trim()) : ProxyType.NONE;
+            @SuppressWarnings("unchecked")
+            Map<String, String> proxyConfig = (Map<String, String>) body.get("proxyConfig");
+            Double confirmSampleRate = body.get("confirmSampleRate") != null
+                    ? ((Number) body.get("confirmSampleRate")).doubleValue() : null;
+            kpiService.createKPI(name, description, higherIsBetter, habitIds, autoFillEnabled, defaultValue,
+                    proxyType, proxyConfig, confirmSampleRate);
             return ResponseEntity.ok(Map.of("message", "KPI created successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -75,6 +82,22 @@ public class KPIController {
             Boolean autoFillEnabled = (Boolean) body.get("autoFillEnabled");
             Double defaultValue = body.get("defaultValue") != null ? ((Number) body.get("defaultValue")).doubleValue() : null;
             KPIDTO updated = kpiService.updateDefaultFillSettings(name, autoFillEnabled, defaultValue);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{name}/proxy")
+    public ResponseEntity<?> updateProxySettings(@PathVariable String name, @RequestBody Map<String, Object> body) {
+        try {
+            ProxyType proxyType = body.get("proxyType") != null
+                    ? ProxyType.valueOf(((String) body.get("proxyType")).trim()) : ProxyType.NONE;
+            @SuppressWarnings("unchecked")
+            Map<String, String> proxyConfig = (Map<String, String>) body.get("proxyConfig");
+            Double confirmSampleRate = body.get("confirmSampleRate") != null
+                    ? ((Number) body.get("confirmSampleRate")).doubleValue() : null;
+            KPIDTO updated = kpiService.updateProxySettings(name, proxyType, proxyConfig, confirmSampleRate);
             return ResponseEntity.ok(updated);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
