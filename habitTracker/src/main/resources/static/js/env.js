@@ -11,6 +11,7 @@ window.ENV = {
     HABIT_INFO:      (id) => `/api/habits/${id}`,
     KPI_LIST:        '/api/kpis',
     KPI_DASHBOARD:   '/api/kpis/dashboard',
+    KPI_BY_HABIT:    (id) => `/api/kpis/habits/${id}`,
     SYNC_OAUTH_URL:  '/api/sync/oauth/url',
     SYNC_DISCONNECT: '/api/sync/disconnect',
     SYNC_STATUS:     '/api/sync/status',

@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
   <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/atoms/input.css">
+  <link rel="stylesheet" href="/styles/molecules/form-group.css">
+  <link rel="stylesheet" href="/styles/molecules/modal.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
   <link rel="stylesheet" href="/styles/pages/dashboard.css">
@@ -46,6 +49,23 @@
   <!-- All-done banner -->
   <div class="all-done-banner" id="all-done-banner">all habits done for today ✦</div>
 
+  <!-- KPI Quick-Log Modal -->
+  <div class="modal-overlay" id="kpiModal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title" id="kpiModalTitle">Log KPIs</span>
+        <button class="modal-box__close" type="button" onclick="closeKpiModal()">&#x2715;</button>
+      </div>
+      <form id="kpiModalForm" class="modal-box__fields">
+        <div id="kpiModalFields"></div>
+        <div class="modal-box__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn btn--ghost" onclick="closeKpiModal()">Skip</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Scripts -->
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
@@ -60,6 +80,49 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <script>
     let allDoneFired = false;
+    let currentDate = null; // the "today" date from the server, used when logging KPI values
+
+    function openKpiModal(habitName, kpis) {
+      document.getElementById('kpiModalTitle').textContent = `Log KPIs — ${habitName}`;
+      document.getElementById('kpiModalFields').innerHTML = kpis.map(k => `
+        <div class="form-group">
+          <label class="form-group__label" for="kpi-${k.name}">${k.name}</label>
+          ${k.description ? `<span class="form-group__hint">${k.description}</span>` : ''}
+          <input class="input" type="number" step="any" id="kpi-${k.name}"
+            data-kpi-name="${k.name}" placeholder="${k.defaultValue != null ? k.defaultValue : 'value'}">
+        </div>`).join('');
+      document.getElementById('kpiModal').classList.add('open');
+    }
+
+    function closeKpiModal() {
+      document.getElementById('kpiModal').classList.remove('open');
+      document.getElementById('kpiModalFields').innerHTML = '';
+    }
+
+    window.addEventListener('click', e => {
+      if (e.target === document.getElementById('kpiModal')) closeKpiModal();
+    });
+
+    document.getElementById('kpiModalForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const inputs = [...document.querySelectorAll('#kpiModalFields input[data-kpi-name]')]
+        .filter(inp => inp.value !== '');
+      await Promise.all(inputs.map(inp =>
+        Outbox.submitKpiValue(inp.dataset.kpiName, currentDate, inp.value)));
+      if (window.Toast && inputs.length) Toast.show('KPIs logged');
+      closeKpiModal();
+    });
+
+    // Fired right after a habit is marked complete. Silently no-ops if the habit has no
+    // linked KPIs (GET /api/kpis/habits/{id}) — most habits won't.
+    async function maybeShowKpiModal(card) {
+      const kpis = await fetch(ENV.ENDPOINTS.KPI_BY_HABIT(card.dataset.id), { credentials: 'include' })
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => []);
+      if (kpis.length === 0) return;
+      const habitName = card.querySelector('.habit-card__name').textContent;
+      openKpiModal(habitName, kpis);
+    }
 
     function checkAllComplete() {
       const cards = document.querySelectorAll('.habit-card');
@@ -197,7 +260,7 @@
         tickStreak(streakEl, base, display, parseInt(streakEl.dataset.freq || '1', 10));
         moveCard(card, nowChecked);
         updateSummary();
-        if (nowChecked) checkAllComplete();
+        if (nowChecked) { checkAllComplete(); maybeShowKpiModal(card); }
         else allDoneFired = false;
       }).catch(() => {
         checkbox.checked = !nowChecked;
@@ -272,6 +335,7 @@
         return;
       }
 
+      currentDate = data.date;
       document.getElementById('today-date').textContent =
         new Date(data.date + 'T00:00:00').toLocaleDateString('en-US',
           { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
