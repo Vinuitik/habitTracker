@@ -91,6 +91,37 @@
           <input class="input" type="number" step="any" id="defaultValue" name="defaultValue" placeholder="e.g. 0">
         </div>
 
+        <div class="form-group">
+          <label class="form-group__label" for="proxyType">Automatic Data Source <span style="color:var(--color-text-muted)">(optional)</span></label>
+          <select class="input" id="proxyType" name="proxyType">
+            <option value="NONE" selected>None — log manually</option>
+            <option value="TRELLO_CARD_COUNT">Trello card count</option>
+          </select>
+          <span class="form-group__hint">A nightly job fills in the previous day's value automatically instead of you logging it.</span>
+        </div>
+
+        <div class="form-group" id="trelloProxyGroup" style="display:none;">
+          <label class="form-group__label">Trello Card Count Settings</label>
+          <div class="form-group" style="margin-top:var(--space-2);">
+            <label class="form-group__label" for="trelloBoardId">Board ID</label>
+            <input class="input" type="text" id="trelloBoardId" name="trelloBoardId" placeholder="Trello board id">
+          </div>
+          <div class="form-group">
+            <label class="form-group__label" for="trelloListId">"Done" List ID</label>
+            <input class="input" type="text" id="trelloListId" name="trelloListId" placeholder="Trello list id — cards moved here are counted">
+            <span class="form-group__hint">Counts cards moved into this list each day.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-group__label" for="trelloApiKey">Trello API Key</label>
+            <input class="input" type="text" id="trelloApiKey" name="trelloApiKey" placeholder="From trello.com/power-ups/admin">
+          </div>
+          <div class="form-group">
+            <label class="form-group__label" for="trelloToken">Trello Token</label>
+            <input class="input" type="password" id="trelloToken" name="trelloToken" placeholder="Your Trello API token">
+            <span class="form-group__hint">Shared across all your Trello-linked KPIs — only needs to be entered once.</span>
+          </div>
+        </div>
+
         <div class="form-card__actions">
           <button type="submit" class="btn btn--primary btn--lg">Create KPI</button>
           <a href="/kpis" class="btn btn--ghost">Cancel</a>
@@ -134,6 +165,10 @@
       document.getElementById('defaultValue').required = e.target.checked;
     });
 
+    document.getElementById('proxyType').addEventListener('change', function(e) {
+      document.getElementById('trelloProxyGroup').style.display = e.target.value === 'TRELLO_CARD_COUNT' ? '' : 'none';
+    });
+
     document.getElementById('kpi-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const dirVal = document.querySelector('input[name="higherIsBetter"]:checked');
@@ -149,13 +184,39 @@
         return;
       }
 
+      const proxyType = document.getElementById('proxyType').value;
+      const trelloBoardId = document.getElementById('trelloBoardId').value.trim();
+      const trelloListId = document.getElementById('trelloListId').value.trim();
+      const trelloApiKey = document.getElementById('trelloApiKey').value.trim();
+      const trelloToken = document.getElementById('trelloToken').value.trim();
+
+      if (proxyType === 'TRELLO_CARD_COUNT') {
+        if (!trelloListId) {
+          alert('Enter the Trello "done" list ID, or set Automatic Data Source back to None.');
+          return;
+        }
+        if (trelloApiKey && trelloToken) {
+          const credRes = await fetch('/api/integrations/trello/credentials', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
+            body: JSON.stringify({ apiKey: trelloApiKey, token: trelloToken })
+          });
+          if (!credRes.ok) {
+            alert('Failed to save Trello credentials. Check the API key/token and try again.');
+            return;
+          }
+        }
+      }
+
       const body = {
         name:            document.getElementById('name').value,
         description:     document.getElementById('description').value,
         higherIsBetter:  dirVal.value === 'true',
         habitIds:        checkedHabits.length > 0 ? checkedHabits : null,
         autoFillEnabled: autoFillEnabled,
-        defaultValue:    autoFillEnabled ? parseFloat(defaultValueRaw) : null
+        defaultValue:    autoFillEnabled ? parseFloat(defaultValueRaw) : null,
+        proxyType:       proxyType,
+        proxyConfig:     proxyType === 'TRELLO_CARD_COUNT' ? { boardId: trelloBoardId, listId: trelloListId } : null
       };
 
       const res = await fetch('/api/kpis/create', {
