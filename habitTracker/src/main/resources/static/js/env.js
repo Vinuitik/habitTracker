@@ -15,6 +15,7 @@ window.ENV = {
     SYNC_OAUTH_URL:  '/api/sync/oauth/url',
     SYNC_DISCONNECT: '/api/sync/disconnect',
     SYNC_STATUS:     '/api/sync/status',
+    SYNC_PAIR_GENERATE: '/api/sync/generate-pairing-code',
   },
   ROUTES: {
     HOME:            '/today',

@@ -55,6 +55,18 @@
     </div>
 
     <div id="pending-meta" class="sync-meta"></div>
+
+    <div class="card" id="pair-card" style="display:none;">
+      <div class="card__title">Pair a device</div>
+      <div class="card__body">
+        <p>
+          Run the companion script on another device (see <code>tools/companion/README.md</code>)
+          and enter the code it asks for. The code is one-time use and expires in 10 minutes.
+        </p>
+        <button id="pair-btn" class="btn btn--ghost" onclick="generatePairingCode()">Generate pairing code</button>
+        <div id="pair-code" class="sync-meta" style="display:none;"></div>
+      </div>
+    </div>
   </main>
 
   <script src="/js/env.js"></script>
@@ -78,6 +90,22 @@
       el.innerHTML = `<span class="sync-status__dot"></span>${connected ? 'Connected' : 'Not connected'}`;
       document.getElementById('connect-btn').style.display = connected ? 'none' : '';
       document.getElementById('disconnect-btn').style.display = connected ? '' : 'none';
+      document.getElementById('pair-card').style.display = connected ? '' : 'none';
+    }
+
+    async function generatePairingCode() {
+      const resp = await fetch(ENV.ENDPOINTS.SYNC_PAIR_GENERATE, {
+        method: 'POST',
+        headers: { 'X-XSRF-TOKEN': csrf() },
+      });
+      const data = await resp.json();
+      const el = document.getElementById('pair-code');
+      if (data.code) {
+        el.textContent = `Code: ${data.code} (expires in 10 minutes)`;
+      } else {
+        el.textContent = data.error || 'Could not generate a code.';
+      }
+      el.style.display = '';
     }
 
     function showBanner(kind) {
