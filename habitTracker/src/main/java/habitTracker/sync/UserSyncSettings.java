@@ -28,4 +28,10 @@ public class UserSyncSettings {
     private String mailboxFolderId;    // "_mailbox_requests" subfolder id
     private String encryptionKey;      // base64, random 256-bit AES key generated at connect time
     private String accountEmail;       // shown in the Connect Drive UI once connected
+
+    // "_capability_deploy" subfolder id (M6) — the REVERSE-direction sibling of mailboxFolderId:
+    // server writes here, a paired companion polls it. Unlike mailboxFolderId (created eagerly at
+    // connect time), this is created lazily on the first CapabilityDeployService.deployCapability()
+    // call, since most users will never have a capability deployed to them in this milestone.
+    private String capabilityDeployFolderId;
 }

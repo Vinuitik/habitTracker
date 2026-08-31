@@ -124,10 +124,16 @@ public class SyncController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "Drive is no longer connected"));
         }
         UserSyncSettings settings = settingsOpt.get();
-        return ResponseEntity.ok(Map.of(
-                "mailboxFolderId", settings.getMailboxFolderId(),
-                "encryptionKey", settings.getEncryptionKey()
-        ));
+        // capabilityDeployFolderId (M6) is included whenever it's already set — it's created
+        // lazily by CapabilityDeployService.deployCapability() on first use, not here, so a user
+        // who's never had a capability deployed to them simply gets null. This is a pure read of
+        // whatever's already on the settings row: no Drive call happens on this path, keeping
+        // /pair's existing (tested) behavior/latency unchanged for the M5 case.
+        Map<String, Object> responseBody = new java.util.HashMap<>();
+        responseBody.put("mailboxFolderId", settings.getMailboxFolderId());
+        responseBody.put("encryptionKey", settings.getEncryptionKey());
+        responseBody.put("capabilityDeployFolderId", settings.getCapabilityDeployFolderId());
+        return ResponseEntity.ok(responseBody);
     }
 
     private String origin(jakarta.servlet.http.HttpServletRequest request) {

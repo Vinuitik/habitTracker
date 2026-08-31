@@ -1,6 +1,6 @@
 # Offline Drive-Sync Flows
 
-Files: `UserSyncSettings.java`, `UserSyncSettingsRepository.java`, `ConsumedSyncRequest.java`, `ConsumedSyncRequestRepository.java`, `VaultEncryptionService.java`, `DriveService.java`, `DriveOAuthService.java`, `MailboxConsumeService.java`, `SyncController.java`, `PairingCodeService.java`
+Files: `UserSyncSettings.java`, `UserSyncSettingsRepository.java`, `ConsumedSyncRequest.java`, `ConsumedSyncRequestRepository.java`, `VaultEncryptionService.java`, `DriveService.java`, `DriveOAuthService.java`, `MailboxConsumeService.java`, `SyncController.java`, `PairingCodeService.java`, `CapabilityDeployService.java`
 
 ## Why this exists
 
@@ -142,6 +142,61 @@ To change the pairing code TTL/format: `PairingCodeService` (`DEFAULT_TTL_MS`, `
 verification steps (a real device pairing can't be exercised in this repo's test environment —
 there are no real Google OAuth credentials here).
 
+## Capability deploy (M6 — server -> device delivery channel, reverse of the mailbox)
+
+Scaffolding only: capabilities aren't executable things yet (that's M8/M9). This milestone only
+builds the pipe a future generation step will write into and a future execution step will read
+from — nothing in this codebase calls `CapabilityDeployService.deployCapability()` yet.
+
+```
+CapabilityDeployService.deployCapability(userId, capabilityId, version, sourceCode):
+  UserSyncSettingsRepository.findByUserId(userId) → must already have Drive connected (M5's
+    "Connect Google Drive" flow), else IllegalStateException
+  DriveService.getAccessToken(refreshToken) → this user's own access token
+  ensureFolder(): settings.capabilityDeployFolderId ?: DriveService.findOrCreateFolder(
+      "_capability_deploy", parent=settings.driveFolderId) → cached onto UserSyncSettings,
+      created lazily (NOT at connect time like mailboxFolderId — most users never get a
+      capability deployed to them in this milestone)
+  CapabilityPayload{capabilityId, version, sourceCode} → JSON → VaultEncryptionService.encrypt()
+    (same per-user AES-256 key as the inbound mailbox — reused, no new crypto)
+  DriveService.uploadFile(folder, "<capabilityId>-v<version>-<uuid>.enc", wire)
+```
+
+A paired companion (`tools/companion/pair.py poll-capabilities`) learns the folder id from
+`POST /api/sync/pair`'s response (`capabilityDeployFolderId`, alongside `mailboxFolderId` — null
+until this account's first deploy, since the folder is created lazily). It then:
+
+```
+pair.poll_capability_deploy(access_token, folder_id, encryption_key):
+  list_drive_files(folder_id) → every file in "_capability_deploy" (Drive REST list, mirrors
+    DriveService.listFiles())
+  for each file:
+    download_drive_file → decrypt_wire (same [12B IV][ciphertext+tag] format, generic — not
+      mailbox-specific) → json payload {capabilityId, version, sourceCode}
+    evaluate_capability_version(cached_version, payload) → "accept" | "skip" | "reject"
+      accept: first-seen, or version > cached      → cache[capabilityId] = {version, sourceCode, updatedAt}
+      skip:   version == cached (already current)  → no-op, not an error
+      reject: version < cached (refuse a downgrade), or payload malformed (missing/wrong-typed
+              capabilityId/version/sourceCode)      → no-op, logged
+  save capabilities.json
+```
+
+**version is a plain monotonically-increasing integer** (1, 2, 3, ...), not semver — simplest
+possible "strictly newer" comparison on both sides, and there's no cross-capability version-format
+need yet. Revisit if capabilities ever need coordinated multi-part version numbers.
+
+**No cleanup/janitor on this channel, unlike the inbound mailbox**: `MailboxConsumeService`
+deletes a file once every request in it is applied; nothing here ever deletes a
+`_capability_deploy` file — `poll_capability_deploy()` re-lists (and re-downloads/re-decrypts)
+every historical file on every poll, forever. Fine at this milestone's scale (a handful of files
+per user), but if capability deploys become frequent this needs either a delete-after-cache-update
+step (companion-side, since it holds the only access token that can act here) or a
+`version >= N-1` server-side retention policy — not implemented, flagged for revisit.
+
+To change the folder name: `CapabilityDeployService.CAPABILITY_DEPLOY_FOLDER_NAME`. To change the
+local cache file/format: `tools/companion/pair.py` `CAPABILITIES_CACHE_FILE` (JSON,
+`{capabilityId: {version, sourceCode, updatedAt}}`).
+
 ## Endpoints (`SyncController`, `/api/sync/**`, session-authed unless noted)
 
 | Method | Path | Description |
@@ -151,7 +206,7 @@ there are no real Google OAuth credentials here).
 | `POST` | `/disconnect` | Deletes this user's `UserSyncSettings` row |
 | `GET` | `/status` | `{connected, driveAccessToken, driveAccessTokenExpiresAt, mailboxFolderId, encryptionKey}` — mints a fresh bridge token on every call |
 | `POST` | `/generate-pairing-code` | `{code, expiresInSeconds}` — 409 if Drive isn't connected yet |
-| `POST` | `/pair` | **Unauthenticated.** `{code}` → `{mailboxFolderId, encryptionKey}`, or 400 if invalid/expired/already used |
+| `POST` | `/pair` | **Unauthenticated.** `{code}` → `{mailboxFolderId, encryptionKey, capabilityDeployFolderId}` (last one null until this account's first capability deploy), or 400 if invalid/expired/already used |
 
 `GET /api/ping` (`habitTracker.PingController`, top-level, unauthenticated) is the cheap
 reachability probe `static/js/offline/connectivity.js` uses to distinguish "server down" from
@@ -200,3 +255,6 @@ reachability probe `static/js/offline/connectivity.js` uses to distinguish "serv
 | Pairing code TTL / format | `PairingCodeService.DEFAULT_TTL_MS` / `CODE_CHARS` / `CODE_LENGTH` |
 | Pairing endpoint auth/CSRF exemption | `SecurityConfig.webFilterChain()` — `/api/sync/pair` in both `permitAll()` and `ignoringRequestMatchers()` |
 | Companion script | `tools/companion/pair.py` (+ `README.md` for manual verification) |
+| Capability-deploy folder name | `CapabilityDeployService.CAPABILITY_DEPLOY_FOLDER_NAME` |
+| Capability version scheme (int, "strictly newer" rule) | `CapabilityDeployService.deployCapability()` (server) / `pair.evaluate_capability_version()` (companion) |
+| Companion capability-deploy polling + local cache | `tools/companion/pair.py` `poll_capability_deploy()` / `CAPABILITIES_CACHE_FILE` |
