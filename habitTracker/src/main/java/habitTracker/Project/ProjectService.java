@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 // Every method resolves userId from SecurityUtils; by-id access goes through findByIdAndUserId
 // so another user's id is indistinguishable from a missing one (404, no IDOR).
@@ -66,6 +67,23 @@ public class ProjectService {
         // Board first: if Trello fails the project stays and the user can retry (needs a new token).
         if (p.getTrelloBoardId() != null) boardGateway.deleteBoard(p.getTrelloBoardId());
         repository.deleteById(p.getId());
+    }
+
+    public Map<String, Object> plan(String id, String description) {
+        Project p = owned(id);
+        if (description == null || description.isBlank()) throw new IllegalArgumentException("description is required");
+        return boardGateway.plan(boardOf(p), description);
+    }
+
+    public Map<String, Object> apply(String id, Map<String, Object> body) {
+        return boardGateway.apply(boardOf(owned(id)), body);
+    }
+
+    private String boardOf(Project p) {
+        if (p.getTrelloBoardId() == null || p.getTrelloBoardId().isBlank()) {
+            throw new IllegalArgumentException("project has no Trello board");
+        }
+        return p.getTrelloBoardId();
     }
 
     private Project owned(String id) {
