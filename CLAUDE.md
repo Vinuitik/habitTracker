@@ -66,7 +66,7 @@ cloudflared/config.yml Tunnel ingress rules (habittrackerdima.me)
 |---------|-----------|--------------|
 | mongodbHabit | 512m | wiredTigerCacheSizeGB 0.25 |
 | javaapp | 384m | -Xmx256m -Xms64m |
-| mongo-backup | 128m | — |
+| mongo-backup | 768m | — (Node + Claude CLI subprocess) |
 | caddy | 64m | — |
 | cloudflared | 64m | — |
 

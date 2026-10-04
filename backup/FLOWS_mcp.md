@@ -74,6 +74,46 @@ If `mcp_server.py` exits, the container stops (PID 1 via `exec`).
 
 ---
 
+## Internal API (port 8092, for javaapp)
+
+Files: `internal_api.py`, `claude_cli.py`, `tests/test_internal_api.py`
+
+```
+javaapp ──X-Internal-Token──► mongo-backup:8092 (FastAPI, thread in mcp_server.py process)
+  POST   /internal/boards {name}                 → Trello POST /boards            → {boardId}
+  DELETE /internal/boards/{id}                   → Trello DELETE /boards/{id}     (HARD delete)
+  POST   /internal/agent/plan {boardId,description}
+         → _board_name() → claude_cli.run_plan() → `claude -p` → MCP localhost:8091/mcp
+           (get_state → describe_graph → create_cards → propose_schedule)         → {cards, proposal}
+  POST   /internal/agent/apply {boardId,deadline?,pace?} → tools_planning.apply_schedule()
+```
+
+Not in `caddy/Caddyfile`, no published port. Boards are addressed by id at the API but the MCP tools
+resolve boards by name, so `_board_name()` looks the name up first. `plan` never applies: the CLI's
+allowed tools (`claude_cli.ALLOWED_TOOLS`) exclude `apply_schedule`; only `/agent/apply` moves cards.
+Errors: 401 bad token, 409 plan already running, 404 board missing, 502 CLI/Trello failure, 504 CLI timeout.
+The model is told to answer with one JSON object `{cards, proposal}`; `claude_cli.parse_result()` extracts it.
+Delete is the one intentional hard delete (everything else archives); confirmation is the caller's job.
+Empty boards are created with no default lists/labels: `Completed`/`Delayed`, `done`/`parked`, `_meta/STATE`
+are created lazily by the tools.
+
+### Technology Notes
+- **Credentials mount**: `${CLAUDE_HOME:-~/.claude}` is mounted read-write at `/root/.claude` (CLI refreshes tokens).
+  Anyone with container access holds the user's subscription login, and a bug in the CLI can corrupt the host dir.
+  Compose may not expand `~` inside the default — set `CLAUDE_HOME` to an absolute path if the mount is empty.
+  `~/.claude.json` (outside that dir) is not mounted; `-p` works without it but first-run state is not kept.
+- **CLI auth expiry**: if the refresh token dies, `claude -p` exits non-zero → 502 with stderr tail. Fix: re-login on the host.
+- **Memory**: Node + CLI subprocess is why mongo-backup is 768m (was 128m). Single-flight caps it at one CLI.
+- **Single-flight**: `internal_api._plan_lock` is an in-process `asyncio.Lock`; concurrent plans get 409 (not queued).
+  Lost on restart; fine because there is one process. `/agent/apply` is not locked.
+- **Timeout/turns**: `CLAUDE_TIMEOUT_S` (300) kills the subprocess; `CLAUDE_MAX_TURNS` (25). A timed-out plan may have
+  already created some cards (create_cards is not rolled back).
+- **Auth**: shared secret header compared with `hmac.compare_digest`; plain HTTP inside the docker network. `INTERNAL_API_TOKEN`
+  unset → `start_in_thread()` raises and the container exits. Uvicorn runs in a daemon thread: if it dies, MCP keeps running.
+- **Name resolution**: two boards with the same slugged name resolve to the first match.
+
+---
+
 ## The planning model
 
 The board is a planning system, not just a card store. Four rules carry it:
@@ -457,3 +497,10 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Route prefix / auth | — | `caddy/Caddyfile` `handle /mcp*` + `MCP_TOKEN` | no prefix strip |
 | Cron interval / board / logic | `mcp_server.py` | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()`, `_cron_archive_empty_day_lists()` | 1h, two sweeps |
 | Trello credentials | `config.py` | `TRELLO_API_KEY`, `TRELLO_TOKEN` env | single-tenant |
+| Internal API routes/port | `internal_api.py` | `app`, `PORT` (8092), `start_in_thread()` | docker network only |
+| Internal API secret | `internal_api.py` | `INTERNAL_API_TOKEN` env, `_auth_dep()`, `require_token_configured()` | compose → javaapp + mongo-backup |
+| Board create/hard-delete | `internal_api.py` | `create_board()`, `delete_board()` | only hard delete in the system |
+| Plan single-flight | `internal_api.py` | `_plan_lock` | 409 on concurrent |
+| Claude CLI invocation | `claude_cli.py` | `build_cmd()`, `ALLOWED_TOOLS`, `build_prompt()`, `parse_result()` | tools allowlist excludes apply_schedule |
+| CLI limits | `claude_cli.py` | `CLAUDE_TIMEOUT_S`, `CLAUDE_MAX_TURNS`, `CLAUDE_BIN`, `CLAUDE_MCP_URL` env | 300s / 25 |
+| CLI credentials mount | `docker-compose.yml` | `CLAUDE_HOME` env → `/root/.claude` | rw |
