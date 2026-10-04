@@ -18,12 +18,11 @@ import org.springframework.web.client.RestTemplate;
 import java.util.Map;
 
 // Hand-rolled RestTemplate client for mongo-backup's internal API (javaapp is memory-capped; no
-// heavy client libs). Auth: X-Internal-Token. No retries.
+// heavy client libs). No auth (docker network only). No retries.
 @Component
 @Profile("!stub")
 public class HttpTrelloBoardGateway implements TrelloBoardGateway {
 
-    static final String TOKEN_HEADER = "X-Internal-Token";
     private static final int CONNECT_MS = 5_000;
     private static final int READ_MS = 30_000;
     private static final int PLAN_READ_MS = 6 * 60_000;
@@ -34,21 +33,15 @@ public class HttpTrelloBoardGateway implements TrelloBoardGateway {
     private final RestTemplate shortClient;
     private final RestTemplate planClient;
     private final String baseUrl;
-    private final String token;
 
     @Autowired
-    public HttpTrelloBoardGateway(@Value("${trello.internal.base-url:http://mongo-backup:8092}") String baseUrl,
-                                  @Value("${trello.internal.token:}") String token) {
-        this(baseUrl, token, client(READ_MS), client(PLAN_READ_MS));
+    public HttpTrelloBoardGateway(@Value("${trello.internal.base-url:http://mongo-backup:8092}") String baseUrl) {
+        this(baseUrl, client(READ_MS), client(PLAN_READ_MS));
     }
 
     // Test constructor: inject (possibly the same) RestTemplate for MockRestServiceServer.
-    HttpTrelloBoardGateway(String baseUrl, String token, RestTemplate shortClient, RestTemplate planClient) {
-        if (token == null || token.isBlank()) {
-            throw new IllegalStateException("trello.internal.token (env INTERNAL_API_TOKEN) must be set");
-        }
+    HttpTrelloBoardGateway(String baseUrl, RestTemplate shortClient, RestTemplate planClient) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        this.token = token;
         this.shortClient = shortClient;
         this.planClient = planClient;
     }
@@ -100,7 +93,6 @@ public class HttpTrelloBoardGateway implements TrelloBoardGateway {
 
     private Map<String, Object> call(RestTemplate rt, HttpMethod method, String path, Object body) {
         HttpHeaders h = new HttpHeaders();
-        h.set(TOKEN_HEADER, token);
         if (body != null) h.setContentType(MediaType.APPLICATION_JSON);
         try {
             return rt.exchange(baseUrl + path, method, new HttpEntity<>(body, h), MAP).getBody();

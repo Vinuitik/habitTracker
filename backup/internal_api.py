@@ -1,16 +1,13 @@
 """Internal HTTP API (port 8092) so the Java app can call Trello functions directly.
 
 Same process as the FastMCP server (started from mcp_server.py in a thread). Not in the Caddyfile and
-no published port: reachable only as mongo-backup:8092 on the docker network. Every request needs the
-shared secret header `X-Internal-Token` == env INTERNAL_API_TOKEN. Reuses the MCP tool functions
-directly — no logic is duplicated here.
+no published port: reachable only as mongo-backup:8092 on the docker network. No auth — network
+isolation is the only gate. Reuses the MCP tool functions directly — no logic is duplicated here.
 """
 import asyncio
-import hmac
-import os
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 import claude_cli
@@ -20,19 +17,6 @@ from trello_mcp.tools_planning import apply_schedule
 
 PORT = 8092
 _plan_lock = asyncio.Lock()  # single-flight: one `claude -p` at a time
-
-
-def require_token_configured() -> str:
-    token = os.getenv("INTERNAL_API_TOKEN", "")
-    if not token:
-        raise RuntimeError("INTERNAL_API_TOKEN is required (internal API refuses to start without it)")
-    return token
-
-
-async def _auth_dep(x_internal_token: str | None = Header(default=None)) -> None:
-    expected = os.getenv("INTERNAL_API_TOKEN", "")
-    if not expected or not x_internal_token or not hmac.compare_digest(x_internal_token, expected):
-        raise HTTPException(401, "invalid or missing X-Internal-Token")
 
 
 class BoardIn(BaseModel):
@@ -50,7 +34,7 @@ class ApplyIn(BaseModel):
     pace: float = DEFAULT_PACE
 
 
-app = FastAPI(title="HabitTracker internal API", dependencies=[Depends(_auth_dep)])
+app = FastAPI(title="HabitTracker internal API")
 
 
 async def _board_name(board_id: str) -> str:
@@ -109,7 +93,6 @@ async def agent_apply(body: ApplyIn) -> dict:
 
 def start_in_thread() -> None:
     """Fail fast on missing token, then serve on 0.0.0.0:8092 in a daemon thread."""
-    require_token_configured()
     import threading
     import uvicorn
     server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info"))

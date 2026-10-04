@@ -10,12 +10,11 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("TRELLO_API_KEY", "test-key")
 os.environ.setdefault("TRELLO_TOKEN", "test-token")
-os.environ["INTERNAL_API_TOKEN"] = "secret"
 
 import claude_cli
 import internal_api
 
-H = {"X-Internal-Token": "secret"}
+H = {}
 
 
 @pytest.fixture
@@ -36,20 +35,6 @@ def http_ctx(client_mock):
     ctx.__aenter__ = AsyncMock(return_value=client_mock)
     ctx.__aexit__ = AsyncMock(return_value=False)
     return ctx
-
-
-# ── auth ─────────────────────────────────────────────────────────────────────
-
-def test_missing_or_wrong_token_is_401(client):
-    assert client.post("/internal/boards", json={"name": "x"}).status_code == 401
-    assert client.post("/internal/boards", json={"name": "x"},
-                       headers={"X-Internal-Token": "nope"}).status_code == 401
-
-
-def test_token_required_at_startup(monkeypatch):
-    monkeypatch.delenv("INTERNAL_API_TOKEN")
-    with pytest.raises(RuntimeError):
-        internal_api.require_token_configured()
 
 
 # ── boards ───────────────────────────────────────────────────────────────────

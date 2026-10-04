@@ -16,7 +16,7 @@ Cloudflare edge → cloudflared (tunnel) → Caddy:80 → javaapp:8089
 | Caddy → javaapp | `caddy/Caddyfile` | Reverse proxy to `javaapp:8089`; auto-TLS from Let's Encrypt |
 | Caddy → mongo-backup (MCP) | `caddy/Caddyfile` `handle_path /mcp/*` | Strips `/mcp` prefix; proxies to `mongo-backup:8091` |
 | javaapp | Spring Boot | Listens on `8089`; no public port exposed |
-| mongo-backup internal API | FastAPI/uvicorn | `8092`, docker network only (not in Caddyfile); `X-Internal-Token` = `INTERNAL_API_TOKEN`; javaapp → `mongo-backup:8092` — see `backup/FLOWS_mcp.md` |
+| mongo-backup internal API | FastAPI/uvicorn | `8092`, docker network only (not in Caddyfile), **no auth**; javaapp → `mongo-backup:8092` — see `backup/FLOWS_mcp.md` |
 | mongo-backup MCP | FastMCP SSE | Listens on `8091`; no public port exposed — see `backup/FLOWS_mcp.md` |
 
 To change the public domain: `cloudflared/config.yml` + `caddy/Caddyfile` (both reference the hostname).
@@ -59,7 +59,6 @@ To change cron time: `UpdateScheduler.scheduledUpdate()` in source + rebuild `ja
 | `jwt.expiration-ms` | JWT token lifetime | `application.properties` or `.env` |
 | `MONGO_USER` / `MONGO_PASS` / `MONGO_DB` | All MongoDB connections | `.env` → `javaapp` + `mongo-backup` |
 | Cloudflare tunnel token | `cloudflared` auth | `.env` → `cloudflared` |
-| `INTERNAL_API_TOKEN` | Shared secret for mongo-backup internal API; required (compose `:?`), mongo-backup exits without it | `.env` → `javaapp` + `mongo-backup` |
 | `CLAUDE_HOME` | Host dir with Claude CLI login, mounted rw at `/root/.claude` in mongo-backup (default `~/.claude`) | `.env` → compose volume |
 | `habitbackup.json` | Google Drive backup | File mounted into `mongo-backup` container |
 

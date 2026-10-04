@@ -79,7 +79,7 @@ If `mcp_server.py` exits, the container stops (PID 1 via `exec`).
 Files: `internal_api.py`, `claude_cli.py`, `tests/test_internal_api.py`
 
 ```
-javaapp ──X-Internal-Token──► mongo-backup:8092 (FastAPI, thread in mcp_server.py process)
+javaapp ──(no auth)──► mongo-backup:8092 (FastAPI, thread in mcp_server.py process)
   POST   /internal/boards {name}                 → Trello POST /boards            → {boardId}
   DELETE /internal/boards/{id}                   → Trello DELETE /boards/{id}     (HARD delete)
   POST   /internal/agent/plan {boardId,description}
@@ -108,8 +108,7 @@ are created lazily by the tools.
   Lost on restart; fine because there is one process. `/agent/apply` is not locked.
 - **Timeout/turns**: `CLAUDE_TIMEOUT_S` (300) kills the subprocess; `CLAUDE_MAX_TURNS` (25). A timed-out plan may have
   already created some cards (create_cards is not rolled back).
-- **Auth**: shared secret header compared with `hmac.compare_digest`; plain HTTP inside the docker network. `INTERNAL_API_TOKEN`
-  unset → `start_in_thread()` raises and the container exits. Uvicorn runs in a daemon thread: if it dies, MCP keeps running.
+- **Auth**: none, by choice — network isolation only (not in Caddyfile, no published port); plain HTTP inside the docker network. Any container on that network can create/delete boards. Uvicorn runs in a daemon thread: if it dies, MCP keeps running.
 - **Name resolution**: two boards with the same slugged name resolve to the first match.
 
 ---
@@ -498,7 +497,6 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Cron interval / board / logic | `mcp_server.py` | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()`, `_cron_archive_empty_day_lists()` | 1h, two sweeps |
 | Trello credentials | `config.py` | `TRELLO_API_KEY`, `TRELLO_TOKEN` env | single-tenant |
 | Internal API routes/port | `internal_api.py` | `app`, `PORT` (8092), `start_in_thread()` | docker network only |
-| Internal API secret | `internal_api.py` | `INTERNAL_API_TOKEN` env, `_auth_dep()`, `require_token_configured()` | compose → javaapp + mongo-backup |
 | Board create/hard-delete | `internal_api.py` | `create_board()`, `delete_board()` | only hard delete in the system |
 | Plan single-flight | `internal_api.py` | `_plan_lock` | 409 on concurrent |
 | Claude CLI invocation | `claude_cli.py` | `build_cmd()`, `ALLOWED_TOOLS`, `build_prompt()`, `parse_result()` | tools allowlist excludes apply_schedule |

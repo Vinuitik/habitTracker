@@ -33,8 +33,6 @@ services:
       # purpose. Optional: a user simply can't connect Drive if this is unset.
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-disabled}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-disabled}
-      # Shared secret for mongo-backup's internal API (HttpTrelloBoardGateway)
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN must be set (see .env / .env.example)}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089"]
       interval: 5s
@@ -70,8 +68,6 @@ services:
       TRELLO_TOKEN: ${TRELLO_TOKEN:-}
       TRELLO_CRON_BOARD_ID: ${TRELLO_CRON_BOARD_ID:-}
       TRELLO_CRON_BOARD_NAME: ${TRELLO_CRON_BOARD_NAME:-}
-      # Internal API on :8092 (docker network only). Required: the container exits without it.
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
     volumes:
       # Claude CLI subscription login. Read-write: the CLI refreshes tokens in place.
       - ${CLAUDE_HOME:-~/.claude}:/root/.claude

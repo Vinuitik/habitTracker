@@ -22,18 +22,12 @@ class HttpTrelloBoardGatewayTest {
     @BeforeEach
     void setup() {
         server = MockRestServiceServer.createServer(rt);
-        gw = new HttpTrelloBoardGateway("http://mb:8092/", "tok", rt, rt);
+        gw = new HttpTrelloBoardGateway("http://mb:8092/", rt, rt);
     }
 
     @Test
-    void blankTokenFailsFast() {
-        assertThrows(IllegalStateException.class, () -> new HttpTrelloBoardGateway("http://x", " ", rt, rt));
-    }
-
-    @Test
-    void createBoardSendsTokenAndReturnsId() {
+    void createBoardReturnsId() {
         server.expect(requestTo("http://mb:8092/internal/boards")).andExpect(method(HttpMethod.POST))
-                .andExpect(header("X-Internal-Token", "tok"))
                 .andExpect(jsonPath("$.name").value("P"))
                 .andRespond(withSuccess("{\"boardId\":\"b1\"}", MediaType.APPLICATION_JSON));
         assertEquals("b1", gw.createBoard("P"));
@@ -43,7 +37,7 @@ class HttpTrelloBoardGatewayTest {
     @Test
     void deleteBoard() {
         server.expect(requestTo("http://mb:8092/internal/boards/b1")).andExpect(method(HttpMethod.DELETE))
-                .andExpect(header("X-Internal-Token", "tok")).andRespond(withSuccess());
+                .andRespond(withSuccess());
         gw.deleteBoard("b1");
         server.verify();
     }

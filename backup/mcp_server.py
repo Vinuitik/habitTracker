@@ -159,6 +159,6 @@ def _cron_loop() -> None:
 
 if __name__ == "__main__":
     import internal_api
-    internal_api.start_in_thread()  # raises if INTERNAL_API_TOKEN unset -> container exits
+    internal_api.start_in_thread()
     threading.Thread(target=_cron_loop, daemon=True).start()
     mcp.run(transport="streamable-http", host="0.0.0.0", port=8091)
