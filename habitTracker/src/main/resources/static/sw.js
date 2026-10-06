@@ -66,13 +66,15 @@ self.addEventListener('install', (event) => {
   // build's hashed assets hadn't finished propagating behind the tunnel (a Cloudflare 530 mid-deploy).
   event.waitUntil(
     caches.open(SHELL_CACHE).then((cache) =>
-      Promise.all([...SHELL_URLS, ...PAGE_ROUTES].map((url) => cache.add(url).catch(() => {})))
+      Promise.all([...SHELL_URLS, ...PAGE_ROUTES].map((url) =>
+        fetch(url).then((res) => { if (res.ok && !res.redirected) return cache.put(url, res); }).catch(() => {})))
     )
   );
 });
 
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data === 'PRECACHE_PAGES') event.waitUntil(precacheMissingPages());
 });
 
 self.addEventListener('activate', (event) => {
@@ -100,13 +102,28 @@ async function handleNavigate(request) {
       fetch(request),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000)),
     ]);
-    if (response && response.ok) return response;
+    // Navigations use redirect:'manual', so a server redirect (e.g. expired session → /login)
+    // arrives as an opaqueredirect with ok=false. That is the server ANSWERING, not being down —
+    // hand it to the browser untouched instead of masking it with a cached page.
+    if (response && response.type === 'opaqueredirect') return response;
+    if (response && response.ok) {
+      // Cache invalidation: every good online visit replaces that page's cached copy, so the
+      // offline shell tracks the latest deploy and self-heals from a bad precache entry.
+      // Never store a `redirected` response — Chrome refuses to render one for a navigation.
+      if (!response.redirected) {
+        const path = new URL(request.url).pathname;
+        const copy = response.clone();
+        caches.open(SHELL_CACHE).then((c) => c.put(path, copy)).catch(() => {});
+      }
+      return response;
+    }
     throw new Error('non-ok response');
   } catch (e) {
     const cache = await caches.open(SHELL_CACHE);
     const cached = await cache.match(request) || await cache.match(new URL(request.url).pathname)
       || await cache.match('/today');
-    if (cached) return cached;
+    // Chrome rejects a `redirected` response for a navigation (ERR_FAILED) — never serve one.
+    if (cached && !cached.redirected) return cached;
     throw e;
   }
 }

@@ -139,6 +139,15 @@ habittracker-offline (v1)
   a new `@GetMapping` in `PageController.java` with no path variable, add its route to
   `PAGE_ROUTES` in `sw.js` in the same commit (routes with `{id}` still fall back to Today, same
   as before — precaching per-id content isn't worth it here).
+- **Page cache invalidation + the ERR_FAILED trap**: Chrome refuses to render a `redirected`
+  response for a navigation (ERR_FAILED, only in the installed PWA). A precache `fetch` while
+  logged out follows `/today → /login` and would store exactly that. So: precache stores only
+  `ok && !redirected`; `handleNavigate()` overwrites that page's cache entry on every good online
+  visit (self-healing, tracks latest deploy); never serves a `redirected` cache hit; and a live
+  `opaqueredirect` (server up, session expired) is passed to the browser, not masked by the cache.
+  Proactive fill: install precache can come up empty while logged out, so `topbar.js checkAuth()`
+  posts `PRECACHE_PAGES` to the SW once `/api/auth/me` is OK → `sw.js precacheMissingPages()` fetches
+  every `PAGE_ROUTES` entry not yet cached (To change: `precacheMissingPages()`).
 - **Update flow (click-gated, not automatic)**: `sw.js` does NOT call `skipWaiting()` on install —
   a new worker installs, then WAITS. Only `window.applyUpdate()` (`registerSW.js`, from the banner
   Reload button or the topbar `.topbar__update` button) posts `SKIP_WAITING`, then reloads on
@@ -180,6 +189,7 @@ habittracker-offline (v1)
 | IndexedDB schema | `db.js` `open()` |
 | Service worker shell precache list (assets/scripts) | `../../sw.js` `SHELL_URLS` (VERSION auto-stamped by `scripts/deploy.sh`) |
 | Service worker page precache list (navigable routes) | `../../sw.js` `PAGE_ROUTES` — must mirror `PageController.java` `@GetMapping`s |
+| Proactive page precache trigger | `js/topbar.js checkAuth()` → `../../sw.js` `precacheMissingPages()` |
 | API stale-while-revalidate routes | `../../sw.js` `API_PREFIXES` |
 | Auth 530-vs-401 gate (redirect only on 401/403) | `js/topbar.js` `checkAuth()` |
 | API GET non-ok→cache/offline-JSON fallback | `../../sw.js` `handleApiGet()` |

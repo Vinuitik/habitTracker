@@ -24,7 +24,13 @@ const NAV_ITEMS = [
 async function checkAuth() {
   try {
     const res = await fetch(ENV.ENDPOINTS.AUTH_ME, { credentials: 'include' });
-    if (res.ok) return true;
+    if (res.ok) {
+      // Session confirmed → have the SW cache any pages it couldn't fetch while logged out.
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage('PRECACHE_PAGES');
+      }
+      return true;
+    }
     if (res.status === 401 || res.status === 403) {
       window.location.href = ENV.ROUTES.LOGIN;
       return false;
