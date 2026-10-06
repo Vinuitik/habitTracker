@@ -53,6 +53,7 @@ const PAGE_ROUTES = [
   '/kpis/dashboard',
   '/connect-drive',
   '/install',
+  '/projects',
 ];
 
 // Same-origin API GETs worth serving stale while a fresh copy loads in the background —
@@ -177,9 +178,37 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(handleApiGet(request));
     return;
   }
-  if (request.method === 'GET' && SHELL_URLS.some((u) => request.url.endsWith(u))) {
-    event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request))
-    );
+  if (request.method === 'GET' && isStaticAsset(request)) {
+    event.respondWith(handleAsset(request));
   }
 });
+
+// Same-origin JS/CSS/images/manifest. These URLs are NOT content-hashed (no bundler), so the old
+// cache-first rule served a stale /js/topbar.js etc. until the next SW activation — fresh HTML
+// (network-first) ran against old scripts/styles. Network-first with a short timeout instead:
+// online always gets the deployed file (and refreshes the cache), offline/530 falls back to cache.
+const ASSET_RE = /\.(js|css|png|ico|svg|webmanifest)$/;
+
+function isStaticAsset(request) {
+  const url = new URL(request.url);
+  return url.origin === self.location.origin && ASSET_RE.test(url.pathname) && url.pathname !== '/sw.js';
+}
+
+async function handleAsset(request) {
+  const cache = await caches.open(SHELL_CACHE);
+  try {
+    const response = await Promise.race([
+      fetch(request),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ]);
+    if (response && response.ok) {
+      cache.put(request, response.clone()).catch(() => {});
+      return response;
+    }
+    throw new Error('non-ok response');
+  } catch (e) {
+    const cached = await cache.match(request, { ignoreSearch: true });
+    if (cached) return cached;
+    throw e;
+  }
+}

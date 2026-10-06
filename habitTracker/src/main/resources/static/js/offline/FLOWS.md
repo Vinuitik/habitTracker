@@ -77,7 +77,10 @@ install must happen over the real Cloudflare-tunnel domain.
 
 `sw.js`: precaches the shell (env.js/topbar.js/css/offline scripts — `SHELL_URLS`) and the navigable
 pages (`PAGE_ROUTES`); navigations are network-first with a 4s timeout, falling back to the cached
-shell page on failure/timeout/non-ok response; `GET`s to `/api/habits*` and `/api/kpis*` are
+shell page on failure/timeout/non-ok response; same-origin static assets (`.js/.css/.png/...`,
+`isStaticAsset()`) are network-first with a 3s timeout → cache (`handleAsset()`) — they used to be
+cache-first, and since the URLs aren't content-hashed that served stale scripts/styles until the
+next SW activation (fresh HTML + old topbar.js = "cache issues"). To change: `sw.js handleAsset()`; `GET`s to `/api/habits*` and `/api/kpis*` are
 stale-while-revalidate (last-known state offline). **`/api/today` is NOT in that list any more** —
 the Today page reads it through `Store` (IndexedDB), not the SW cache.
 
@@ -148,15 +151,18 @@ habittracker-offline (v1)
   Proactive fill: install precache can come up empty while logged out, so `topbar.js checkAuth()`
   posts `PRECACHE_PAGES` to the SW once `/api/auth/me` is OK → `sw.js precacheMissingPages()` fetches
   every `PAGE_ROUTES` entry not yet cached (To change: `precacheMissingPages()`).
-- **Update flow (click-gated, not automatic)**: `sw.js` does NOT call `skipWaiting()` on install —
-  a new worker installs, then WAITS. Only `window.applyUpdate()` (`registerSW.js`, from the banner
-  Reload button or the topbar `.topbar__update` button) posts `SKIP_WAITING`, then reloads on
-  `controllerchange`. Reason: auto-activating once left open tabs dead when a deploy was still
+- **Update flow (click-gated mid-session, automatic on cold start — mirrors ObsidianOptimizer)**: `sw.js` does NOT call `skipWaiting()` on install —
+  a new worker installs, then WAITS. `window.applyUpdate()` (`registerSW.js`) posts `SKIP_WAITING`, then reloads on
+  `controllerchange`. It fires from: the banner Reload button, the topbar `.topbar__update` button, or
+  automatically on page load when a worker is already waiting (nothing in progress to interrupt).
+  The topbar button is always visible: idle it's ↻ → `checkForUpdateAndReload()` (`registration.update()`
+  then apply-or-reload); with an update waiting it becomes a lit "Update" pill. `registerSW.js` is loaded
+  on every topbar page and also polls `registration.update()` every 15 min. Reason: auto-activating once left open tabs dead when a deploy was still
   propagating behind the tunnel (Cloudflare 530). Detection is automatic: `registration.update()`
   runs on every page load and tab refocus, and `notifyIfWaiting()` (gated on an existing controller,
   so a first install isn't an "update") shows the banner and lights `TopbarUpdate.markAvailable()`.
   `window.TopbarUpdate` is set explicitly because a top-level `const` in a classic script doesn't
-  attach to `window`. A PWA that is never opened/refocused stays on its old version.
+  attach to `window`. A PWA that is never opened/refocused stays on its old version until the next launch.
   Idle auto-reload [NOT IMPLEMENTED].
 - **`VERSION` is stamped by the deploy script**: `scripts/deploy.sh` rewrites `const VERSION` in
   `sw.js` to the git short SHA for the build only (file restored afterwards), so every deploy makes

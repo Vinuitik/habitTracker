@@ -5,9 +5,9 @@
 // Update flow: a new sw.js (bump VERSION there) installs and then WAITS — it does not take over
 // on its own (see sw.js). registration.update() below forces the browser to check for that new
 // worker on every load/focus instead of waiting on its own throttled (up to 24h) background
-// check. Once a worker is sitting in `registration.waiting`, we only ever notify (banner / topbar
-// dot) — the actual swap happens exclusively through applyUpdate(), which the user triggers by
-// clicking Reload/Update. That's deliberate: auto-activating used to yank any open tab onto a
+// check. A worker found waiting at page load is applied immediately (nothing in progress yet); one
+// found while the page is open only notifies (banner / topbar pill) and waits for a Reload/Update
+// click. Never swapping mid-session is deliberate: auto-activating used to yank any open tab onto a
 // fresh deploy the moment it was detected, which broke if the new build's hashed assets hadn't
 // finished propagating behind the tunnel yet (a Cloudflare 530 mid-deploy leaves the tab dead).
 function showUpdateBanner() {
@@ -32,9 +32,18 @@ function showUpdateBanner() {
 
 let swRegistration = null;
 
+// Idle refresh button: ask the browser to re-fetch sw.js now, apply a new worker if one turns up,
+// otherwise just reload — navigations and assets are network-first, so a plain reload already
+// pulls the latest deployed files.
+window.checkForUpdateAndReload = async function checkForUpdateAndReload() {
+  try { if (swRegistration) await swRegistration.update(); } catch (e) {}
+  if (swRegistration && swRegistration.waiting) window.applyUpdate();
+  else window.location.reload();
+};
+
 // The one path that hands control to the new worker: tell it to skipWaiting, then reload once it
-// actually becomes the controller. Only ever called from a user click (banner Reload / topbar
-// Update button) — never automatically.
+// actually becomes the controller. Called from a user click (banner Reload / topbar Update) or the
+// cold-start auto-apply below — never mid-session on its own.
 window.applyUpdate = function applyUpdate() {
   const waiting = swRegistration && swRegistration.waiting;
   if (!waiting) {
@@ -58,6 +67,17 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') registration.update().catch(() => {});
     });
+    // An installed PWA can stay open for days without a load/focus event — poll as well.
+    setInterval(() => registration.update().catch(() => {}), 15 * 60 * 1000);
+
+    // Cold start: a worker already WAITING here finished downloading during a previous visit and
+    // was never applied. The page just loaded, so there's no in-progress edit to interrupt —
+    // apply it now instead of making the user find the button (same as ObsidianOptimizer).
+    // Mid-session updates (found while the tab is open) still only notify, never auto-apply.
+    if (registration.waiting && navigator.serviceWorker.controller) {
+      window.applyUpdate();
+      return;
+    }
 
     // Gated on "there's already a controller" so a first install is never mistaken for an update.
     const notifyIfWaiting = () => {
