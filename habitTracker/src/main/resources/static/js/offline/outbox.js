@@ -3,7 +3,8 @@
 // (see StructureService.updateHabitCompletion / KPIService.addKPIData) so replaying the same
 // intent more than once — from any of the three paths below — is always safe.
 //
-//   submit(intent):
+//   submitHabitComplete: local-first — enqueue, return, flush() syncs in the background.
+//   submit(intent) (still used by KPI values):
 //     server reachable → send directly, done (no intermediary)
 //     else online + Drive bridge valid → encrypt + push to the user's own Drive mailbox, done
 //     else → enqueue locally only, no network attempted
@@ -16,7 +17,11 @@ const Outbox = (() => {
     return match ? decodeURIComponent(match.split('=')[1]) : '';
   }
 
+  const SEND_TIMEOUT_MS = 5000;
+
   async function sendDirect(intent) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
     try {
       let resp;
       if (intent.kind === 'habit-complete') {
@@ -27,6 +32,7 @@ const Outbox = (() => {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRF-TOKEN': csrf() },
           body: form,
+          signal: ctrl.signal,
         });
       } else if (intent.kind === 'kpi-value') {
         const { kpiName, date, value } = intent.payload;
@@ -34,6 +40,7 @@ const Outbox = (() => {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRF-TOKEN': csrf() },
           body: new URLSearchParams({ date, value: String(value) }),
+          signal: ctrl.signal,
         });
       } else {
         return false;
@@ -41,6 +48,8 @@ const Outbox = (() => {
       return resp.ok;
     } catch (e) {
       return false;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -71,41 +80,66 @@ const Outbox = (() => {
     }
   }
 
+  // Single-flight: taps during a running flush set `again` so they're picked up right after.
+  let flushing = false;
+  let again = false;
+
   async function flush() {
-    const queued = await OfflineDB.all();
-    if (queued.length === 0) return;
-
-    if (await Connectivity.isServerReachable()) {
-      let sent = 0;
-      for (const intent of queued) {
-        if (await sendDirect(intent)) {
-          await OfflineDB.remove(intent.requestId);
-          sent++;
-        }
-      }
-      notifySynced(sent);
-      return;
-    }
-
-    await DriveClient.refreshBridge();
-    if (await DriveClient.isAvailable()) {
-      try {
-        await DriveClient.pushBatch(queued); // one batch file for everything still queued
-        for (const intent of queued) await OfflineDB.remove(intent.requestId);
-        notifySynced(queued.length);
-      } catch (e) {
-        // leave queued, retried on the next flush
-      }
+    if (flushing) { again = true; return; }
+    flushing = true;
+    try {
+      do { again = false; await flushOnce(); } while (again);
+    } finally {
+      flushing = false;
     }
   }
 
-  function submitHabitComplete(habitId, completed, date) {
-    return submit({
+  async function flushOnce() {
+    const all = await OfflineDB.all();
+    const cutoff = Date.now() - Store.DRIVE_OVERLAY_TTL_MS;
+    for (const i of all) {
+      if (i.driveSentAt && i.driveSentAt < cutoff) await OfflineDB.remove(i.requestId);
+    }
+    let remaining = all.filter((i) => !i.driveSentAt);
+
+    // Try the server directly, no ping first — the POST itself is the reachability test.
+    let sent = 0;
+    while (remaining.length > 0 && await sendDirect(remaining[0])) {
+      await OfflineDB.remove(remaining[0].requestId);
+      remaining = remaining.slice(1);
+      sent++;
+    }
+    notifySynced(sent);
+
+    if (remaining.length > 0) {
+      await DriveClient.refreshBridge();
+      if (await DriveClient.isAvailable()) {
+        try {
+          await DriveClient.pushBatch(remaining); // one batch file for everything still queued
+          for (const intent of remaining) {
+            await OfflineDB.enqueue({ ...intent, driveSentAt: Date.now() }); // keep as overlay
+          }
+        } catch (e) {
+          // leave queued, retried on the next flush
+        }
+      }
+      Store.notify();
+      return;
+    }
+    await Store.refresh();
+  }
+
+  // Local-first: the intent is persisted to IndexedDB (which Store overlays onto the UI) and the
+  // call returns immediately; the network work happens in flush(), never on the tap's path.
+  async function submitHabitComplete(habitId, completed, date) {
+    await OfflineDB.enqueue({
       requestId: crypto.randomUUID(),
       kind: 'habit-complete',
       ts: Date.now(),
       payload: { habitId: Number(habitId), completed: !!completed, date: date || null },
     });
+    flush();
+    return { via: 'queued' };
   }
 
   function submitKpiValue(kpiName, date, value) {

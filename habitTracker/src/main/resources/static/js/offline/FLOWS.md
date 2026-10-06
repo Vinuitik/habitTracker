@@ -1,6 +1,6 @@
 # Offline-sync client Flows
 
-Files: `db.js`, `crypto.js`, `connectivity.js`, `driveClient.js`, `outbox.js` — plus `../registerSW.js` and `../../sw.js` (installable shell). Server side: `habitTracker/sync/FLOWS.md`.
+Files: `store.js`, `db.js`, `crypto.js`, `connectivity.js`, `driveClient.js`, `outbox.js` — plus `../registerSW.js` and `../../sw.js` (installable shell). Server side: `habitTracker/sync/FLOWS.md`.
 
 ## The seam: three ways a write can land
 
@@ -28,6 +28,22 @@ Called on `window.load`, `online`, tab refocus (`visibilitychange`), and a 5-min
 (`outbox.js` bottom). Same branch as `submit()`, but batches everything still queued into a
 **single** Drive push (`DriveClient.pushBatch(queued)`) rather than one file per intent — cheaper
 and matches the server's per-file batch format (`MailboxConsumeService.MailboxBatch`).
+
+## Local-first Today (v9) — IndexedDB is the single source of truth for habit completion
+
+```
+render:  Store.getToday() = meta 'todaySnapshot' (last /api/today) + unsent habit-complete intents overlaid
+tap:     index.html toggleCard() → UI updates instantly → Outbox.submitHabitComplete()
+           → OfflineDB.enqueue(intent) → return → flush() in background (never on the tap path)
+flush:   Outbox.flushOnce(): sendDirect() each queued intent (5s timeout, no ping)
+           → on failure: Drive pushBatch, intents kept with driveSentAt (overlay only)
+           → all sent: Store.refresh() pulls /api/today → snapshot → Store.onChange → re-render if DOM differs
+```
+- `/api/today` is **no longer** in `sw.js` `API_PREFIXES` — the Store replaces that cache.
+- Drive-pushed intents stay as overlay for `Store.DRIVE_OVERLAY_TTL_MS` (20 min; server drains Drive every 15 min), else a pull would revert them. After TTL they are dropped by `flushOnce()`.
+- Snapshot is whatever date the device last pulled; offline past midnight shows yesterday's list until a pull succeeds.
+- Streaks are cached in meta `streaksSnapshot` (rendered before the streak POST returns).
+- KPI values still use the old `submit()` path (ping → server → Drive → queue) [NOT MIGRATED].
 
 ## The Drive bridge — why the browser never holds a refresh token
 
@@ -151,6 +167,8 @@ habittracker-offline (v1)
 
 | What to change | Where |
 |---|---|
+| Snapshot + overlay merge / pull timeout | `store.js` `getToday()` / `refresh()` |
+| Drive overlay TTL | `store.js` `DRIVE_OVERLAY_TTL_MS` |
 | Which endpoints an intent replays to | `outbox.js` `sendDirect()` |
 | Reachability probe / timeout | `connectivity.js` `isServerReachable()` (2.5s) |
 | Flush triggers / cadence | `outbox.js` bottom (`load`/`online`/`visibilitychange`/5-min interval) |

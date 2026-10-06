@@ -80,6 +80,7 @@
   <script src="/js/offline/crypto.js"></script>
   <script src="/js/offline/connectivity.js"></script>
   <script src="/js/offline/driveClient.js"></script>
+  <script src="/js/offline/store.js"></script>
   <script src="/js/offline/outbox.js"></script>
   <script src="/js/registerSW.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
@@ -258,17 +259,14 @@
       const base = parseInt(streakEl.dataset.base || '0', 10);
       const display = nowChecked ? (base <= 0 ? 1 : base + 1) : base;
 
-      // Offline-capable: sent directly if the server's up, else queued through the user's
-      // own Drive (or purely locally if neither is reachable) — see js/offline/outbox.js.
-      // The toggle is applied optimistically either way; it's never lost, just not yet
-      // confirmed, so there's no revert-on-failure path anymore.
-      Outbox.submitHabitComplete(card.dataset.id, nowChecked).then(() => {
-        tickStreak(streakEl, base, display, parseInt(streakEl.dataset.freq || '1', 10));
-        moveCard(card, nowChecked);
-        updateSummary();
-        if (nowChecked) { checkAllComplete(); maybeShowKpiModal(card); }
-        else allDoneFired = false;
-      }).catch(() => {
+      // Local-first: the intent lands in IndexedDB (Store overlays it on every render) and the
+      // network sync runs in the background — see js/offline/store.js + outbox.js.
+      tickStreak(streakEl, base, display, parseInt(streakEl.dataset.freq || '1', 10));
+      moveCard(card, nowChecked);
+      updateSummary();
+      if (nowChecked) { checkAllComplete(); maybeShowKpiModal(card); }
+      else allDoneFired = false;
+      Outbox.submitHabitComplete(card.dataset.id, nowChecked).catch(() => {
         checkbox.checked = !nowChecked;
         card.classList.toggle('completed', !nowChecked);
         setRing(card, !nowChecked);
@@ -305,6 +303,7 @@
       checkbox.disabled = true;
       card.classList.add('shame');
 
+      dismissed.add(Number(card.dataset.id));
       Outbox.submitHabitComplete(card.dataset.id, false).then(() => {
         setTimeout(() => {
           card.classList.add('shame-out');
@@ -427,38 +426,69 @@
       section.hidden = false;
     }
 
-    async function init() {
-      if (!(await checkAuth())) return;
+    const dismissed = new Set(); // shame-removed this session; a refresh must not bring them back
 
-      initTopbar(ENV.ROUTES.HOME);
-      loadConfirmInbox();
+    function visibleHabits(data) {
+      return (data.habits || []).filter(h => !dismissed.has(h.id));
+    }
 
-      // Resilient read: on a down origin the SW hands back {offline:true} (never a broken 530),
-      // and a truly failed fetch is caught here — either way we render an offline state instead
-      // of crashing on `data.date`/`data.habits` (see js/offline/FLOWS.md).
-      const data = await fetch(ENV.ENDPOINTS.TODAY, { credentials: 'include' })
-        .then(r => r.json())
-        .catch(() => ({ offline: true }));
+    function signature(date, pairs) {
+      return date + '|' + pairs.sort((a, b) => a[0] - b[0]).map(p => p[0] + ':' + p[1]).join(',');
+    }
+    function dataSig(data) {
+      return signature(data.date, visibleHabits(data).map(h => [h.id, h.completed ? 1 : 0]));
+    }
+    function domSig() {
+      const cards = [...document.querySelectorAll('#habit-grid .habit-card')];
+      return signature(currentDate, cards.map(c => [Number(c.dataset.id), c.classList.contains('completed') ? 1 : 0]));
+    }
 
-      const grid = document.getElementById('habit-grid');
+    function applyStreaks(streaks) {
+      (streaks || []).forEach(({ key, value, frequency }) => {
+        const card = document.querySelector(`.habit-card[data-id="${key}"]`);
+        if (!card) return;
+        const checkbox = card.querySelector('.habit-card__checkbox');
+        const streakEl = card.querySelector('.habit-card__streak');
+        const freq     = (frequency && frequency > 0) ? frequency : 1;
+        const display  = checkbox.checked ? (value <= 0 ? 1 : value + 1) : value;
+        streakEl.dataset.base = value;
+        streakEl.dataset.freq = freq;
+        streakEl.textContent  = display + ' day streak';
+        applyStreakColor(streakEl, display, freq);
+      });
+    }
 
-      if (data.offline || !data.date) {
-        document.getElementById('today-date').textContent = 'Offline';
-        grid.innerHTML = `
-          <div class="dashboard__empty">
-            <h2>You're offline</h2>
-            <p>Showing the last data this device saw. Any habits you tick will sync when the server is back.</p>
-          </div>`;
-        document.getElementById('today-summary').textContent = 'Offline — last-known state.';
-        return;
+    let streaksCache = [];
+
+    async function loadStreaks(habits) {
+      const ids = habits.map(h => String(h.id));
+      // Origin-down (530) answers with Cloudflare's HTML error page, not JSON; skip on non-ok.
+      const fresh = await fetch(ENV.ENDPOINTS.HABITS_STREAKS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+        body: JSON.stringify(ids)
+      }).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (fresh) {
+        streaksCache = fresh;
+        Store.setStreaks(fresh);
+        applyStreaks(fresh);
       }
+    }
+
+    // Renders the merged local view (snapshot + unsent intents). No-op if the DOM already matches.
+    function renderToday(data, animate) {
+      const grid = document.getElementById('habit-grid');
+      const habits = visibleHabits(data);
+
+      if (currentDate === data.date && grid.querySelector('.habit-card') && domSig() === dataSig(data)) return false;
 
       currentDate = data.date;
       document.getElementById('today-date').textContent =
         new Date(data.date + 'T00:00:00').toLocaleDateString('en-US',
           { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-      if (!data.habits || data.habits.length === 0) {
+      grid.innerHTML = '';
+      if (habits.length === 0) {
         grid.innerHTML = `
           <div class="dashboard__empty">
             <h2>Nothing due today</h2>
@@ -466,55 +496,60 @@
             <a href="/habits/add" class="btn btn--primary btn--lg">Create your first habit</a>
           </div>`;
         document.getElementById('today-summary').textContent = 'No habits scheduled for today.';
-        return;
+        return true;
       }
 
-      // Sort: unchecked first
-      const sorted = [...data.habits].sort((a, b) => a.completed - b.completed);
-      sorted.forEach(h => grid.appendChild(makeCard(h)));
-
+      [...habits].sort((a, b) => a.completed - b.completed).forEach(h => grid.appendChild(makeCard(h)));
       updateSummary();
+      applyStreaks(streaksCache);
 
-      // Stagger-in
-      if (window.gsap) {
-        gsap.to('.habit-card', {
-          opacity: 1,
-          y: 0,
-          duration: 0.25,
-          stagger: 0.05,
-          ease: 'power2.out'
-        });
+      if (animate && window.gsap) {
+        gsap.to('.habit-card', { opacity: 1, y: 0, duration: 0.25, stagger: 0.05, ease: 'power2.out' });
       } else {
         document.querySelectorAll('.habit-card').forEach(c => {
           c.style.opacity = '1';
           c.style.transform = 'none';
         });
       }
+      return true;
+    }
 
-      // Load streaks
-      const ids = data.habits.map(h => String(h.id));
-      // Origin-down (530) answers with Cloudflare's HTML error page, not JSON — this POST isn't
-      // covered by the service worker's stale-while-revalidate (GET-only), so r.json() on a
-      // non-ok response would throw "Unexpected token '<'". Skip the streak refresh instead of
-      // crashing; server-rendered streak values stay as-is.
-      fetch(ENV.ENDPOINTS.HABITS_STREAKS, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
-        body: JSON.stringify(ids)
-      }).then(r => r.ok ? r.json() : []).catch(() => []).then(streaks => {
-        streaks.forEach(({ key, value, frequency }) => {
-          const card = document.querySelector(`.habit-card[data-id="${key}"]`);
-          if (!card) return;
-          const checkbox = card.querySelector('.habit-card__checkbox');
-          const streakEl = card.querySelector('.habit-card__streak');
-          const freq     = (frequency && frequency > 0) ? frequency : 1;
-          const display  = checkbox.checked ? (value <= 0 ? 1 : value + 1) : value;
-          streakEl.dataset.base = value;
-          streakEl.dataset.freq = freq;
-          streakEl.textContent  = display + ' day streak';
-          applyStreakColor(streakEl, display, freq);
-        });
-      });
+    async function showLocal(animate) {
+      const data = await Store.getToday();
+      if (!data) return false;
+      renderToday(data, animate);
+      return true;
+    }
+
+    async function init() {
+      // Paint from local state first — no network on the path to first render.
+      const cached = await Store.getStreaks();
+      if (cached) streaksCache = cached;
+      const hadLocal = await showLocal(true);
+
+      if (!(await checkAuth())) return;
+
+      initTopbar(ENV.ROUTES.HOME);
+      loadConfirmInbox();
+
+      // Any later pull (flush, refocus, interval) re-renders only if the merged view changed.
+      Store.onChange(() => showLocal(false));
+
+      const fresh = await Store.refresh();
+      if (!hadLocal && !fresh) {
+        document.getElementById('today-date').textContent = 'Offline';
+        document.getElementById('habit-grid').innerHTML = `
+          <div class="dashboard__empty">
+            <h2>You're offline</h2>
+            <p>No data saved on this device yet. Open the app once while the server is up.</p>
+          </div>`;
+        document.getElementById('today-summary').textContent = 'Offline.';
+        return;
+      }
+      if (fresh) await showLocal(!hadLocal);
+
+      const data = await Store.getToday();
+      if (data) loadStreaks(visibleHabits(data));
     }
 
     init();

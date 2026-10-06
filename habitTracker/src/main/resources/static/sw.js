@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v8';
+const VERSION = 'v9';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -16,6 +16,7 @@ const SHELL_URLS = [
   '/js/offline/crypto.js',
   '/js/offline/connectivity.js',
   '/js/offline/driveClient.js',
+  '/js/offline/store.js',
   '/js/offline/outbox.js',
   '/styles/tokens.css',
   '/styles/reset.css',
@@ -56,7 +57,7 @@ const PAGE_ROUTES = [
 
 // Same-origin API GETs worth serving stale while a fresh copy loads in the background —
 // this is what makes "what's due today" / KPI values visible offline as last-known-state.
-const API_PREFIXES = ['/api/today', '/api/habits', '/api/kpis'];
+const API_PREFIXES = ['/api/habits', '/api/kpis'];
 
 self.addEventListener('install', (event) => {
   // No self.skipWaiting() here — a freshly installed worker must sit in "waiting" until a client
