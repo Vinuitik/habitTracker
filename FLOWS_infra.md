@@ -1,6 +1,6 @@
 # Infrastructure Flow
 
-Files: `docker-compose.yml`, `caddy/Caddyfile`, `cloudflared/config.yml`, `docker-compose-runner-v1.ps1`
+Files: `docker-compose.yml`, `caddy/Caddyfile`, `cloudflared/config.yml`, `docker-compose-runner-v1.sh` (Linux) / `docker-compose-runner-v1.ps1` (Windows), `scripts/deploy.sh`, `.githooks/pre-push`
 
 ## Ingress Chain
 
@@ -38,14 +38,40 @@ To change TLS: Caddy handles it automatically — no cert files needed unless sw
 
 ## Starting the Stack
 
-```powershell
-.\docker-compose-runner-v1.ps1   # builds + starts; auto-detects Windows timezone
-docker-compose logs -f           # tail all logs
-docker-compose down              # stop all
+```bash
+./docker-compose-runner-v1.sh    # Linux: builds + starts the WHOLE stack, auto-detects timezone
+docker compose logs -f           # tail all logs
+docker compose down              # stop all
 ```
+(`docker-compose-runner-v1.ps1` is the Windows equivalent.)
 
 Timezone is injected at runtime by the runner script — affects cron scheduling in `javaapp`.
 To change cron time: `UpdateScheduler.scheduledUpdate()` in source + rebuild `javaapp`.
+
+---
+
+## Deploy on push (this Linux box is both dev and server)
+
+```
+git push origin master
+  → .githooks/pre-push (only when a pushed ref is refs/heads/master)
+      → (habitTracker) ./mvnw test -q        — failure BLOCKS the push
+      → scripts/deploy.sh                    — failure only warns; the push still goes through
+          stamps sw.js `const VERSION` = git short SHA (file restored on exit, even on failure)
+          → docker compose up -d --build javaapp   (only javaapp; other containers untouched)
+          → polls `docker inspect` health of javaapp up to 120s (compose healthcheck: wget :8089)
+  → installed PWAs notice the changed sw.js on next load/refocus → "Reload" banner
+    (click-gated, see habitTracker/src/main/resources/static/js/offline/FLOWS.md)
+```
+
+- Hooks are enabled by `git config core.hooksPath .githooks` — per clone, NOT automatic after
+  `git clone`. Without it the pre-push hook never runs.
+- `.githooks/pre-commit` (compile check) and `post-commit` are tracked but not executable, so git
+  skips them. The old untracked `.git/hooks/post-commit` (full-stack rebuild after EVERY commit)
+  is ignored while `core.hooksPath` is set; delete it if you don't want it back.
+- Deploy runs only from the machine that pushes. A push from another machine deploys nothing.
+- `git push --no-verify` skips tests and deploy; the server then keeps running the previous build.
+- Downtime: `javaapp` is recreated in place (single container) — a few seconds of 530s through the tunnel.
 
 ---
 
@@ -71,6 +97,7 @@ To change cron time: `UpdateScheduler.scheduledUpdate()` in source + rebuild `ja
 | Public domain / hostname | `cloudflared/config.yml` + `caddy/Caddyfile` | both must match |
 | TLS / HTTPS | `caddy/Caddyfile` | auto Let's Encrypt by default; change to manual cert if needed |
 | Port javaapp listens on | `docker-compose.yml` + `caddy/Caddyfile` proxy target | currently `8089` |
-| Cron schedule (server timezone) | `docker-compose-runner-v1.ps1` timezone injection | affects `@Scheduled` in `UpdateScheduler` |
+| Cron schedule (server timezone) | runner script timezone injection (`.sh` / `.ps1`) | affects `@Scheduled` in `UpdateScheduler` |
 | Container memory limits | `docker-compose.yml` → `mem_limit` per service | JVM heap also capped in `javaapp` entrypoint |
+| Deploy-on-push behaviour (tests, health timeout) | `.githooks/pre-push`, `scripts/deploy.sh` (`HEALTH_TIMEOUT_S`) | hooks need `core.hooksPath` |
 | MongoDB cache size | `docker-compose.yml` → `mongodbHabit` command `--wiredTigerCacheSizeGB` | currently `0.25` |

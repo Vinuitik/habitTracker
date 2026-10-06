@@ -16,10 +16,11 @@ Personal habit tracking web app. Spring Boot + Thymeleaf (server-side rendering)
 Cloudflare edge → cloudflared → caddy:80 → javaapp:8089
 
 ## Running
-```powershell
-.\docker-compose-runner-v1.ps1   # builds + starts, auto-detects Windows timezone
-docker-compose logs -f           # tail logs
-docker-compose down              # stop
+```bash
+./docker-compose-runner-v1.sh    # Linux: builds + starts, auto-detects timezone (.ps1 on Windows)
+docker compose logs -f           # tail logs
+docker compose down              # stop
+# Deploys happen automatically on `git push origin master` — see FLOWS_infra.md
 ```
 
 ## Source layout

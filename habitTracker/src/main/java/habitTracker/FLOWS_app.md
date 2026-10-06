@@ -53,9 +53,10 @@ Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop
   └── GET  /register (Thymeleaf)                                      │
                                                                        ↓
 / (Today) ←── all nav bars link here                             ←────┘
-  ├── JS fetches /api/today → renders habit list
-  ├── checkbox toggle → Outbox.submitHabitComplete() → POST /habits/update/{id} (direct, Drive,
-  │     or locally queued — see sync/FLOWS.md and static/js/offline/FLOWS.md)
+  ├── renders from Store.getToday() (IndexedDB snapshot + unsent taps), then Store.refresh() pulls
+  │     GET /api/today in the background — see static/js/offline/FLOWS.md
+  ├── checkbox toggle → UI updates instantly → Outbox.submitHabitComplete() → enqueue locally →
+  │     flush() → POST /habits/update/{id} (direct), else Drive mailbox (see sync/FLOWS.md)
   └── nav → My Habits | Overview | Rules | KPIs | KPI Dashboard | Connect Drive | Install App | Sign out
 
 /habits/list (My Habits)
