@@ -45,4 +45,7 @@ public class PageController {
 
     @GetMapping("/install")
     public String install() { return "forward:/install.html"; }
+
+    @GetMapping("/projects")
+    public String projects() { return "forward:/projects.html"; }
 }

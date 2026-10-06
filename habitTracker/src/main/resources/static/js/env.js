@@ -16,6 +16,8 @@ window.ENV = {
     KPI_CONFIRM:     (name, date) => `/api/kpis/${encodeURIComponent(name)}/data/${date}/confirm`,
     KPI_EDIT_DATA:   (name, date) => `/api/kpis/${encodeURIComponent(name)}/data/${date}`,
     KPI_PROXY:       (name) => `/api/kpis/${encodeURIComponent(name)}/proxy`,
+    PROJECTS:        '/api/projects',
+    PROJECT:         (id) => `/api/projects/${id}`,
     SYNC_OAUTH_URL:  '/api/sync/oauth/url',
     SYNC_DISCONNECT: '/api/sync/disconnect',
     SYNC_STATUS:     '/api/sync/status',
@@ -36,6 +38,7 @@ window.ENV = {
     KPI_DASHBOARD:   '/kpis/dashboard',
     CONNECT_DRIVE:   '/connect-drive',
     INSTALL:         '/install',
+    PROJECTS:        '/projects',
   },
   FEATURES: {
     ANIMATIONS: true,

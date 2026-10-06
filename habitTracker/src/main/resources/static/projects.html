@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitTracker — Projects</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/atoms/input.css">
+  <link rel="stylesheet" href="/styles/atoms/toast.css">
+  <link rel="stylesheet" href="/styles/molecules/card.css">
+  <link rel="stylesheet" href="/styles/molecules/form-group.css">
+  <link rel="stylesheet" href="/styles/molecules/modal.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/pages/projects.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/today" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav"></nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="projects-page">
+    <div class="projects-page__header">
+      <h1 class="projects-page__title">Projects</h1>
+      <button class="btn btn--primary" id="new-project-btn">+ New Project</button>
+    </div>
+    <div class="projects-list" id="projects-list"></div>
+  </main>
+
+  <!-- Create -->
+  <div class="modal-overlay" id="create-modal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title">New Project</span>
+        <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+      </div>
+      <form id="create-form" class="modal-box__fields">
+        <div class="form-group">
+          <label class="form-group__label" for="p-name">Name</label>
+          <input class="input" id="p-name" required maxlength="80" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="p-desc">Description</label>
+          <textarea class="input" id="p-desc" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="p-board">Existing Trello board ID</label>
+          <input class="input" id="p-board" autocomplete="off" placeholder="Leave empty to create a new board">
+          <span class="form-group__hint">Empty = a new Trello board is created for this project.</span>
+        </div>
+        <div class="form-group__error" id="create-error" hidden></div>
+        <div class="modal-box__actions">
+          <button type="submit" class="btn btn--primary" id="create-submit">Create</button>
+          <button type="button" class="btn btn--ghost" data-close>Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Two-step delete -->
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title" id="delete-title">Delete project</span>
+        <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="modal-box__fields" id="delete-step-1">
+        <p class="projects-warn">This deletes the project <strong>and its Trello board</strong>. All cards on the board are lost. This cannot be undone.</p>
+        <div class="modal-box__actions">
+          <button class="btn btn--danger" id="delete-continue">Continue</button>
+          <button class="btn btn--ghost" data-close>Cancel</button>
+        </div>
+      </div>
+      <form class="modal-box__fields" id="delete-step-2" hidden>
+        <div class="form-group">
+          <label class="form-group__label" for="delete-confirm-name">Type the project name to confirm</label>
+          <input class="input" id="delete-confirm-name" autocomplete="off">
+          <span class="form-group__hint" id="delete-countdown"></span>
+        </div>
+        <div class="form-group__error" id="delete-error" hidden></div>
+        <div class="modal-box__actions">
+          <button type="submit" class="btn btn--danger" id="delete-submit" disabled>Delete forever</button>
+          <button type="button" class="btn btn--ghost" data-close>Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/registerSW.js"></script>
+  <script src="/js/atoms/toast.js"></script>
+  <script src="/js/projects.js"></script>
+</body>
+</html>

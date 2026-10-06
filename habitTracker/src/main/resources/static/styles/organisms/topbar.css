@@ -18,8 +18,7 @@
   padding: 0 var(--space-8);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2);
 }
 
 .topbar__brand {
@@ -39,6 +38,7 @@
 .topbar__nav {
   display: flex;
   align-items: center;
+  margin: 0 auto; /* centered between brand and the right-hand controls */
   gap: var(--space-1);
   flex-wrap: nowrap;
   overflow-x: auto;
@@ -76,27 +76,44 @@
 .topbar__update {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  background: var(--color-accent-dim);
-  border: 1px solid var(--color-accent);
-  color: var(--color-accent);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
   font-size: var(--text-sm);
   font-weight: 500;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   white-space: nowrap;
   min-height: 32px;
+  min-width: 36px;
   flex-shrink: 0;
 }
 
-.topbar__update[hidden] {
-  display: none;
+.topbar__update:hover {
+  background: var(--color-bg-card);
+  border-color: var(--color-border-hover);
+  color: var(--color-text-primary);
 }
 
-.topbar__update:hover {
+.topbar__update--ready {
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.topbar__update--ready:hover {
   background: var(--color-accent-dim-hover);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.topbar__update-icon {
+  font-size: var(--text-md);
+  line-height: 1;
 }
 
 .topbar__update-dot {
@@ -126,26 +143,148 @@
   background: var(--color-danger-dim);
 }
 
-/* Mobile: scrollable nav */
+/* Burger — hidden on desktop, shown in the mobile block below */
+.topbar__burger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.topbar__burger:hover {
+  background: var(--color-bg-card);
+  border-color: var(--color-border-hover);
+}
+
+.topbar__burger span {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-text-secondary);
+  transition: transform var(--transition-base), opacity var(--transition-fast);
+}
+
+.topbar--open .topbar__burger span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.topbar--open .topbar__burger span:nth-child(2) { opacity: 0; }
+.topbar--open .topbar__burger span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+/* Sign out lives inside the mobile menu panel only */
+.topbar__link--signout {
+  display: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--color-danger);
+}
+
+/* Section tabs — sub-pages of an area (Habits: My Habits / Overview / Rules) */
+.section-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.section-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.section-tabs__tab {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.section-tabs__tab:hover {
+  color: var(--color-text-primary);
+}
+
+.section-tabs__tab.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* Mobile: brand + burger; nav becomes a dropdown panel */
 @media (max-width: 768px) {
   .topbar__inner {
     padding: 0 var(--space-4);
     gap: var(--space-2);
   }
 
-  .topbar__nav {
-    gap: 2px;
+  .topbar__burger {
+    display: flex;
   }
 
-  .topbar__link,
-  .topbar__update,
-  .topbar__signout {
-    font-size: var(--text-xs);
-    padding: var(--space-2) var(--space-2);
-    min-height: 36px;
+  /* Sign-out moves into the panel (.topbar__link--signout) */
+  #logout-form {
+    display: none;
+  }
+
+  .topbar__update {
+    margin-left: auto;
+  }
+
+  .topbar__nav {
+    display: none;
+    position: fixed;
+    top: var(--topbar-height);
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-md);
+    overflow: visible;
+  }
+
+  .topbar--open .topbar__nav {
+    display: flex;
+    animation: topbar-panel-in var(--transition-base) ease-out;
+  }
+
+  .topbar__nav .topbar__link {
+    font-size: var(--text-md);
+    min-height: 44px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .topbar__link--signout {
+    display: inline-flex;
+    margin-top: var(--space-2);
+    border-top: 1px solid var(--color-border);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  }
+
+  .topbar__update {
+    min-height: 40px;
+    min-width: 40px;
   }
 
   .topbar__brand {
     font-size: var(--text-md);
   }
+}
+
+@keyframes topbar-panel-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }

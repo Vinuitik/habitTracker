@@ -57,7 +57,7 @@ Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop
   │     GET /api/today in the background — see static/js/offline/FLOWS.md
   ├── checkbox toggle → UI updates instantly → Outbox.submitHabitComplete() → enqueue locally →
   │     flush() → POST /habits/update/{id} (direct), else Drive mailbox (see sync/FLOWS.md)
-  └── nav → My Habits | Overview | Rules | KPIs | KPI Dashboard | Connect Drive | Install App | Sign out
+  └── nav → Today | Habits | KPIs | Projects | Settings (+ section tabs per area, burger menu ≤768px) | Sign out
 
 /habits/list (My Habits)
   ├── JS fetches /api/habits → renders list
@@ -213,7 +213,7 @@ To change this fallback: `KPIService.getAllActiveKPIs()` — the `if (userId == 
 - **CSRF**: `CookieCsrfTokenRepository` — token in `XSRF-TOKEN` cookie, readable by JS. No Thymeleaf `th:action` needed on static pages — JS reads cookie directly.
 - **Static pages**: Thymeleaf is NOT used for page rendering. Pages are plain HTML files in `static/`. `PageController` does a servlet `forward:` to each file. Spring Security auth runs on the page route, not the forwarded path.
 - **Edit/Info page ID**: Habit ID extracted from URL path via `window.location.pathname.split('/').pop()` — no query string needed.
-- **Nav is shared via `topbar.js`**: each page has an empty `<nav class="topbar__nav">` shell; `topbar.js`'s `NAV_ITEMS` array + `initTopbar(activeRoute)` render the links from `ENV.ROUTES` at load time — a single source of truth, not copy-pasted per file (this note was stale as of 2026-07; the array-driven render already existed, just wasn't reflected here).
+- **Nav is shared via `topbar.js`**: each page has an empty `<nav class="topbar__nav">` shell; `topbar.js`'s `NAV_ITEMS` (5 areas, each with a `match` route list) + `initTopbar(activeRoute)` render the links from `ENV.ROUTES` at load time; `TAB_GROUPS` renders section tabs (e.g. My Habits/Overview/Rules) at the top of `<main>`; `initBurger()` adds the mobile menu (Sign out moves into it) — a single source of truth, not copy-pasted per file (this note was stale as of 2026-07; the array-driven render already existed, just wasn't reflected here).
 - **Legacy JS reuse**: `input.js`, `habits-list.js`, `habit-table.js`, `edit-habit.js`, `info.js`, `rule-setting.js`, `kpi-list.js`, `kpi-dashboard.js` are all kept. Their `DOMContentLoaded` handlers fire before async `init()` populates the DOM, so each page's `init()` re-runs any DOM-dependent setup after data loads.
 - **Integration tests**: All tests use Testcontainers `@ServiceConnection` (a fresh `mongo:7` container per test class). Do NOT use `@WithMockUser` — it injects a `String` principal which causes `SecurityUtils.getCurrentUserId()` to return null, breaking all userId-scoped assertions. Use `AuthTestHelper` (in `src/test/java/habitTracker/auth/`) which creates real `User` docs and `UserPrincipal` objects. JWT tokens for `/api/**` tests: `auth.bearer(principal)` → `Authorization: Bearer <token>` header.
 
@@ -224,6 +224,9 @@ To change this fallback: `KPIService.getAllActiveKPIs()` — the `if (userId == 
 | What to change | Where |
 |---|---|
 | Add a new nav link | `static/js/topbar.js` `NAV_ITEMS` + matching `ENV.ROUTES` entry in `static/js/env.js` |
+| Add/rename a section tab | `static/js/topbar.js` `TAB_GROUPS` |
+| Mobile menu breakpoint/look | `static/styles/organisms/topbar.css` (`@media (max-width: 768px)`) |
+| Projects page (`/projects`) | `static/projects.html`, `static/js/projects.js`, `static/styles/pages/projects.css`; API in `Project/FLOWS.md` |
 | Add a new page route | `PageController.java` + new static HTML file + SecurityConfig if new path pattern |
 | Login page layout | `templates/login.html` |
 | Register page layout | `templates/register.html` |
