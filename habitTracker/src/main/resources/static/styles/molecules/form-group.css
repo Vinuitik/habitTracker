@@ -4,6 +4,13 @@
   gap: var(--space-2);
 }
 
+.form-group--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .form-group__label {
   font-size: var(--text-sm);
   font-weight: 500;
@@ -27,7 +34,7 @@
 .form-page {
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+  padding: var(--page-top) calc(var(--page-x) + var(--safe-right)) var(--page-bottom) calc(var(--page-x) + var(--safe-left));
 }
 
 .form-card {
@@ -67,13 +74,12 @@
   align-items: center;
 }
 
+/* Phones: the form is the page — no card chrome, full-width fields */
 @media (max-width: 600px) {
-  .form-page {
-    padding: calc(var(--topbar-height) + var(--space-4)) var(--space-4) var(--space-12);
-  }
-
   .form-card {
-    padding: var(--space-6);
+    padding: 0;
+    background: none;
+    border: none;
   }
 
   .form-card__actions {

@@ -1,7 +1,7 @@
 .overview-page {
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+  padding: var(--page-top) calc(var(--page-x) + var(--safe-right)) var(--page-bottom) calc(var(--page-x) + var(--safe-left));
 }
 
 /* ── Header ── */
@@ -38,10 +38,17 @@
   flex-wrap: wrap;
 }
 
-.overview-datepicker label {
+.overview-datepicker__field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   white-space: nowrap;
+}
+
+.overview-datepicker__field .input {
+  width: 160px;
 }
 
 /* ── Table wrapper ── */
@@ -95,6 +102,21 @@
 .overview-table th.date-col {
   text-align: left;
   min-width: 110px;
+}
+
+/* Date column stays put while habits scroll sideways */
+.overview-table th.date-col,
+.overview-table td.date-cell {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-bg-surface);
+  box-shadow: 1px 0 0 var(--color-border);
+}
+
+.overview-table th.date-col {
+  z-index: 2;
+  background: var(--color-bg-card);
 }
 
 .overview-table tbody tr:hover {
@@ -172,8 +194,73 @@
   margin-bottom: var(--space-6);
 }
 
-@media (max-width: 600px) {
-  .overview-page {
-    padding: calc(var(--topbar-height) + var(--space-4)) var(--space-4) var(--space-12);
+/* Phones: From/To side by side, full-width Update; tighter table */
+@media (max-width: 768px) {
+  .overview-page__range {
+    display: none;
+  }
+
+  .overview-datepicker {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .overview-datepicker__field {
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+  }
+
+  .overview-datepicker__field .input {
+    width: 100%;
+  }
+
+  .overview-datepicker .btn {
+    grid-column: 1 / -1;
+  }
+
+  .overview-table-wrap {
+    margin: 0 calc(-1 * var(--page-x));
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .overview-table {
+    min-width: 0;
+  }
+
+  .overview-table th,
+  .overview-table td {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .overview-table th {
+    white-space: normal;
+    min-width: 72px;
+    line-height: 1.3;
+    vertical-align: bottom;
+  }
+
+  .overview-table td.date-cell,
+  .overview-table th.date-col {
+    min-width: 0;
+    padding-left: var(--page-x);
+  }
+
+  .habit-toggle {
+    width: 24px;
+    height: 24px;
+  }
+
+  .habit-toggle:checked::after {
+    left: 7px;
+    top: 3px;
+    width: 6px;
+    height: 12px;
   }
 }

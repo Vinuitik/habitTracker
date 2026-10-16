@@ -38,6 +38,13 @@
   box-shadow: 0 0 0 3px var(--color-danger-dim);
 }
 
+textarea.input {
+  height: auto;
+  min-height: 72px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 select.input {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b90a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -102,9 +109,14 @@ select.input option {
   line-height: 1.4;
 }
 
+/* Phones: 16px is the floor below which iOS Safari zooms the page on focus */
 @media (max-width: 768px) {
   .input {
     height: 48px;
-    font-size: var(--text-md);
+    font-size: 16px;
+  }
+
+  .input--sm {
+    height: 40px;
   }
 }

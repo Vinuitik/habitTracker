@@ -2,13 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
   <title>HabitTracker — My Habits</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
   <link rel="stylesheet" href="/styles/atoms/button.css">
   <link rel="stylesheet" href="/styles/molecules/seg-tabs.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/pages/habits-list.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -31,12 +37,12 @@
   <main class="list-page">
     <div class="list-page__header">
       <h1 class="list-page__title">My Habits</h1>
-      <div style="display:flex;gap:var(--space-3);align-items:center;">
+      <div class="list-page__controls">
         <div class="seg-tabs">
           <button class="seg-tab active" id="tab-active">Active</button>
           <button class="seg-tab"        id="tab-inactive">Inactive</button>
         </div>
-        <a href="/habits/add" class="btn btn--primary">+ New Habit</a>
+        <a href="/habits/add" class="btn btn--primary">New habit</a>
       </div>
     </div>
 

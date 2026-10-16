@@ -2,13 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
   <title>HabitTracker — Overview</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
   <link rel="stylesheet" href="/styles/atoms/button.css">
   <link rel="stylesheet" href="/styles/atoms/input.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
   <link rel="stylesheet" href="/styles/pages/overview.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
@@ -36,10 +42,12 @@
     </div>
 
     <div class="overview-datepicker" id="datepicker-row">
-      <label for="start-date">From</label>
-      <input class="input" style="width:160px;height:36px;" type="date" id="start-date">
-      <label for="end-date">To</label>
-      <input class="input" style="width:160px;height:36px;" type="date" id="end-date">
+      <label class="overview-datepicker__field">From
+        <input class="input input--sm" type="date" id="start-date">
+      </label>
+      <label class="overview-datepicker__field">To
+        <input class="input input--sm" type="date" id="end-date">
+      </label>
       <button class="btn btn--ghost btn--sm" onclick="fetchUpdatedTable()">Update</button>
     </div>
 
@@ -100,7 +108,10 @@
         const tr = document.createElement('tr');
         const dateCell = document.createElement('td');
         dateCell.className = 'date-cell';
-        dateCell.textContent = entry.date;
+        // "Fri 9" reads faster than 2026-10-09 and keeps the sticky column narrow on phones
+        const d = new Date(entry.date + 'T00:00:00');
+        dateCell.textContent = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        dateCell.title = entry.date;
         tr.appendChild(dateCell);
 
         order.forEach(habitName => {

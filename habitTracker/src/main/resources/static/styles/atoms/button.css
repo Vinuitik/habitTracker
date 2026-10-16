@@ -21,6 +21,11 @@
   transform: scale(0.97);
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn--primary {
   background: var(--color-accent);
   color: #fff;

@@ -72,9 +72,33 @@
   /* Layout */
   --content-width:  1100px;
   --topbar-height:  56px;
+  --tabbar-height:  0px;   /* bottom tab bar — only exists on phones, see media block below */
+  --page-x:         var(--space-8);
+
+  /* Device safe areas (notch, home indicator) — 0 everywhere except notched phones with
+     viewport-fit=cover, which every page sets. */
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+
+  /* Page padding every <main> uses, so chrome height lives in one place */
+  --page-top:    calc(var(--topbar-height) + var(--safe-top) + var(--space-8));
+  --page-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-16));
 
   /* Transitions */
   --transition-fast: 150ms ease;
   --transition-base: 200ms ease;
   --transition-slow: 300ms ease;
+}
+
+/* Phones: bottom tab bar appears, top bar shrinks, gutters tighten */
+@media (max-width: 768px) {
+  :root {
+    --topbar-height: 52px;
+    --tabbar-height: 60px;
+    --page-x:        var(--space-4);
+    --page-top:      calc(var(--topbar-height) + var(--safe-top) + var(--space-4));
+    --page-bottom:   calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-12));
+  }
 }

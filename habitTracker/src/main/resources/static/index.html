@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
   <title>HabitTracker — Today</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
@@ -11,6 +16,7 @@
   <link rel="stylesheet" href="/styles/molecules/form-group.css">
   <link rel="stylesheet" href="/styles/molecules/modal.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
   <link rel="stylesheet" href="/styles/pages/dashboard.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
@@ -35,9 +41,12 @@
   <!-- Main -->
   <main class="dashboard">
     <div class="dashboard__header">
-      <div class="dashboard__label">Today</div>
-      <div class="dashboard__date" id="today-date">—</div>
-      <div class="dashboard__summary" id="today-summary"></div>
+      <div class="dashboard__heading">
+        <h1 class="dashboard__date" id="today-date">—</h1>
+        <div class="dashboard__count" id="today-count" aria-hidden="true"></div>
+      </div>
+      <div class="day-strip" id="day-strip" aria-hidden="true"></div>
+      <div class="dashboard__summary" id="today-summary" aria-live="polite"></div>
     </div>
 
     <!-- Confirm-inbox: KPI points a proxy provider wrote, sampled for manual review -->
@@ -50,7 +59,9 @@
   </main>
 
   <!-- FAB: add habit -->
-  <a href="/habits/add" class="dashboard__fab" title="Add habit">+</a>
+  <a href="/habits/add" class="dashboard__fab" title="Add habit" aria-label="Add habit">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </a>
 
   <!-- All-done banner -->
   <div class="all-done-banner" id="all-done-banner">all habits done for today ✦</div>
@@ -60,7 +71,7 @@
     <div class="modal-box">
       <div class="modal-box__header">
         <span class="modal-box__title" id="kpiModalTitle">Log KPIs</span>
-        <button class="modal-box__close" type="button" onclick="closeKpiModal()">&#x2715;</button>
+        <button class="modal-box__close" type="button" onclick="closeKpiModal()" aria-label="Close">&#x2715;</button>
       </div>
       <form id="kpiModalForm" class="modal-box__fields">
         <div id="kpiModalFields"></div>
@@ -200,11 +211,18 @@
           data-default-made="${h.defaultMade}"
           ${h.completed ? 'checked' : ''}>`;
 
+      card.setAttribute('role', 'checkbox');
+      card.setAttribute('aria-checked', String(!!h.completed));
+      card.tabIndex = 0;
       card.addEventListener('click', () => toggleCard(card));
+      card.addEventListener('keydown', e => {
+        if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleCard(card); }
+      });
       return card;
     }
 
     function setRing(card, filled) {
+      card.setAttribute('aria-checked', String(filled));
       const circle = card.querySelector('.ring-fill');
       if (circle) circle.style.strokeDashoffset = filled ? 0 : RING_C;
     }
@@ -290,12 +308,25 @@
       if (!summaryEl) return;
       const cards = document.querySelectorAll('#habit-grid .habit-card');
       const total = cards.length;
+      const done = document.querySelectorAll('#habit-grid .habit-card.completed').length;
+      renderDayStrip(done, total);
       if (total === 0) {
         summaryEl.textContent = 'No habits scheduled for today.';
         return;
       }
-      const done = document.querySelectorAll('#habit-grid .habit-card.completed').length;
-      summaryEl.textContent = `${done} of ${total} completed`;
+      summaryEl.textContent = done === total ? 'Everything done for today.' : `${done} of ${total} done`;
+    }
+
+    // One segment per habit due today; the first `done` segments are lit, so the strip fills
+    // left to right as you check things off. Segments are reused so the fill can transition.
+    function renderDayStrip(done, total) {
+      const strip = document.getElementById('day-strip');
+      const count = document.getElementById('today-count');
+      while (strip.children.length < total) strip.appendChild(document.createElement('span'));
+      while (strip.children.length > total) strip.lastChild.remove();
+      [...strip.children].forEach((seg, i) => seg.classList.toggle('lit', i < done));
+      strip.classList.toggle('day-strip--complete', total > 0 && done === total);
+      count.innerHTML = total ? `<span>${done}</span>/${total}` : '';
     }
 
     function shameRemove(card) {
@@ -485,7 +516,7 @@
       currentDate = data.date;
       document.getElementById('today-date').textContent =
         new Date(data.date + 'T00:00:00').toLocaleDateString('en-US',
-          { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+          { weekday: 'long', month: 'long', day: 'numeric' });
 
       grid.innerHTML = '';
       if (habits.length === 0) {
@@ -495,7 +526,7 @@
             <p>All caught up, or no habits created yet.</p>
             <a href="/habits/add" class="btn btn--primary btn--lg">Create your first habit</a>
           </div>`;
-        document.getElementById('today-summary').textContent = 'No habits scheduled for today.';
+        updateSummary();
         return true;
       }
 

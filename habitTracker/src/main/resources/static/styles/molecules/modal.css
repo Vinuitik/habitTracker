@@ -68,12 +68,54 @@
   gap: var(--space-3);
 }
 
-@media (max-width: 480px) {
+/* Phones: modals become bottom sheets — thumb-reachable actions, clear of the home indicator */
+@media (max-width: 768px) {
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-overlay.open .modal-box {
+    animation: sheet-in 220ms ease-out;
+  }
+
   .modal-box {
-    padding: var(--space-6);
+    max-width: none;
+    max-height: calc(100dvh - var(--safe-top) - var(--space-8));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+    padding: var(--space-3) calc(var(--space-4) + var(--safe-right)) calc(var(--space-6) + var(--safe-bottom)) calc(var(--space-4) + var(--safe-left));
+    gap: var(--space-4);
+  }
+
+  /* Grab handle */
+  .modal-box::before {
+    content: '';
+    align-self: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--color-border-hover);
+  }
+
+  .modal-box__close {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .modal-box__actions {
-    flex-direction: column;
+    flex-direction: column-reverse;
   }
+
+  .modal-box__actions .btn {
+    width: 100%;
+  }
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }

@@ -35,14 +35,14 @@ function addData(kpiName) {
     const kpiNameInput = document.getElementById('kpiName');
     
     kpiNameInput.value = kpiName;
-    modal.style.display = 'block';
+    modal.classList.add('open');
 }
 
 function closeModal() {
     const modal = document.getElementById('addDataModal');
     const form = document.getElementById('addDataForm');
     
-    modal.style.display = 'none';
+    modal.classList.remove('open');
     form.reset();
 }
 

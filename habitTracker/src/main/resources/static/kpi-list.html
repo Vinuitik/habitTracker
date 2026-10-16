@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
   <title>HabitTracker — KPIs</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
@@ -11,6 +16,7 @@
   <link rel="stylesheet" href="/styles/molecules/form-group.css">
   <link rel="stylesheet" href="/styles/molecules/modal.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
   <link rel="stylesheet" href="/styles/pages/kpi.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
@@ -35,8 +41,8 @@
     <div class="kpi-page__header">
       <h1 class="kpi-page__title">KPIs</h1>
       <div class="kpi-page__actions">
-        <a href="/kpis/create"    class="btn btn--primary">+ New KPI</a>
-        <a href="/kpis/dashboard" class="btn btn--ghost">Dashboard</a>
+        <a href="/kpis/create"    class="btn btn--primary">New KPI</a>
+        <a href="/kpis/dashboard" class="btn btn--ghost kpi-page__alt-link">Dashboard</a>
       </div>
     </div>
 
@@ -436,15 +442,20 @@
             ${created ? `Created ${created}` : ''}${linked ? ` · ${linked}` : ''}
           </div>
           <div class="kpi-card__actions">
-            <button class="btn btn--primary btn--sm" onclick="addData('${kpi.name}')">Add Data</button>
-            <button class="btn btn--ghost btn--sm" onclick="viewData('${kpi.name}')">View Charts</button>
+            <button class="btn btn--primary btn--sm" onclick="addData('${kpi.name}')">Add data</button>
+            <button class="btn btn--ghost btn--sm" onclick="viewData('${kpi.name}')">Charts</button>
+          </div>
+          <details class="kpi-card__more"${needsRepair ? ' open' : ''}>
+            <summary class="kpi-card__more-toggle">Settings</summary>
+            <div class="kpi-card__more-body">
             <button class="btn btn--ghost btn--sm" onclick="openAutoFillModal('${kpi.name}', ${!!kpi.autoFillEnabled}, ${kpi.defaultValue != null ? kpi.defaultValue : 'null'})">Auto-Fill</button>
             <button class="btn btn--ghost btn--sm" onclick='openConfirmRateModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || null)}, ${kpi.confirmSampleRate != null ? kpi.confirmSampleRate : 0.2})'>Confirm Rate</button>
             <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
             <button class="btn btn--ghost btn--sm" onclick='openProxyModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || {})})'>Data Source</button>
             ${needsRepair ? `<button class="btn btn--ghost btn--sm" onclick="resetProxyHealth('${kpi.name}')">Reset Proxy</button>` : ''}
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
-          </div>`;
+            </div>
+          </details>`;
         grid.appendChild(card);
       });
 

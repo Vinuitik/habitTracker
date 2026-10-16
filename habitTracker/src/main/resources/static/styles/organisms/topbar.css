@@ -3,7 +3,8 @@
   top: 0;
   left: 0;
   right: 0;
-  height: var(--topbar-height);
+  height: calc(var(--topbar-height) + var(--safe-top));
+  padding-top: var(--safe-top);
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 100;
@@ -15,7 +16,7 @@
   max-width: var(--content-width);
   width: 100%;
   margin: 0 auto;
-  padding: 0 var(--space-8);
+  padding: 0 calc(var(--page-x) + var(--safe-right)) 0 calc(var(--page-x) + var(--safe-left));
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -143,49 +144,6 @@
   background: var(--color-danger-dim);
 }
 
-/* Burger — hidden on desktop, shown in the mobile block below */
-.topbar__burger {
-  display: none;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  width: 40px;
-  height: 40px;
-  padding: 0 var(--space-3);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.topbar__burger:hover {
-  background: var(--color-bg-card);
-  border-color: var(--color-border-hover);
-}
-
-.topbar__burger span {
-  display: block;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--color-text-secondary);
-  transition: transform var(--transition-base), opacity var(--transition-fast);
-}
-
-.topbar--open .topbar__burger span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
-.topbar--open .topbar__burger span:nth-child(2) { opacity: 0; }
-.topbar--open .topbar__burger span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
-
-/* Sign out lives inside the mobile menu panel only */
-.topbar__link--signout {
-  display: none;
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  color: var(--color-danger);
-}
-
 /* Section tabs — sub-pages of an area (Habits: My Habits / Overview / Rules) */
 .section-tabs {
   display: flex;
@@ -220,71 +178,57 @@
   border-bottom-color: var(--color-accent);
 }
 
-/* Mobile: brand + burger; nav becomes a dropdown panel */
+/* Area title — replaces the brand on phones (bottom tabs already say where you are globally) */
+.topbar__title {
+  display: none;
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+}
+
+/* Phones: top bar = area title + refresh + sign out; navigation moves to the bottom tab bar
+   (organisms/tabbar.css) */
 @media (max-width: 768px) {
   .topbar__inner {
-    padding: 0 var(--space-4);
     gap: var(--space-2);
   }
 
-  .topbar__burger {
-    display: flex;
-  }
-
-  /* Sign-out moves into the panel (.topbar__link--signout) */
-  #logout-form {
-    display: none;
-  }
-
-  .topbar__update {
-    margin-left: auto;
-  }
-
+  .topbar__brand,
   .topbar__nav {
     display: none;
-    position: fixed;
-    top: var(--topbar-height);
-    left: 0;
-    right: 0;
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-1);
-    padding: var(--space-3) var(--space-4) var(--space-4);
-    background: var(--color-bg-surface);
-    border-bottom: 1px solid var(--color-border);
-    box-shadow: var(--shadow-md);
-    overflow: visible;
   }
 
-  .topbar--open .topbar__nav {
-    display: flex;
-    animation: topbar-panel-in var(--transition-base) ease-out;
+  .topbar__title {
+    display: block;
+    margin-right: auto;
   }
 
-  .topbar__nav .topbar__link {
-    font-size: var(--text-md);
-    min-height: 44px;
-    padding: var(--space-2) var(--space-3);
+  .topbar__update,
+  .topbar__signout {
+    min-height: 36px;
+    min-width: 36px;
   }
 
-  .topbar__link--signout {
-    display: inline-flex;
-    margin-top: var(--space-2);
-    border-top: 1px solid var(--color-border);
-    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  .topbar__signout {
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
   }
 
-  .topbar__update {
-    min-height: 40px;
-    min-width: 40px;
+  .section-tabs {
+    margin: 0 calc(-1 * var(--page-x)) var(--space-4);
+    padding: 0 var(--page-x);
   }
 
-  .topbar__brand {
-    font-size: var(--text-md);
+  .section-tabs__tab {
+    padding: var(--space-3) var(--space-3);
   }
-}
 
-@keyframes topbar-panel-in {
-  from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  /* The active section tab already names the page — drop the duplicate page heading */
+  .section-tabs ~ h1,
+  .section-tabs ~ * > h1 {
+    display: none;
+  }
 }

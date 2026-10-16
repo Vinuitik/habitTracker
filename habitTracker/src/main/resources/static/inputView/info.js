@@ -36,11 +36,7 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .then(response => {
             if (response.ok) {
-                // Show success message
-                const successMessage = document.createElement('div');
-                successMessage.className = 'success-message';
-                successMessage.textContent = 'Habit saved successfully!';
-                form.prepend(successMessage);
+                if (window.Toast) Toast.show('Habit saved');
                 
                 // Redirect after a short delay
                 setTimeout(() => {

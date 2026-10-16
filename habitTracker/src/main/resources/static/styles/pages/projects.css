@@ -1,7 +1,7 @@
 .projects-page {
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+  padding: var(--page-top) calc(var(--page-x) + var(--safe-right)) var(--page-bottom) calc(var(--page-x) + var(--safe-left));
 }
 
 .projects-page__header {
@@ -139,9 +139,6 @@
 }
 
 @media (max-width: 768px) {
-  .projects-page {
-    padding: calc(var(--topbar-height) + var(--space-6)) var(--space-4) var(--space-12);
-  }
 
   .project {
     padding: var(--space-4);
@@ -153,5 +150,17 @@
 
   .project__actions .btn {
     flex: 1;
+  }
+}
+
+/* Phones: the top bar already says "Projects" */
+@media (max-width: 768px) {
+  .projects-page__title {
+    display: none;
+  }
+
+  .projects-page__header {
+    justify-content: flex-end;
+    margin-bottom: var(--space-4);
   }
 }

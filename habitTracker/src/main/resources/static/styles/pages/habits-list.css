@@ -1,7 +1,7 @@
 .list-page {
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+  padding: var(--page-top) calc(var(--page-x) + var(--safe-right)) var(--page-bottom) calc(var(--page-x) + var(--safe-left));
 }
 
 /* ── Header ── */
@@ -20,6 +20,12 @@
   font-weight: 700;
   letter-spacing: var(--tracking-heading);
   color: var(--color-text-primary);
+}
+
+.list-page__controls {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
 }
 
 /* ── Habit cards list ── */
@@ -148,26 +154,50 @@
 
 /* Mobile */
 @media (max-width: 600px) {
-  .list-page {
-    padding: calc(var(--topbar-height) + var(--space-4)) var(--space-4) var(--space-12);
-  }
 
   .list-page__header {
     gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
+  .list-page__controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .habit-list-cards {
+    gap: var(--space-2);
+  }
+
+  /* Two lines per habit: name, then badges with the actions on the same line */
   .habit-row {
-    padding: var(--space-4);
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-3) var(--space-2) var(--space-2) var(--space-4);
+  }
+
+  .habit-row__info {
+    display: contents;
+  }
+
+  .habit-row__name {
+    grid-column: 1 / -1;
+    white-space: normal;
+    padding-right: var(--space-2);
+  }
+
+  .habit-row__meta {
+    margin-top: 0;
+    padding-bottom: var(--space-2);
   }
 
   .habit-row__actions {
-    width: 100%;
-    justify-content: flex-end;
+    gap: 0;
   }
 
   .row-action {
-    font-size: var(--text-xs);
-    min-height: 36px;
+    min-height: 40px;
   }
 }

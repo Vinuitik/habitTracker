@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
   <title>HabitTracker — KPI Dashboard</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
@@ -12,6 +17,7 @@
   <link rel="stylesheet" href="/styles/molecules/modal.css">
   <link rel="stylesheet" href="/styles/molecules/seg-tabs.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/pages/kpi.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -36,7 +42,7 @@
     <div class="kpi-page__header">
       <h1 class="kpi-page__title">KPI Dashboard</h1>
       <div class="kpi-page__actions">
-        <a href="/kpis" class="btn btn--ghost">Manage KPIs</a>
+        <a href="/kpis" class="btn btn--ghost kpi-page__alt-link">Manage KPIs</a>
       </div>
     </div>
 
@@ -51,7 +57,7 @@
     </div>
 
     <div class="dashboard-custom-range" id="customRangeRow" style="display:none;">
-      <div class="form-group" style="flex-direction:row;align-items:center;gap:var(--space-3);flex-wrap:wrap;">
+      <div class="form-group form-group--inline">
         <label class="form-group__label" for="customStart">From</label>
         <input class="input" type="date" id="customStart">
         <label class="form-group__label" for="customEnd">To</label>

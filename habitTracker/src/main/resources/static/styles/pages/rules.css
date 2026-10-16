@@ -1,7 +1,7 @@
 .rules-page {
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: calc(var(--topbar-height) + var(--space-8)) var(--space-8) var(--space-16);
+  padding: var(--page-top) calc(var(--page-x) + var(--safe-right)) var(--page-bottom) calc(var(--page-x) + var(--safe-left));
 }
 
 .rules-page__title {
@@ -112,6 +112,17 @@
   gap: var(--space-3);
 }
 
+.rules-freq__heading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.rules-freq__custom {
+  width: 90px;
+}
+
 .rules-radio {
   display: flex;
   align-items: center;
@@ -138,11 +149,8 @@
 }
 
 .rules-freq__result-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-mono);
+  font-size: var(--text-sm);
   color: var(--color-text-muted);
-  text-transform: uppercase;
 }
 
 .rules-freq__result-value {
@@ -166,16 +174,55 @@
 }
 
 @media (max-width: 700px) {
-  .rules-page {
-    padding: calc(var(--topbar-height) + var(--space-4)) var(--space-4) var(--space-12);
-  }
 
   .rules-panels {
     grid-template-columns: 1fr;
   }
 
+  .rules-panel,
+  .rules-freq {
+    padding: var(--space-4);
+  }
+
+  /* Habits as wrap-around chips instead of a tall full-width list */
+  .rules-habit-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-height: 0;
+  }
+
+  .rules-habit-item {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-full);
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+
   .rules-freq {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+    gap: var(--space-4);
+  }
+
+  .rules-radio {
+    min-height: 40px;
+  }
+
+  .rules-freq__result {
+    flex-direction: row;
+    justify-content: space-between;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-4);
+  }
+
+  .rules-freq__result-value {
+    font-size: var(--text-2xl);
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .rules-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
   }
 }

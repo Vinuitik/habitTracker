@@ -57,7 +57,7 @@ Edit/info pages parse the habit ID from `window.location.pathname.split('/').pop
   │     GET /api/today in the background — see static/js/offline/FLOWS.md
   ├── checkbox toggle → UI updates instantly → Outbox.submitHabitComplete() → enqueue locally →
   │     flush() → POST /habits/update/{id} (direct), else Drive mailbox (see sync/FLOWS.md)
-  └── nav → Today | Habits | KPIs | Projects | Settings (+ section tabs per area, burger menu ≤768px) | Sign out
+  └── nav → Today | Habits | KPIs | Projects | Settings (desktop: top nav; ≤768px: bottom tab bar + area title in top bar) + section tabs per area | Sign out
 
 /habits/list (My Habits)
   ├── JS fetches /api/habits → renders list
@@ -213,7 +213,8 @@ To change this fallback: `KPIService.getAllActiveKPIs()` — the `if (userId == 
 - **CSRF**: `CookieCsrfTokenRepository` — token in `XSRF-TOKEN` cookie, readable by JS. No Thymeleaf `th:action` needed on static pages — JS reads cookie directly.
 - **Static pages**: Thymeleaf is NOT used for page rendering. Pages are plain HTML files in `static/`. `PageController` does a servlet `forward:` to each file. Spring Security auth runs on the page route, not the forwarded path.
 - **Edit/Info page ID**: Habit ID extracted from URL path via `window.location.pathname.split('/').pop()` — no query string needed.
-- **Nav is shared via `topbar.js`**: each page has an empty `<nav class="topbar__nav">` shell; `topbar.js`'s `NAV_ITEMS` (5 areas, each with a `match` route list) + `initTopbar(activeRoute)` render the links from `ENV.ROUTES` at load time; `TAB_GROUPS` renders section tabs (e.g. My Habits/Overview/Rules) at the top of `<main>`; `initBurger()` adds the mobile menu (Sign out moves into it) — a single source of truth, not copy-pasted per file (this note was stale as of 2026-07; the array-driven render already existed, just wasn't reflected here).
+- **Nav is shared via `topbar.js`**: each page has an empty `<nav class="topbar__nav">` shell; `topbar.js`'s `NAV_ITEMS` (5 areas, each with a `match` route list) + `initTopbar(activeRoute)` render the links from `ENV.ROUTES` at load time; `TAB_GROUPS` renders section tabs (e.g. My Habits/Overview/Rules) at the top of `<main>`; `renderTabbar()` appends the phone bottom tab bar (`.tabbar`, icons from `NAV_ITEMS[].icon`) and the top bar swaps the brand for the area title — a single source of truth, not copy-pasted per file (this note was stale as of 2026-07; the array-driven render already existed, just wasn't reflected here).
+- **Phone/PWA layout**: page padding comes from tokens `--page-top`/`--page-bottom`/`--page-x` in `styles/tokens.css`, which fold in `--topbar-height`, `--tabbar-height` (0 on desktop, 60px ≤768px) and `env(safe-area-inset-*)`. Safe-area insets are only non-zero because every page sets `viewport-fit=cover`; drop that meta and the notch/home-indicator padding silently becomes 0. iOS standalone uses `apple-mobile-web-app-status-bar-style=black-translucent`, so content draws under the status bar — the top bar's `padding-top: var(--safe-top)` is what keeps it clear. Inputs are 16px on phones: below that iOS Safari zooms on focus. Modals (`styles/molecules/modal.css`) become bottom sheets ≤768px — any page that opens a modal with `style.display` instead of the `.open` class bypasses this (`js/kpi-list.js` used to).
 - **Legacy JS reuse**: `input.js`, `habits-list.js`, `habit-table.js`, `edit-habit.js`, `info.js`, `rule-setting.js`, `kpi-list.js`, `kpi-dashboard.js` are all kept. Their `DOMContentLoaded` handlers fire before async `init()` populates the DOM, so each page's `init()` re-runs any DOM-dependent setup after data loads.
 - **Integration tests**: All tests use Testcontainers `@ServiceConnection` (a fresh `mongo:7` container per test class). Do NOT use `@WithMockUser` — it injects a `String` principal which causes `SecurityUtils.getCurrentUserId()` to return null, breaking all userId-scoped assertions. Use `AuthTestHelper` (in `src/test/java/habitTracker/auth/`) which creates real `User` docs and `UserPrincipal` objects. JWT tokens for `/api/**` tests: `auth.bearer(principal)` → `Authorization: Bearer <token>` header.
 
@@ -225,7 +226,10 @@ To change this fallback: `KPIService.getAllActiveKPIs()` — the `if (userId == 
 |---|---|
 | Add a new nav link | `static/js/topbar.js` `NAV_ITEMS` + matching `ENV.ROUTES` entry in `static/js/env.js` |
 | Add/rename a section tab | `static/js/topbar.js` `TAB_GROUPS` |
-| Mobile menu breakpoint/look | `static/styles/organisms/topbar.css` (`@media (max-width: 768px)`) |
+| Phone tab bar look/icons | `static/styles/organisms/tabbar.css`; icons in `static/js/topbar.js` `NAV_ITEMS[].icon` |
+| Phone breakpoint / chrome heights | `static/styles/tokens.css` (`--tabbar-height`, `--topbar-height`, `@media (max-width: 768px)`) — keep in sync with the 768px blocks in `topbar.css`/`tabbar.css`/`modal.css` |
+| PWA name/icons/shortcuts | `static/site.webmanifest`; per-page iOS meta in each `static/*.html` `<head>` |
+| Today progress strip | `static/index.html` `renderDayStrip()`, `static/styles/pages/dashboard.css` `.day-strip` |
 | Projects page (`/projects`) | `static/projects.html`, `static/js/projects.js`, `static/styles/pages/projects.css`; API in `Project/FLOWS.md` |
 | Add a new page route | `PageController.java` + new static HTML file + SecurityConfig if new path pattern |
 | Login page layout | `templates/login.html` |

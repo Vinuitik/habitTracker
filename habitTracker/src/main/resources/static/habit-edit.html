@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
   <title>HabitTracker — Edit Habit</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
@@ -10,6 +15,7 @@
   <link rel="stylesheet" href="/styles/atoms/input.css">
   <link rel="stylesheet" href="/styles/molecules/form-group.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -102,7 +108,7 @@
     async function init() {
       if (!(await checkAuth())) return;
 
-      initTopbar('/habits/list');
+      initTopbar(window.location.pathname);
 
       const habitId = window.location.pathname.split('/').pop();
       const habit   = await fetch(ENV.ENDPOINTS.HABIT_INFO(habitId), { credentials: 'include' }).then(r => r.json());

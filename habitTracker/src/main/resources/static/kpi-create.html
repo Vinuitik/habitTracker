@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
   <title>HabitTracker — New KPI</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/reset.css">
@@ -10,6 +15,7 @@
   <link rel="stylesheet" href="/styles/atoms/input.css">
   <link rel="stylesheet" href="/styles/molecules/form-group.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/pages/kpi.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -50,7 +56,7 @@
           <label class="form-group__label" for="description">Description <span style="color:var(--color-text-muted)">(optional)</span></label>
           <textarea class="input" id="description" name="description"
             placeholder="Describe what this KPI measures…"
-            rows="3" style="height:auto;resize:vertical;"></textarea>
+            rows="3"></textarea>
         </div>
 
         <div class="form-group">
@@ -141,7 +147,7 @@
 
     async function init() {
       if (!(await checkAuth())) return;
-      initTopbar('/kpis');
+      initTopbar(ENV.ROUTES.KPI_CREATE);
 
       const habits    = await fetch('/api/kpis/available-habits', { credentials: 'include' }).then(r => r.json());
       const container = document.getElementById('habits-list');
