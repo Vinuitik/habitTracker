@@ -316,6 +316,7 @@ top of it.
 - Integration: a script that throws/exits non-zero is recorded as a failure, not silently dropped.
 
 ### M8 — Agent proposal + generation loop
+**DONE (stages 1-4, SERVER only)** — `CapabilityAgentService` + `/api/kpis/{name}/capability/*`, generation via Claude CLI (`backup` `/internal/agent/capability`), UI "Automate" in `kpi-list.html`; see `KPI/FLOWS.md`. Deviations: intake is one free-text description (not multi-turn); the sandbox has no egress, so proposals declaring network/secrets are rejected ("not supported yet") instead of being enforced per-host. Follow-up: sandbox network allowlist + secret injection (security decision).
 **Depends on:** M7.
 **Scope:** implements agent-loop stages 1-4 (intake → proposal → implementation → test gate) for
 server-side capabilities: a conversational flow that produces a `declaredCapabilities`-scoped spec,
@@ -356,6 +357,7 @@ changes.
   exactly what breaks silently on an app update.
 
 ### M12 — Maintenance loop
+**DONE** — breaker + anomaly check (`ProxyHealthService`) and repair: `AgentCapabilityRepairTrigger` auto-runs `CapabilityAgentService.repairFor()` for sandbox capabilities; manual "Fix it" = `POST .../capability/repair`. Non-generated proxies (Trello) are only logged.
 **Depends on:** M1 (or M8, if generated capabilities exist by then).
 **Scope:** consecutive-failure / anomalous-value circuit breaker that flips `status=NEEDS_REPAIR`;
 auto-repair trigger (re-runs proposal→implementation→test-gate seeded with the failure) and a
