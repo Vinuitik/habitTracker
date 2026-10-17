@@ -1,6 +1,6 @@
 # KPI Flows
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityGenerator.java`, `HttpCapabilityGenerator.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `SandboxCapabilityProvider.java`, `SandboxClient.java`, `HttpSandboxClient.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityGenerator.java`, `HttpCapabilityGenerator.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `SandboxCapabilityProvider.java`, `SandboxClient.java`, `HttpSandboxClient.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`, `CapabilityGrants.java`, `CapabilitySecret.java`, `CapabilitySecretRepository.java`, `CapabilitySecretService.java`, `CapabilitySecretController.java`, `MissingSecretException.java`
 
 ## Storage model
 
@@ -59,7 +59,7 @@ Two copies exist per page (`templates/kpi-*.html` and `static/kpi-*.html`); `Pag
 
 Nightly: `KPIProxyFillService.fillFromProxies()` → KPI with `proxyType=SANDBOX_CAPABILITY` → `ProxyHealthService.needsRepair()` (skip if breaker open) → `SandboxCapabilityProvider.fetchValue()`:
 1. `KPIProxyCapabilityRepository.findFirstByKpiIdAndUserIdOrderByVersionDesc()` (collection `kpi_proxy_capabilities`, read fresh every run — editing needs no redeploy). Missing / not `ACTIVE` / not `SERVER` platform → `Optional.empty()` (counts as failure).
-2. Prepends `TARGET_DATE = "<yesterday>"` to `sourceCode` → `SandboxClient.run()` (`HttpSandboxClient`: `POST http://sandbox:8090/run`, see `/sandbox/FLOWS.md`).
+2. Prepends `TARGET_DATE = "<yesterday>"` to `sourceCode` → `CapabilitySecretService.requestFor()` (hosts + ONLY declared secrets; `MissingSecretException` → no run, `lastResult="NOT_RUN: secret X not set"`, counts as a failure) → `SandboxClient.run()` (`HttpSandboxClient`: `POST http://sandbox:8090/run`, see `/sandbox/FLOWS.md`).
 3. `OK` → last non-blank stdout line parsed as double (`parseLastLine`). Anything else (`NONZERO_EXIT`, `TIMEOUT`, `SIDECAR_ERROR`, unparseable stdout) → `Optional.empty()`.
 4. Back in fill service: value → `isAnomalous()` → `KPIService.addKPIDataForUser(..., PROXY_CAPABILITY)` → `recordSuccess()`/`flagAnomaly()`; empty → `ProxyHealthService.recordFailure()` → N consecutive (`kpi.proxy.failure-threshold`, default 3) → `NEEDS_REPAIR`.
 5. The provider also writes `lastRunAt` / `lastResult` / `consecutiveFailures` on the capability doc (diagnostics only; the breaker lives on the KPI).
@@ -68,7 +68,7 @@ Calls are sequential: a hanging script blocks the nightly loop for at most its t
 
 To change script timeout: `sandbox.script-timeout-seconds` (`SANDBOX_SCRIPT_TIMEOUT_SECONDS`). To change sidecar URL: `sandbox.url` (`SANDBOX_URL`). To change HTTP read timeout: `sandbox.read-timeout-seconds`. To change the stdout contract: `SandboxCapabilityProvider.parseLastLine()`.
 
-[NOT IMPLEMENTED] Secrets injection and network allowlists (sandbox is always `--network none`, no env secrets) — so M8 refuses any proposal declaring network hosts or secrets (see below). Non-SERVER platforms (WINDOWS/ANDROID generation).
+Egress + secrets: see "Network egress and secrets" below. [NOT IMPLEMENTED] Non-SERVER platforms (WINDOWS/ANDROID generation).
 
 A capability row can still be inserted by hand (`status` must be `ACTIVE`; `_class` is added by Spring Data when saved via the repository):
 `{userId, kpiId, platform:"SERVER", language:"python", sourceCode:"print(42)", status:"ACTIVE", version:1}` plus a KPI with `proxyType:"SANDBOX_CAPABILITY"`.
@@ -112,13 +112,29 @@ REPAIR (M12)  proxy breaker trips → ProxyHealthService.recordFailure()/flagAno
 
 Auth/scoping: KPI resolved by `(name, currentUser)`, capability only via `KPIProxyCapabilityRepository.findByIdAndUserIdAndKpiId()` — never `findById`. Foreign id or KPI → 400 "not found" (no existence leak). Tested in `CapabilityAgentIntegrationTest.anotherUser_cannotSeeOrDriveMyCapability` (cf. commit `b8a1057`).
 
-Enforcement (honest minimum): the sandbox has no network and no secrets, so a capability declaring either cannot be granted → rejected at proposal time with "Not supported yet: the sandbox has no network egress...". A script that tries the network anyway (undeclared) fails the test gate because the sandbox is `--network none` (proved with a real container in `sandbox/real_run_check.py`; the Java test mocks the sandbox result).
+Enforcement: the **gate** is `CapabilityAgentService.checkGrantable()` → `CapabilityGrants.normalize()` (propose, approve, retry): SERVER only; `declaredCapabilities.network` entries must be plain public FQDNs (lowercased/deduped; no IPs, ports, wildcards, URLs, single-label or internal names such as `localhost`, `javaapp`, `mongodbHabit`, `egress-proxy`, `*.internal`, `*.local`), <= 10 hosts / 10 secrets; secret names must be env-var style and not reserved (`PATH`, `HTTP*`, `PYTHON*`, `LD_*`, `SSL_*`...). Violations → 422 "... cannot be granted". **Approving the proposal is the grant** for exactly the stored (normalized) lists. The **boundary** is the sandbox + proxy: runs without hosts are `--network none`; with hosts they reach only those hosts through `egress-proxy` (see `/egress-proxy/FLOWS.md`).
+
+## Network egress and secrets
+
+```
+UI Automate modal: proposal shows declared hosts + secrets; per secret a write-only password input ("set"/"not set")
+  → PUT/DELETE /api/kpi-secrets/{NAME} {value}  (CapabilitySecretController → CapabilitySecretService.set/delete)
+      scoped by SecurityUtils.getCurrentUserId(); stored encrypted in `kpi_capability_secrets` (id = userId:NAME);
+      GET /api/kpi-secrets returns NAMES only — no endpoint ever returns a value
+approve / regenerate / repair → attempt():
+  → CapabilitySecretService.missing(owner, declared secrets) non-empty → TEST_FAILED "secret X not set. Set it in the Automate dialog, then retry." (no LLM call, no sandbox run, attempt not consumed)
+  → generate code → CapabilitySecretService.requestFor(): hosts = declared network; secrets = decrypt ONLY declared names for cap.userId
+  → SandboxClient.Request{allowedHosts, secrets} → HttpSandboxClient → POST sandbox:8090/run → env-file + proxy token (see sandbox/FLOWS.md)
+  → HttpSandboxClient.redact() second-pass scrubs secret values from stdout/stderr before they are stored in failureReason/lastResult or fed to an LLM repair prompt
+nightly: SandboxCapabilityProvider.fetchValue() → same requestFor() with kpi.userId; a deleted secret = failure (breaker) with "NOT_RUN: secret X not set"
+```
+Encryption: `VaultEncryptionService.encryptString()/decrypt()` (AES-256-GCM, reused, no new crypto) with key `KPI_SECRETS_KEY` (base64 32 bytes; `kpi.secrets.key`), falling back to a SHA-256 derivation of `JWT_SECRET` when blank. To change: `CapabilitySecretService` constructor. Tests: `CapabilityEgressIntegrationTest` (CRUD, ciphertext at rest, cross-user isolation, only-declared payload, missing-secret gate, nightly path, redaction), `CapabilityGrantsTest`.
 
 Errors: 400 bad input/not found, 409 conflict (wrong status, attempt cap, already ACTIVE, generator busy), 422 proposal not grantable, 502 generator failure.
 
-To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what is grantable: `CapabilityAgentService.checkGrantable()` (the place to relax when sandbox egress exists). To change test-gate sample date/plausibility: `CapabilityAgentService.attempt()`. To change prompts/JSON contract: `backup/claude_cli.py` `build_capability_prompt()` / `parse_capability_result()`. To change the generator URL: `trello.internal.base-url` (`TRELLO_INTERNAL_BASE_URL`, shared with the Trello gateway). To change repair behaviour: `AgentCapabilityRepairTrigger` / `CapabilityAgentService.repairFor()`.
+To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what is grantable: `CapabilityGrants` (host/secret-name rules; keep `sandbox/app.py` `validate_extras()` in sync) and `CapabilityAgentService.checkGrantable()`. To change test-gate sample date/plausibility: `CapabilityAgentService.attempt()`. To change prompts/JSON contract: `backup/claude_cli.py` `build_capability_prompt()` / `parse_capability_result()`. To change the generator URL: `trello.internal.base-url` (`TRELLO_INTERNAL_BASE_URL`, shared with the Trello gateway). To change repair behaviour: `AgentCapabilityRepairTrigger` / `CapabilityAgentService.repairFor()`.
 
-[NOT IMPLEMENTED] Intake as a multi-turn conversation (today: one free-text description → one proposal; reject + re-describe to iterate). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. Plausibility check against KPI history in the test gate (only "exit 0 + finite number"). Network egress / secrets (needs an explicit security decision).
+[NOT IMPLEMENTED] Intake as a multi-turn conversation (today: one free-text description → one proposal; reject + re-describe to iterate). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. Plausibility check against KPI history in the test gate (only "exit 0 + finite number").  Listing/deleting secrets that no capability uses anymore happens only via the API (no UI screen outside the Automate modal). Per-capability secret rotation reminders.
 
 ## Technology Notes
 
@@ -127,10 +143,10 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 - **Concurrency:** sidecar semaphore (`SANDBOX_MAX_CONCURRENT`, default 4); waiters give up after 60s with `SIDECAR_ERROR`. `javaapp` calls sequentially anyway. HTTP read timeout (150s) must stay above script timeout + queue wait + pull, or `javaapp` gives up while the container still runs (it is still killed by the sidecar).
 - **Timeouts:** enforced in the sidecar (clamped to `SANDBOX_MAX_TIMEOUT_SECONDS`=60) with an explicit `docker rm -f`, since `--rm` does not fire when the client is killed. An OOM kill shows as exit 137 → `NONZERO_EXIT`.
 - **Image pull:** runner image `python:3.12-slim` is pulled lazily on first run (before the script timer starts, up to 180s), not at sidecar start. First night after deploy is slower; no internet at that moment = `SIDECAR_ERROR`. The image is never auto-updated afterwards.
-- **Isolation limits:** per-run container: 128m, 0.25 cpu, `--network none`, pids 64, all caps dropped, read-only rootfs + 16m tmpfs, uid 65534. Containers share the host kernel (no gVisor); a kernel escape is out of scope per the staged-safety posture. Those container memory caps are on top of the sidecar's own 64m `mem_limit`.
-- **Script contract:** python only, source <= 64KB, output truncated at 64KB, value = last non-blank stdout line. Scripts get `TARGET_DATE` as a module constant, nothing else.
+- **Isolation limits:** per-run container: 128m, 0.25 cpu, `--network none` (or the `internal` egress network + proxy when hosts are declared), pids 64, all caps dropped, read-only rootfs + 16m tmpfs, uid 65534. Containers share the host kernel (no gVisor); a kernel escape is out of scope per the staged-safety posture. Those container memory caps are on top of the sidecar's own 64m `mem_limit`.
+- **Script contract:** python only, source <= 64KB, output truncated at 64KB, value = last non-blank stdout line. Scripts get `TARGET_DATE` as a module constant, their declared secrets as env vars, and proxy env vars if hosts are declared; nothing else.
 - **Not persisted:** run output beyond 300 chars of `lastResult`; no audit log of executed code besides the capability doc.
-- **Generated code is untrusted (M8).** It is LLM output steered by a free-text user description; it is only ever executed by the sandbox sidecar (never in `javaapp`, never on the host), `--network none`, no secrets, capped CPU/mem/time. The UI renders it and all LLM text with `textContent` (no HTML injection). Approval gates *what is requested*; the sandbox, not the review, is the actual safety boundary.
+- **Generated code is untrusted (M8).** It is LLM output steered by a free-text user description; it is only ever executed by the sandbox sidecar (never in `javaapp`, never on the host), `--network none` unless it declared (and the user approved) specific hosts, only its own declared secrets, capped CPU/mem/time. The UI renders it and all LLM text with `textContent` (no HTML injection). Approval gates *what is requested*; the sandbox, not the review, is the actual safety boundary.
 - **Generation = Claude CLI subscription, not the API.** Auth lives in the mounted `~/.claude` of `mongo-backup`. If the refresh token expires, every generate/propose call fails (502) and the UI shows the upstream error; fix by re-login on the host. No generation happens at all in that state, but existing ACTIVE capabilities keep running (they never call the LLM).
 - **Single-flight = one generation at a time, globally.** `internal_api._capability_lock` is per-process and shared by all users: a second propose/generate gets 409 ("another generation is already running"), not queued. Separate from the plan lock, but both share the same CLI subscription limits.
 - **Blocking HTTP.** propose/approve/regenerate/repair hold the request open for CLI time (up to 300s) + sandbox time (up to ~60s). `HttpCapabilityGenerator` read timeout is 6 min; a reverse proxy (Caddy/Cloudflare ~100s edge timeout) in front may cut the browser connection while the server keeps working: reopening the dialog shows the resulting state (`GET .../capability`). `PENDING_TEST` is transient in-flight state; a javaapp crash mid-attempt leaves a stuck `PENDING_TEST` row (no sweeper; propose again supersedes it).
@@ -167,3 +183,5 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Auto-repair trigger | `AgentCapabilityRepairTrigger` | replaces former `LoggingCapabilityRepairTrigger` |
 | Manual "Fix it" | `CapabilityAgentService.repair()` | `POST .../capability/repair` |
 | Container limits / flags | `sandbox/app.py` `build_docker_cmd()`, `SANDBOX_MEM`, `SANDBOX_CPUS` | see `/sandbox/FLOWS.md` |
+- **Secrets at rest/in flight (egress feature):** encrypted in Mongo with `KPI_SECRETS_KEY` (or a key derived from `JWT_SECRET` if unset: then rotating `JWT_SECRET` makes every stored secret undecryptable; `resolve()` throws and runs fail, users must re-enter). A DB dump alone does not reveal values; a dump plus the env key does. In flight they pass javaapp → sidecar as plaintext JSON over the internal compose network (no TLS, no sidecar auth), then sit in a 0600 temp file during the run and in the container env (`docker inspect` shows them while it runs). Redaction of output is best-effort (encoded output evades it). Details and the hostname-only allowlist caveats: `sandbox/FLOWS.md`, `egress-proxy/FLOWS.md`.
+- **Proxy / egress failure modes:** `egress-proxy` down or `SANDBOX_EGRESS_SECRET` unset => every capability that declares hosts fails (`SIDECAR_ERROR` or a script-side proxy error) and feeds the circuit breaker (3 nights → `NEEDS_REPAIR`) and the auto-repair loop; hostless capabilities are unaffected.

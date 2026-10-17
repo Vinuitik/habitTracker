@@ -41,7 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * M8: intake -> proposal -> approve -> generate -> sandbox test gate -> ACTIVE, over the real
  * controller + service + Mongo. The LLM (CapabilityGenerator) and the sandbox sidecar
  * (SandboxClient) are mocked; no CLI or docker is involved. Also covers failure/retry cap,
- * network-declaring rejection, M12 repair, and cross-user isolation.
+ * ungrantable-host rejection, M12 repair, and cross-user isolation.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -152,14 +152,18 @@ class CapabilityAgentIntegrationTest {
     // ── enforcement: what the sandbox cannot grant ───────────────────────────
 
     @Test
-    void proposalDeclaringNetworkOrSecrets_isRejectedBeforeAnythingIsStoredOrGenerated() throws Exception {
+    void proposalWithUngrantableHostsOrSecretNames_isRejectedBeforeAnythingIsStoredOrGenerated() throws Exception {
         kpi(alice, "Widgets");
-        generatorProposes(Map.of("network", List.of("api.example.com"), "secrets", List.of()));
-        JsonNode err = propose(alice, "Widgets", 422);
-        assertTrue(err.get("error").asText().contains("no network egress"), err.toString());
-
-        generatorProposes(Map.of("network", List.of(), "secrets", List.of("apiToken")));
-        propose(alice, "Widgets", 422);
+        for (String host : List.of("127.0.0.1", "localhost", "javaapp", "mongodbHabit", "egress-proxy", "x.internal",
+                "*.example.com", "api.example.com:8080", "10.0.0.5", "foo.local")) {
+            generatorProposes(Map.of("network", List.of(host), "secrets", List.of()));
+            JsonNode err = propose(alice, "Widgets", 422);
+            assertTrue(err.get("error").asText().contains("cannot be granted"), host + " -> " + err);
+        }
+        for (String secret : List.of("HTTPS_PROXY", "PATH", "bad name", "1ABC", "PYTHONPATH")) {
+            generatorProposes(Map.of("network", List.of(), "secrets", List.of(secret)));
+            propose(alice, "Widgets", 422);
+        }
 
         assertEquals(0, capabilityRepository.count());
         verify(generator, never()).generate(any(), any(), any(), any(), any(), any());

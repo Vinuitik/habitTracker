@@ -33,6 +33,8 @@ services:
       # purpose. Optional: a user simply can't connect Drive if this is unset.
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-disabled}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-disabled}
+      # Key for users' encrypted capability secrets (blank => derived from JWT_SECRET).
+      KPI_SECRETS_KEY: ${KPI_SECRETS_KEY:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089"]
       interval: 5s
@@ -52,9 +54,35 @@ services:
     environment:
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-python:3.12-slim}
       SANDBOX_MAX_CONCURRENT: ${SANDBOX_MAX_CONCURRENT:-4}
+      # Egress for runners that declare network hosts. Unset/short => networked runs fail closed.
+      SANDBOX_EGRESS_SECRET: ${SANDBOX_EGRESS_SECRET:-}
+      # Real docker name of the internal network below (compose would otherwise prefix the project).
+      SANDBOX_EGRESS_NETWORK: habit_sandbox_egress
+      EGRESS_PROXY_HOST: egress-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     mem_limit: 64m
+    restart: unless-stopped
+
+  # Forward proxy for sandbox runners (stdlib Python, NO docker socket, no published ports). The only
+  # service besides ephemeral runners on the internal network; also on the default network for internet.
+  # Verifies the sidecar's HMAC token and allows only exact hostnames in it. See egress-proxy/FLOWS.md.
+  egress-proxy:
+    build:
+      context: ./egress-proxy
+      dockerfile: Dockerfile
+    container_name: egress-proxy
+    environment:
+      SANDBOX_EGRESS_SECRET: ${SANDBOX_EGRESS_SECRET:-}
+    networks:
+      default:
+      sandbox_egress:
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 48m
     restart: unless-stopped
 
   mongo-backup:
@@ -125,6 +153,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+networks:
+  # No route out: runners attached here can reach only egress-proxy. Explicit name so the sidecar can
+  # pass it to `docker run --network` (compose would prefix the project name otherwise).
+  sandbox_egress:
+    name: habit_sandbox_egress
+    internal: true
 
 volumes:
   mongodb_data:

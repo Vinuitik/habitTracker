@@ -142,3 +142,12 @@ async def test_run_capability_timeout_is_504():
         with pytest.raises(claude_cli.CliError) as e:
             await claude_cli.run_capability("propose", "K", "d")
     assert e.value.status == 504
+
+
+def test_prompts_describe_proxy_and_secret_contract():
+    gen = claude_cli.build_capability_prompt("generate", "K", "d", "spec", {"network": ["api.github.com"], "secrets": ["GH_TOKEN"]})
+    for needle in ("urllib.request", "HTTPS_PROXY", "STANDARD LIBRARY ONLY", "EXACTLY that name", "os.environ"):
+        assert needle in gen
+    assert "NO network" not in gen and "currently offers none" not in gen
+    prop = claude_cli.build_capability_prompt("propose", "K", "d")
+    assert "plain public hostnames" in prop and "no IP addresses" in prop

@@ -14,8 +14,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * POST {sandbox.url}/run to the sandbox sidecar. Sends only data (code + limits), never docker
- * args. Any transport failure (sidecar down, 5xx, bad JSON) becomes SIDECAR_ERROR, not an
+ * POST {sandbox.url}/run to the sandbox sidecar. Sends only data (code, limits, allowed hosts, the
+ * capability's declared secrets), never docker args. Any transport failure (sidecar down, 5xx, bad JSON) becomes SIDECAR_ERROR, not an
  * exception, so one failure can't abort the nightly loop.
  */
 @Component
@@ -44,6 +44,8 @@ public class HttpSandboxClient implements SandboxClient {
         body.put("language", r.language());
         body.put("sourceCode", r.sourceCode());
         body.put("timeoutSeconds", r.timeoutSeconds());
+        if (r.allowedHosts() != null && !r.allowedHosts().isEmpty()) body.put("allowedHosts", r.allowedHosts());
+        if (r.secrets() != null && !r.secrets().isEmpty()) body.put("secrets", r.secrets());
         try {
             Map<String, Object> resp = restTemplate.exchange(baseUrl + "/run", HttpMethod.POST,
                     new HttpEntity<>(body), new ParameterizedTypeReference<Map<String, Object>>() {}).getBody();
@@ -52,11 +54,22 @@ public class HttpSandboxClient implements SandboxClient {
             }
             Outcome outcome = Outcome.valueOf(String.valueOf(resp.get("outcome")));
             Integer exit = resp.get("exitCode") instanceof Number n ? n.intValue() : null;
-            return new Result(outcome, exit, str(resp.get("stdout")), str(resp.get("stderr")));
+            // The sidecar already redacts; this second pass is defence in depth before output is stored/logged.
+            return new Result(outcome, exit, redact(str(resp.get("stdout")), r), redact(str(resp.get("stderr")), r));
         } catch (Exception e) {
             log.warn("[Sandbox] sidecar call failed: {}", e.toString());
-            return new Result(Outcome.SIDECAR_ERROR, null, "", String.valueOf(e.getMessage()));
+            return new Result(Outcome.SIDECAR_ERROR, null, "", redact(String.valueOf(e.getMessage()), r));
         }
+    }
+
+    static String redact(String text, Request r) {
+        if (r.secrets() == null || r.secrets().isEmpty()) return text;
+        String out = text;
+        for (String v : r.secrets().values().stream().filter(s -> s != null && !s.isEmpty())
+                .sorted((a, b) -> b.length() - a.length()).toList()) {
+            out = out.replace(v, "[REDACTED]");
+        }
+        return out;
     }
 
     private static String str(Object o) {

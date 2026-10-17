@@ -99,6 +99,7 @@ prompt-injected description cannot reach Trello, files or the network; the outpu
 runs exclusively in the sandbox sidecar. `parse_capability_result()` validates the JSON shape and 64KB source cap
 (→ 502 on garbage). Same CLI env knobs apply (`CLAUDE_TIMEOUT_S` 300s → 504; `CLAUDE_BIN`), turns capped at 3.
 Auth expiry / non-zero exit → 502 with stderr tail, surfaced to the user as "Code generation failed".
+Prompt contract (`claude_cli._SANDBOX_FACTS`): stdlib-only python; network ONLY to the approved declared hosts through the proxy configured in `HTTPS_PROXY`/`HTTP_PROXY`, used via `urllib.request.urlopen(..., timeout=15)` only (`http.client`/`socket`/`ssl` bypass the proxy and fail; verified for real with `egress-proxy/real_egress_check.py`); secrets arrive as env vars named exactly as declared and must never be printed. The propose prompt asks for minimal, plain-hostname `network` and env-style `secrets` names. To change: `_SANDBOX_FACTS`, `build_capability_prompt()`; tested in `tests/test_capability_agent.py`.
 
 Not in `caddy/Caddyfile`, no published port. Boards are addressed by id at the API but the MCP tools
 resolve boards by name, so `_board_name()` looks the name up first. `plan` never applies: the CLI's

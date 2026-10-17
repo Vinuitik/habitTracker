@@ -30,23 +30,22 @@ public class CapabilityAgentService {
 
     public static final int MAX_ATTEMPTS = 3;
     private static final int MAX_DESCRIPTION_CHARS = 2000;
-    static final String NO_EGRESS_MESSAGE =
-            "Not supported yet: the sandbox has no network egress and no secrets, so a capability that "
-                    + "declares network hosts or secrets cannot be granted. Describe a source that needs neither.";
-
     private final KPIRepository kpiRepository;
     private final KPIProxyCapabilityRepository repository;
     private final CapabilityGenerator generator;
     private final SandboxClient sandboxClient;
+    private final CapabilitySecretService secretService;
     private final int timeoutSeconds;
 
     public CapabilityAgentService(KPIRepository kpiRepository, KPIProxyCapabilityRepository repository,
                                   CapabilityGenerator generator, SandboxClient sandboxClient,
+                                  CapabilitySecretService secretService,
                                   @Value("${sandbox.script-timeout-seconds:30}") int timeoutSeconds) {
         this.kpiRepository = kpiRepository;
         this.repository = repository;
         this.generator = generator;
         this.sandboxClient = sandboxClient;
+        this.secretService = secretService;
         this.timeoutSeconds = timeoutSeconds;
     }
 
@@ -74,7 +73,7 @@ public class CapabilityAgentService {
         }
 
         CapabilityGenerator.Proposal p = generator.propose(kpi.getName(), description.trim());
-        checkGrantable(p);
+        Map<String, List<String>> granted = checkGrantable(p.platform(), p.declaredCapabilities());
 
         // A newer proposal supersedes any unfinished older one.
         for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
@@ -88,7 +87,7 @@ public class CapabilityAgentService {
                 .userId(userId).kpiId(kpi.getId())
                 .platform(CapabilityPlatform.SERVER).language("python")
                 .description(description.trim()).proposal(p.proposal())
-                .declaredCapabilities(p.declaredCapabilities())
+                .declaredCapabilities(granted)
                 .status(CapabilityStatus.PROPOSED)
                 .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
                 .createdAt(LocalDateTime.now())
@@ -206,6 +205,14 @@ public class CapabilityAgentService {
         cap.setStatus(CapabilityStatus.PENDING_TEST);
         repository.save(cap);
 
+        // A declared secret the user has not set can never pass the gate: say so now instead of burning an LLM call.
+        List<String> unset = secretService.missing(cap.getUserId(),
+                CapabilityGrants.secrets(CapabilityGrants.normalize(cap.getDeclaredCapabilities())));
+        if (!unset.isEmpty()) {
+            return fail(cap, "Test gate failed: " + new MissingSecretException(unset).getMessage()
+                    + ". Set it in the Automate dialog, then retry.");
+        }
+
         String code;
         try {
             code = generator.generate(kpi.getName(), cap.getDescription(), cap.getProposal(),
@@ -218,9 +225,14 @@ public class CapabilityAgentService {
         cap.setAttempts(attemptsOf(cap) + 1);
 
         LocalDate sampleDate = LocalDate.now().minusDays(1);
-        SandboxClient.Result result = sandboxClient.run(new SandboxClient.Request(
-                cap.getUserId(), cap.getId(), cap.getLanguage(),
-                "TARGET_DATE = \"" + sampleDate + "\"\n" + code, timeoutSeconds));
+        SandboxClient.Request request;
+        try {
+            request = secretService.requestFor(cap, cap.getUserId(), "TARGET_DATE = \"" + sampleDate + "\"\n" + code,
+                    timeoutSeconds);
+        } catch (MissingSecretException e) { // deleted between the pre-check and now
+            return fail(cap, "Test gate failed: " + e.getMessage());
+        }
+        SandboxClient.Result result = sandboxClient.run(request);
         Double value = result.ok() ? SandboxCapabilityProvider.parseLastLine(result.stdout()) : null;
         if (value == null) {
             String detail = result.ok()
@@ -264,28 +276,18 @@ public class CapabilityAgentService {
         kpiRepository.save(fresh);
     }
 
-    private static void checkGrantable(CapabilityGenerator.Proposal p) {
-        checkGrantable(p.platform(), p.declaredCapabilities());
-    }
-
     private static void checkGrantable(KPIProxyCapability c) {
         checkGrantable(c.getPlatform() == null ? null : c.getPlatform().name(), c.getDeclaredCapabilities());
     }
 
-    // The honest M8 enforcement boundary: the sandbox is --network none with no secrets, so nothing
-    // declaring either may be approved. (Undeclared access is blocked by the sandbox itself.)
-    private static void checkGrantable(String platform, Map<String, List<String>> declared) {
+    // The grant boundary: SERVER only; declared network hosts / secret names must be valid (see CapabilityGrants).
+    // Approving the proposal grants exactly the returned (normalized) declaredCapabilities and nothing else.
+    private static Map<String, List<String>> checkGrantable(String platform, Map<String, List<String>> declared) {
         if (platform != null && !"SERVER".equalsIgnoreCase(platform)) {
             throw new CapabilityRejectedException("Not supported yet: only SERVER capabilities can be generated "
                     + "(the agent proposed platform " + platform + ").");
         }
-        if (declared != null && (nonEmpty(declared.get("network")) || nonEmpty(declared.get("secrets")))) {
-            throw new CapabilityRejectedException(NO_EGRESS_MESSAGE + " Declared: " + declared);
-        }
-    }
-
-    private static boolean nonEmpty(List<String> l) {
-        return l != null && !l.isEmpty();
+        return CapabilityGrants.normalize(declared);
     }
 
     private static int attemptsOf(KPIProxyCapability c) {

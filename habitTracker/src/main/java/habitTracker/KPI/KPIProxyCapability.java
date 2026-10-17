@@ -35,9 +35,9 @@ public class KPIProxyCapability {
     private String language = "python";
     private String sourceCode;
 
-    // e.g. {"network": ["api.trello.com"], "secrets": ["trelloToken"]}. The sandbox is always
-    // network=none with no secrets, so M8 refuses proposals declaring either (the enforcement
-    // boundary today is: nothing non-empty is ever approved).
+    // e.g. {"network": ["api.trello.com"], "secrets": ["TRELLO_TOKEN"]}. Approval = the grant: at run time
+    // exactly these hosts become reachable (via the egress proxy) and exactly these secrets are injected
+    // as env vars; no declared hosts => --network none. Validated by CapabilityGrants.
     private Map<String, List<String>> declaredCapabilities;
 
     @Builder.Default
