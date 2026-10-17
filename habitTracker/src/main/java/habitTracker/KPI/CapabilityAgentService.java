@@ -1,0 +1,316 @@
+package habitTracker.KPI;
+
+import habitTracker.auth.SecurityUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * M8 agent loop, stages 1-4 for SERVER capabilities:
+ *   propose (LLM writes a spec; server rejects what the sandbox cannot grant)
+ *   -> approve (user's approval = permission grant) -> generate sourceCode (LLM, scoped to the spec)
+ *   -> test gate (dry run in the M7 sandbox for yesterday; exit 0 + parseable number) -> ACTIVE + KPI wired.
+ * Failure keeps the version non-active with failureReason stored; regenerate feeds it back (cap MAX_ATTEMPTS).
+ * Repair (M12) = a new version seeded with the old code + failure, same test gate.
+ *
+ * Every public user-facing method scopes by SecurityUtils.getCurrentUserId(); capabilities are only
+ * ever loaded via (id, userId, kpiId), never by id alone.
+ */
+@Service
+public class CapabilityAgentService {
+
+    private static final Logger log = LoggerFactory.getLogger(CapabilityAgentService.class);
+
+    public static final int MAX_ATTEMPTS = 3;
+    private static final int MAX_DESCRIPTION_CHARS = 2000;
+    static final String NO_EGRESS_MESSAGE =
+            "Not supported yet: the sandbox has no network egress and no secrets, so a capability that "
+                    + "declares network hosts or secrets cannot be granted. Describe a source that needs neither.";
+
+    private final KPIRepository kpiRepository;
+    private final KPIProxyCapabilityRepository repository;
+    private final CapabilityGenerator generator;
+    private final SandboxClient sandboxClient;
+    private final int timeoutSeconds;
+
+    public CapabilityAgentService(KPIRepository kpiRepository, KPIProxyCapabilityRepository repository,
+                                  CapabilityGenerator generator, SandboxClient sandboxClient,
+                                  @Value("${sandbox.script-timeout-seconds:30}") int timeoutSeconds) {
+        this.kpiRepository = kpiRepository;
+        this.repository = repository;
+        this.generator = generator;
+        this.sandboxClient = sandboxClient;
+        this.timeoutSeconds = timeoutSeconds;
+    }
+
+    // ── user-facing (current user) ───────────────────────────────────────────
+
+    public Optional<CapabilityDTO> latest(String kpiName) {
+        String userId = currentUser();
+        KPI kpi = requireKpi(userId, kpiName);
+        return repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), userId).map(CapabilityDTO::from);
+    }
+
+    /** Stages 1-2. Throws CapabilityRejectedException if the sandbox cannot grant what the agent asks for. */
+    public CapabilityDTO propose(String kpiName, String description) {
+        String userId = currentUser();
+        KPI kpi = requireKpi(userId, kpiName);
+        if (description == null || description.isBlank()) {
+            throw new IllegalArgumentException("Describe what should be captured");
+        }
+        if (description.length() > MAX_DESCRIPTION_CHARS) {
+            throw new IllegalArgumentException("Description too long (max " + MAX_DESCRIPTION_CHARS + " chars)");
+        }
+        Optional<KPIProxyCapability> latest = repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), userId);
+        if (latest.isPresent() && latest.get().getStatus() == CapabilityStatus.ACTIVE) {
+            throw new IllegalStateException("This KPI already has an active capability");
+        }
+
+        CapabilityGenerator.Proposal p = generator.propose(kpi.getName(), description.trim());
+        checkGrantable(p);
+
+        // A newer proposal supersedes any unfinished older one.
+        for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
+            if (old.getStatus() == CapabilityStatus.PROPOSED || old.getStatus() == CapabilityStatus.TEST_FAILED
+                    || old.getStatus() == CapabilityStatus.PENDING_TEST) {
+                old.setStatus(CapabilityStatus.REJECTED);
+                repository.save(old);
+            }
+        }
+        KPIProxyCapability cap = KPIProxyCapability.builder()
+                .userId(userId).kpiId(kpi.getId())
+                .platform(CapabilityPlatform.SERVER).language("python")
+                .description(description.trim()).proposal(p.proposal())
+                .declaredCapabilities(p.declaredCapabilities())
+                .status(CapabilityStatus.PROPOSED)
+                .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
+                .createdAt(LocalDateTime.now())
+                .build();
+        return CapabilityDTO.from(repository.save(cap));
+    }
+
+    /** Stages 3-4. Approval is the permission grant for exactly the stored declaredCapabilities. */
+    public CapabilityDTO approve(String kpiName, String capabilityId) {
+        String userId = currentUser();
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        if (cap.getStatus() != CapabilityStatus.PROPOSED) {
+            throw new IllegalStateException("Only a proposed capability can be approved (status " + cap.getStatus() + ")");
+        }
+        checkGrantable(cap); // defence in depth: re-validate the stored spec at the grant moment
+        return CapabilityDTO.from(attempt(cap, kpi));
+    }
+
+    public CapabilityDTO reject(String kpiName, String capabilityId) {
+        String userId = currentUser();
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        if (cap.getStatus() != CapabilityStatus.PROPOSED && cap.getStatus() != CapabilityStatus.TEST_FAILED) {
+            throw new IllegalStateException("Cannot reject a capability in status " + cap.getStatus());
+        }
+        cap.setStatus(CapabilityStatus.REJECTED);
+        return CapabilityDTO.from(repository.save(cap));
+    }
+
+    /** Retry after a failed test gate, feeding the stored failure back into the prompt. */
+    public CapabilityDTO regenerate(String kpiName, String capabilityId) {
+        String userId = currentUser();
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        if (cap.getStatus() != CapabilityStatus.TEST_FAILED) {
+            throw new IllegalStateException("Only a failed capability can be regenerated (status " + cap.getStatus() + ")");
+        }
+        return CapabilityDTO.from(retry(cap, kpi));
+    }
+
+    /** Manual "fix it": same pipeline as the automatic M12 repair trigger, single attempt. */
+    public CapabilityDTO repair(String kpiName) {
+        String userId = currentUser();
+        KPI kpi = requireKpi(userId, kpiName);
+        return CapabilityDTO.from(repairFor(userId, kpi, false));
+    }
+
+    // ── M12 repair (also called from the nightly job thread: no SecurityUtils there) ──
+
+    /**
+     * Re-runs implementation + test gate seeded with the failure, as a NEW version. On pass the
+     * KPI's proxy breaker is cleared. autoRetry loops up to MAX_ATTEMPTS (background caller only).
+     */
+    public KPIProxyCapability repairFor(String userId, KPI kpi, boolean autoRetry) {
+        if (kpi.getProxyType() != ProxyType.SANDBOX_CAPABILITY) {
+            throw new IllegalStateException("KPI does not use a sandbox capability");
+        }
+        KPIProxyCapability latest = repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), userId)
+                .orElseThrow(() -> new IllegalArgumentException("No capability to repair"));
+        KPIProxyCapability target;
+        switch (latest.getStatus()) {
+            case TEST_FAILED -> target = latest; // a previous repair/generation failed: keep working on it
+            case ACTIVE, NEEDS_REPAIR -> {
+                if (kpi.getProxyStatus() != ProxyStatus.NEEDS_REPAIR) {
+                    throw new IllegalStateException("This KPI's proxy is not flagged for repair");
+                }
+                latest.setStatus(CapabilityStatus.NEEDS_REPAIR);
+                repository.save(latest);
+                target = repository.save(KPIProxyCapability.builder()
+                        .userId(userId).kpiId(kpi.getId()).platform(latest.getPlatform()).language(latest.getLanguage())
+                        .description(latest.getDescription()).proposal(latest.getProposal())
+                        .declaredCapabilities(latest.getDeclaredCapabilities())
+                        .sourceCode(latest.getSourceCode())
+                        .failureReason(repairReason(latest))
+                        .status(CapabilityStatus.PENDING_TEST)
+                        .version(latest.getVersion() == null ? 2 : latest.getVersion() + 1)
+                        .createdAt(LocalDateTime.now()).build());
+            }
+            default -> throw new IllegalStateException("Cannot repair a capability in status " + latest.getStatus());
+        }
+        KPIProxyCapability result = retry(target, kpi);
+        for (int i = 1; autoRetry && i < MAX_ATTEMPTS && result.getStatus() == CapabilityStatus.TEST_FAILED
+                && attemptsOf(result) < MAX_ATTEMPTS; i++) {
+            result = retry(result, kpi);
+        }
+        return result;
+    }
+
+    // ── internals ────────────────────────────────────────────────────────────
+
+    private static String repairReason(KPIProxyCapability c) {
+        String last = c.getLastResult();
+        if (last == null) return "The capability stopped producing valid values";
+        if (last.startsWith("OK") || last.startsWith("Test gate OK")) {
+            return "It ran but produced a value far outside the KPI's historical range (" + last + ")";
+        }
+        return "Recent production runs failed: " + last;
+    }
+
+    private KPIProxyCapability retry(KPIProxyCapability cap, KPI kpi) {
+        boolean repairSeed = cap.getStatus() == CapabilityStatus.PENDING_TEST;
+        if (cap.getStatus() != CapabilityStatus.TEST_FAILED && !repairSeed) {
+            throw new IllegalStateException("Only a failed capability can be regenerated (status " + cap.getStatus() + ")");
+        }
+        if (attemptsOf(cap) >= MAX_ATTEMPTS) {
+            throw new IllegalStateException("Attempt limit reached (" + MAX_ATTEMPTS + "); propose again with a different description");
+        }
+        checkGrantable(cap);
+        return attempt(cap, kpi);
+    }
+
+    /** One generate + test-gate pass. Never throws for generator/sandbox failures: they become TEST_FAILED. */
+    private KPIProxyCapability attempt(KPIProxyCapability cap, KPI kpi) {
+        cap.setStatus(CapabilityStatus.PENDING_TEST);
+        repository.save(cap);
+
+        String code;
+        try {
+            code = generator.generate(kpi.getName(), cap.getDescription(), cap.getProposal(),
+                    cap.getDeclaredCapabilities(), cap.getSourceCode(), cap.getFailureReason());
+        } catch (CapabilityGeneratorException e) {
+            // Not counted as an attempt: the model never produced code (CLI down, auth expired, busy, bad JSON).
+            return fail(cap, "Code generation failed: " + e.getMessage());
+        }
+        cap.setSourceCode(code);
+        cap.setAttempts(attemptsOf(cap) + 1);
+
+        LocalDate sampleDate = LocalDate.now().minusDays(1);
+        SandboxClient.Result result = sandboxClient.run(new SandboxClient.Request(
+                cap.getUserId(), cap.getId(), cap.getLanguage(),
+                "TARGET_DATE = \"" + sampleDate + "\"\n" + code, timeoutSeconds));
+        Double value = result.ok() ? SandboxCapabilityProvider.parseLastLine(result.stdout()) : null;
+        if (value == null) {
+            String detail = result.ok()
+                    ? "script exited 0 but the last stdout line was not a number: " + truncate(result.stdout())
+                    : result.outcome() + (result.exitCode() != null ? " exit=" + result.exitCode() : "") + ": "
+                            + truncate(result.stderr() == null || result.stderr().isBlank() ? result.stdout() : result.stderr());
+            return fail(cap, "Test gate failed: " + detail);
+        }
+
+        cap.setStatus(CapabilityStatus.ACTIVE);
+        cap.setFailureReason(null);
+        cap.setLastRunAt(LocalDateTime.now());
+        cap.setLastResult("Test gate OK for " + sampleDate + ": " + value);
+        cap.setConsecutiveFailures(0);
+        repository.save(cap);
+        activate(cap, kpi);
+        return cap;
+    }
+
+    private KPIProxyCapability fail(KPIProxyCapability cap, String reason) {
+        cap.setStatus(CapabilityStatus.TEST_FAILED);
+        cap.setFailureReason(reason);
+        log.warn("[CapabilityAgent] capability {} v{} failed: {}", cap.getId(), cap.getVersion(), reason);
+        return repository.save(cap);
+    }
+
+    /** Wires the KPI to the capability and retires older live versions. */
+    private void activate(KPIProxyCapability cap, KPI kpi) {
+        for (KPIProxyCapability other : repository.findByKpiIdAndUserId(cap.getKpiId(), cap.getUserId())) {
+            if (!other.getId().equals(cap.getId())
+                    && (other.getStatus() == CapabilityStatus.ACTIVE || other.getStatus() == CapabilityStatus.NEEDS_REPAIR)) {
+                other.setStatus(CapabilityStatus.DISABLED);
+                repository.save(other);
+            }
+        }
+        KPI fresh = kpiRepository.findById(kpi.getId()).orElse(kpi);
+        fresh.setProxyType(ProxyType.SANDBOX_CAPABILITY);
+        fresh.setProxyStatus(ProxyStatus.ACTIVE);
+        fresh.setConsecutiveProxyFailures(0);
+        fresh.setUpdatedAt(LocalDateTime.now());
+        kpiRepository.save(fresh);
+    }
+
+    private static void checkGrantable(CapabilityGenerator.Proposal p) {
+        checkGrantable(p.platform(), p.declaredCapabilities());
+    }
+
+    private static void checkGrantable(KPIProxyCapability c) {
+        checkGrantable(c.getPlatform() == null ? null : c.getPlatform().name(), c.getDeclaredCapabilities());
+    }
+
+    // The honest M8 enforcement boundary: the sandbox is --network none with no secrets, so nothing
+    // declaring either may be approved. (Undeclared access is blocked by the sandbox itself.)
+    private static void checkGrantable(String platform, Map<String, List<String>> declared) {
+        if (platform != null && !"SERVER".equalsIgnoreCase(platform)) {
+            throw new CapabilityRejectedException("Not supported yet: only SERVER capabilities can be generated "
+                    + "(the agent proposed platform " + platform + ").");
+        }
+        if (declared != null && (nonEmpty(declared.get("network")) || nonEmpty(declared.get("secrets")))) {
+            throw new CapabilityRejectedException(NO_EGRESS_MESSAGE + " Declared: " + declared);
+        }
+    }
+
+    private static boolean nonEmpty(List<String> l) {
+        return l != null && !l.isEmpty();
+    }
+
+    private static int attemptsOf(KPIProxyCapability c) {
+        return c.getAttempts() == null ? 0 : c.getAttempts();
+    }
+
+    private static String truncate(String s) {
+        if (s == null) return "";
+        String t = s.strip();
+        return t.length() > 500 ? t.substring(0, 500) + "..." : t;
+    }
+
+    private static String currentUser() {
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) throw new IllegalStateException("Not authenticated");
+        return userId;
+    }
+
+    private KPI requireKpi(String userId, String kpiName) {
+        return kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+    }
+
+    private KPIProxyCapability requireCapability(String userId, KPI kpi, String capabilityId) {
+        return repository.findByIdAndUserIdAndKpiId(capabilityId, userId, kpi.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Capability not found"));
+    }
+}

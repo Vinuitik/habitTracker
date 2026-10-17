@@ -22,7 +22,7 @@ import java.util.Objects;
  *     since the fetch itself didn't fail.
  *
  * Either trigger flips proxyStatus to NEEDS_REPAIR and fires CapabilityRepairTrigger.attemptRepair
- * (currently a logging no-op — see LoggingCapabilityRepairTrigger). Manual reset back to ACTIVE is
+ * (AgentCapabilityRepairTrigger: real repair for sandbox capabilities). Manual reset back to ACTIVE is
  * KPIService.resetProxyHealth (PUT /api/kpis/{name}/proxy/reset), not this class.
  */
 @Service

@@ -163,6 +163,7 @@
           <select class="input" id="proxyTypeInput" name="proxyType">
             <option value="NONE">None — log manually</option>
             <option value="TRELLO_CARD_COUNT">Trello card count</option>
+            <option value="SANDBOX_CAPABILITY" disabled>Agent-generated script (use Automate)</option>
           </select>
           <span class="form-group__hint">A nightly job fills in the previous day's value automatically instead of you logging it.</span>
         </div>
@@ -192,6 +193,21 @@
           <button type="button" class="btn btn--ghost" onclick="closeProxyModal()">Cancel</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Automate (agent-generated capability) Modal -->
+  <div class="modal-overlay" id="automateModal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title">Automate this KPI</span>
+        <button class="modal-box__close" onclick="closeAutomateModal()">&#x2715;</button>
+      </div>
+      <div class="modal-box__fields">
+        <div id="automateBody" class="modal-box__fields"></div>
+        <div id="automateBusy" class="automate__busy" hidden>Working. This can take a minute or two.</div>
+        <div id="automateError" class="automate__error" hidden></div>
+      </div>
     </div>
   </div>
 
@@ -225,6 +241,7 @@
       if (e.target === document.getElementById('manageHabitsModal')) closeManageHabitsModal();
       if (e.target === document.getElementById('confirmRateModal')) closeConfirmRateModal();
       if (e.target === document.getElementById('proxyModal')) closeProxyModal();
+      if (e.target === document.getElementById('automateModal')) closeAutomateModal();
     });
 
     function openConfirmRateModal(kpiName, proxyType, proxyConfig, confirmSampleRate) {
@@ -451,6 +468,7 @@
             <button class="btn btn--ghost btn--sm" onclick="openAutoFillModal('${kpi.name}', ${!!kpi.autoFillEnabled}, ${kpi.defaultValue != null ? kpi.defaultValue : 'null'})">Auto-Fill</button>
             <button class="btn btn--ghost btn--sm" onclick='openConfirmRateModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || null)}, ${kpi.confirmSampleRate != null ? kpi.confirmSampleRate : 0.2})'>Confirm Rate</button>
             <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
+            <button class="btn btn--ghost btn--sm" onclick='openAutomateModal(${JSON.stringify(kpi.name)}, ${needsRepair && kpi.proxyType === "SANDBOX_CAPABILITY"})'>Automate</button>
             <button class="btn btn--ghost btn--sm" onclick='openProxyModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || {})})'>Data Source</button>
             ${needsRepair ? `<button class="btn btn--ghost btn--sm" onclick="resetProxyHealth('${kpi.name}')">Reset Proxy</button>` : ''}
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>

@@ -178,7 +178,7 @@ public class KPIService {
     /**
      * M12 manual reset: clears the proxy circuit breaker back to ACTIVE and zeroes the failure
      * counter for the current user's own KPI. This is the only supported way back from
-     * NEEDS_REPAIR until the real auto-repair pipeline (M8) exists — see CapabilityRepairTrigger.
+     * NEEDS_REPAIR when the repair pipeline (CapabilityAgentService.repairFor) cannot fix it — see CapabilityRepairTrigger.
      * Scoped via findByNameAndUserId like every other KPI mutation here, so a user can never reset
      * another user's KPI (a mismatched name/userId simply resolves to nothing and 400s).
      */
