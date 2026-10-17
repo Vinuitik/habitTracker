@@ -85,6 +85,8 @@ git push origin master
 | `jwt.expiration-ms` | JWT token lifetime | `application.properties` or `.env` |
 | `MONGO_USER` / `MONGO_PASS` / `MONGO_DB` | All MongoDB connections | `.env` → `javaapp` + `mongo-backup` |
 | Cloudflare tunnel token | `cloudflared` auth | `.env` → `cloudflared` |
+| `SANDBOX_EGRESS_SECRET` | HMAC key (>=32 chars) for per-run egress tokens; unset = networked capabilities fail closed. NOT auto-deployed: auto-deploy only rebuilds `javaapp`, so set it in `.env` and run `docker compose up -d --build sandbox egress-proxy` by hand (see `egress-proxy/FLOWS.md`) | `.env` → `sandbox` + `egress-proxy` |
+| `KPI_SECRETS_KEY` | Optional base64 AES key for users' capability secrets (blank = derived from `JWT_SECRET`) | `.env` → `javaapp` |
 | `CLAUDE_HOME` | Host dir with Claude CLI login, mounted rw at `/root/.claude` in mongo-backup (default `~/.claude`) | `.env` → compose volume |
 | `habitbackup.json` | Google Drive backup | File mounted into `mongo-backup` container |
 
