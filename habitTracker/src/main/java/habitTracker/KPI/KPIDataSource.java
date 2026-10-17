@@ -5,8 +5,8 @@ package habitTracker.KPI;
  * written before this field existed (see KPIData.source javadoc for the deserialization
  * guarantee). AUTOFILL is the pre-existing default-fill cron (KPIDefaultFillService).
  * PROXY_TRELLO / PROXY_CAPABILITY are for the M1 proxy-provider mechanism
- * (habitTracker.updater.KPIProxyFillService) — PROXY_CAPABILITY is reserved for a future
- * proxy type beyond Trello and is not produced by any provider yet.
+ * (habitTracker.updater.KPIProxyFillService) — PROXY_CAPABILITY is produced by
+ * SandboxCapabilityProvider (M7, ProxyType.SANDBOX_CAPABILITY).
  */
 public enum KPIDataSource {
     MANUAL,

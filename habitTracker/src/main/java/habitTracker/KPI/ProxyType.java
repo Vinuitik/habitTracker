@@ -9,5 +9,7 @@ package habitTracker.KPI;
 public enum ProxyType {
     NONE,
     TRELLO_CARD_COUNT,
+    /** M7: runs a stored KPIProxyCapability script in the sandbox sidecar (SandboxCapabilityProvider). */
+    SANDBOX_CAPABILITY,
     MANUAL_PROMPT
 }

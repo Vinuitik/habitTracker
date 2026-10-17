@@ -302,6 +302,7 @@ version to its local cache, downloads and stores newer versions.
   local copy.
 
 ### M7 (spike) — End-to-end sandboxed execution, one fixed script
+**DONE** — built as `sandbox/` sidecar + `SandboxCapabilityProvider` (`ProxyType.SANDBOX_CAPABILITY`); see `KPI/FLOWS.md` and `sandbox/FLOWS.md`.
 **Depends on:** M1, M4.
 **Scope:** prove the full server-side execution pipeline end to end using one hand-written script
 stored in `kpi_proxy_capabilities` (no LLM generation yet) — read from Mongo, run in an ephemeral
