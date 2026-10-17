@@ -1,3 +1,8 @@
+import base64
+import json
+import os
+import pathlib
+import stat
 import subprocess
 import unittest
 from types import SimpleNamespace
@@ -97,6 +102,150 @@ class RunCapabilityTest(unittest.TestCase):
         for _ in range(app.MAX_CONCURRENT + 2):  # would deadlock/busy if slots leaked
             _, res = app.run_capability(payload(), run=fake)
             self.assertEqual(res["outcome"], "TIMEOUT")
+
+
+
+
+SECRET = "e" * 40
+
+
+def capturing_run(result, seen):
+    """fake docker whose `run` captures the env-file contents/perms at call time."""
+    def fake(cmd, **kw):
+        if cmd[:3] == ["docker", "image", "inspect"] or cmd[:2] in (["docker", "rm"], ["docker", "pull"]):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if cmd[:2] == ["docker", "run"]:
+            seen["cmd"] = cmd
+            if "--env-file" in cmd:
+                p = cmd[cmd.index("--env-file") + 1]
+                seen["path"] = p
+                seen["mode"] = stat.S_IMODE(os.stat(p).st_mode)
+                seen["content"] = pathlib.Path(p).read_text()
+            return result
+        raise AssertionError(cmd)
+    return fake
+
+
+class EgressTokenTest(unittest.TestCase):
+    def test_token_shape_and_signature(self):
+        t = app.mint_egress_token(SECRET.encode(), ["b.com", "a.com"], 60, "rid", now=1000)
+        payload, sig = t.split(".")
+        data = json.loads(base64.urlsafe_b64decode(payload + "=="))
+        self.assertEqual(data, {"h": ["a.com", "b.com"], "exp": 1060, "rid": "rid"})
+        import hashlib, hmac
+        exp = base64.urlsafe_b64encode(hmac.new(SECRET.encode(), payload.encode(), hashlib.sha256).digest()).decode().rstrip("=")
+        self.assertEqual(sig, exp)
+
+    def test_proxy_env_has_userinfo_with_password_for_urllib(self):
+        env = app.proxy_env("TOK")
+        self.assertEqual(env["HTTPS_PROXY"], "http://TOK:x@%s:%d" % (app.EGRESS_PROXY_HOST, app.EGRESS_PROXY_PORT))
+        self.assertEqual(env["https_proxy"], env["HTTP_PROXY"])
+
+
+class ExtrasValidationTest(unittest.TestCase):
+    def test_accepts_good(self):
+        self.assertEqual(app.validate_extras(payload(allowedHosts=["b.com", "a.com", "a.com"],
+                                                     secrets={"API_KEY": "abcd1234"})),
+                         (["a.com", "b.com"], {"API_KEY": "abcd1234"}))
+
+    def test_rejects_bad_hosts(self):
+        for h in ["localhost", "10.0.0.1", "a.com:80", "*.a.com", "javaapp", "A.com", "x.123", "a b.com", ""]:
+            with self.assertRaises(ValueError, msg=h):
+                app.validate_extras(payload(allowedHosts=[h]))
+
+    def test_rejects_bad_secrets(self):
+        for s in [{"1BAD": "abcd1234"}, {"HTTPS_PROXY": "abcd1234"}, {"PATH": "abcd1234"}, {"PYTHONPATH": "abcd"},
+                  {"OK": "line\nbreak"}, {"OK": "abc"}, {"OK": "x" * 5000}, {"OK": 5}, {"A=B": "abcd1234"}]:
+            with self.assertRaises(ValueError, msg=str(s)):
+                app.validate_extras(payload(secrets=s))
+
+
+class NetworkSelectionTest(unittest.TestCase):
+    def setUp(self):
+        os.environ["SANDBOX_EGRESS_SECRET"] = SECRET
+
+    def tearDown(self):
+        os.environ.pop("SANDBOX_EGRESS_SECRET", None)
+
+    def run_it(self, **over):
+        seen = {}
+        res = SimpleNamespace(returncode=0, stdout="42\n", stderr="")
+        code, out = app.run_capability(payload(**over), run=capturing_run(res, seen))
+        return seen, out
+
+    def test_no_hosts_means_network_none_and_no_env_file(self):
+        seen, out = self.run_it()
+        self.assertEqual(out["outcome"], "OK")
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--network") + 1], "none")
+        self.assertNotIn("--env-file", seen["cmd"])
+
+    def test_hosts_mean_internal_network_and_proxy_env_in_file_not_argv(self):
+        seen, out = self.run_it(allowedHosts=["api.github.com"])
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--network") + 1], app.EGRESS_NETWORK)
+        self.assertIn("HTTPS_PROXY=http://", seen["content"])
+        self.assertFalse(any("@egress-proxy" in a for a in seen["cmd"]), "token must not be on the command line")
+        self.assertNotIn("ports", " ".join(seen["cmd"]))
+
+    def test_secrets_only_keep_network_none(self):
+        seen, _ = self.run_it(secrets={"API_KEY": "s3cr3t-value"})
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--network") + 1], "none")
+        self.assertIn("API_KEY=s3cr3t-value\n", seen["content"])
+        self.assertFalse(any("s3cr3t-value" in a for a in seen["cmd"]))
+
+    def test_env_file_is_0600_and_deleted_after_run(self):
+        seen, _ = self.run_it(secrets={"API_KEY": "s3cr3t-value"}, allowedHosts=["a.com"])
+        self.assertEqual(seen["mode"], 0o600)
+        self.assertFalse(os.path.exists(seen["path"]))
+
+    def test_env_file_deleted_after_timeout(self):
+        seen = {}
+
+        def fake(cmd, **kw):
+            if cmd[:2] == ["docker", "run"]:
+                seen["path"] = cmd[cmd.index("--env-file") + 1]
+                raise subprocess.TimeoutExpired(cmd, 1)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        _, out = app.run_capability(payload(secrets={"API_KEY": "s3cr3t-value"}), run=fake)
+        self.assertEqual(out["outcome"], "TIMEOUT")
+        self.assertFalse(os.path.exists(seen["path"]))
+
+    def test_fails_closed_without_egress_secret(self):
+        os.environ.pop("SANDBOX_EGRESS_SECRET")
+        run = mock.Mock()
+        _, out = app.run_capability(payload(allowedHosts=["a.com"]), run=run)
+        self.assertEqual(out["outcome"], "SIDECAR_ERROR")
+        run.assert_not_called()
+        os.environ["SANDBOX_EGRESS_SECRET"] = "too-short"
+        _, out = app.run_capability(payload(allowedHosts=["a.com"]), run=run)
+        self.assertEqual(out["outcome"], "SIDECAR_ERROR")
+
+    def test_no_hosts_still_runs_without_egress_secret(self):
+        os.environ.pop("SANDBOX_EGRESS_SECRET")
+        _, out = self.run_it()
+        self.assertEqual(out["outcome"], "OK")
+
+    def test_invalid_extras_are_400(self):
+        code, _ = app.run_capability(payload(allowedHosts=["127.0.0.1"]), run=mock.Mock())
+        self.assertEqual(code, 400)
+
+
+class RedactionTest(unittest.TestCase):
+    def test_secret_values_and_token_redacted_in_stdout_and_stderr(self):
+        os.environ["SANDBOX_EGRESS_SECRET"] = SECRET
+        try:
+            seen = {}
+            res = SimpleNamespace(returncode=1, stdout="key=s3cr3t-value\n7", stderr="bad s3cr3t-value and longer-secret-xyz")
+            _, out = app.run_capability(
+                payload(secrets={"A_KEY": "s3cr3t-value", "B_KEY": "longer-secret-xyz"}), run=capturing_run(res, seen))
+        finally:
+            os.environ.pop("SANDBOX_EGRESS_SECRET")
+        self.assertNotIn("s3cr3t-value", out["stdout"] + out["stderr"])
+        self.assertNotIn("longer-secret-xyz", out["stderr"])
+        self.assertIn("[REDACTED]", out["stdout"])
+        self.assertTrue(out["stdout"].endswith("7"))
+
+    def test_longest_first(self):
+        self.assertEqual(app.redact("abcdef abc", ["abc", "abcdef"]), "[REDACTED] [REDACTED]")
 
 
 if __name__ == "__main__":
