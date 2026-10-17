@@ -33,6 +33,8 @@ services:
       # purpose. Optional: a user simply can't connect Drive if this is unset.
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-disabled}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-disabled}
+      # Key for users' encrypted capability secrets (blank => derived from JWT_SECRET).
+      KPI_SECRETS_KEY: ${KPI_SECRETS_KEY:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089"]
       interval: 5s

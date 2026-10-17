@@ -16,7 +16,8 @@ import java.util.Optional;
  * returns Optional.empty(), which KPIProxyFillService turns into
  * ProxyHealthService.recordFailure (M12 circuit breaker). Never throws.
  *
- * The script sees a module-level TARGET_DATE ISO string. No secrets, no network (M7).
+ * The script sees a module-level TARGET_DATE ISO string. It gets network only to its approved declared
+ * hosts (via the egress proxy) and only its own declared secrets as env vars; nothing else.
  */
 @Component
 public class SandboxCapabilityProvider implements ProxyProvider {
@@ -25,12 +26,15 @@ public class SandboxCapabilityProvider implements ProxyProvider {
 
     private final KPIProxyCapabilityRepository repository;
     private final SandboxClient sandboxClient;
+    private final CapabilitySecretService secretService;
     private final int timeoutSeconds;
 
     public SandboxCapabilityProvider(KPIProxyCapabilityRepository repository, SandboxClient sandboxClient,
+                                     CapabilitySecretService secretService,
                                      @Value("${sandbox.script-timeout-seconds:30}") int timeoutSeconds) {
         this.repository = repository;
         this.sandboxClient = sandboxClient;
+        this.secretService = secretService;
         this.timeoutSeconds = timeoutSeconds;
     }
 
@@ -56,8 +60,14 @@ public class SandboxCapabilityProvider implements ProxyProvider {
         }
 
         String code = "TARGET_DATE = \"" + date + "\"\n" + cap.getSourceCode();
-        SandboxClient.Result result = sandboxClient.run(new SandboxClient.Request(
-                kpi.getUserId(), cap.getId(), cap.getLanguage(), code, timeoutSeconds));
+        SandboxClient.Request request;
+        try {
+            request = secretService.requestFor(cap, kpi.getUserId(), code, timeoutSeconds);
+        } catch (MissingSecretException | CapabilityRejectedException e) {
+            record(cap, "NOT_RUN: " + e.getMessage(), false);
+            return Optional.empty();
+        }
+        SandboxClient.Result result = sandboxClient.run(request);
 
         Double value = result.ok() ? parseLastLine(result.stdout()) : null;
         if (value != null) {
