@@ -41,6 +41,22 @@ services:
     mem_limit: 384m
     restart: unless-stopped
 
+  # KPI capability sandbox sidecar (M7). The ONLY service with the Docker socket: that socket is
+  # host-root-equivalent, so it is kept off javaapp. No published ports; javaapp reaches it at
+  # http://sandbox:8090. See sandbox/FLOWS.md.
+  sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    container_name: sandbox
+    environment:
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-python:3.12-slim}
+      SANDBOX_MAX_CONCURRENT: ${SANDBOX_MAX_CONCURRENT:-4}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    mem_limit: 64m
+    restart: unless-stopped
+
   mongo-backup:
     build:
       context: ./backup

@@ -3,12 +3,13 @@
 ## What this is
 Personal habit tracking web app. Spring Boot + Thymeleaf (server-side rendering), MongoDB, hosted on a personal PC via Cloudflare Tunnel. Max ~20 concurrent users. Built primarily as a learning project.
 
-## Stack (5 containers)
+## Stack (6 containers)
 | Container | Image | Purpose |
 |-----------|-------|---------|
 | `mongodbHabit` | mongo:7 | Database, no public port (internal only) |
 | `javaapp` | eclipse-temurin:21-jre-alpine | Spring Boot 3.4.4 web app + daily cron scheduler, no public port |
 | `mongo-backup` | python:3.10-slim | Dumps MongoDB to Google Drive every 12h |
+| `sandbox` | python:3.12-alpine + docker-cli | KPI capability sandbox sidecar: holds Docker socket, runs capped ephemeral script containers for javaapp (internal only) |
 | `caddy` | caddy:2 | Single public gateway, ports 80+443, auto TLS via Let's Encrypt |
 | `cloudflared` | cloudflare/cloudflared | Cloudflare Tunnel → caddy |
 
@@ -68,6 +69,7 @@ cloudflared/config.yml Tunnel ingress rules (habittrackerdima.me)
 | mongodbHabit | 512m | wiredTigerCacheSizeGB 0.25 |
 | javaapp | 384m | -Xmx256m -Xms64m |
 | mongo-backup | 768m | — (Node + Claude CLI subprocess) |
+| sandbox | 64m | — (ephemeral script containers: 128m / 0.25 cpu each, max 4 concurrent, outside this limit) |
 | caddy | 64m | — |
 | cloudflared | 64m | — |
 
