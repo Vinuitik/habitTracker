@@ -68,7 +68,7 @@ public class SecurityConfig {
                     "/css/**", "/js/**", "/styles/**",
                     "/inputView/**", "/listView/**", "/editView/**",
                     "/tableView/**", "/addHabitView/**",
-                    "/*.html", "/*.css", "/*.js", "/*.png", "/*.ico", "/*.webmanifest",
+                    "/*.html", "/*.css", "/*.js", "/*.png", "/*.ico", "/*.svg", "/*.webmanifest",
                     "/api/sync/pair"
                 ).permitAll()
                 .anyRequest().authenticated()

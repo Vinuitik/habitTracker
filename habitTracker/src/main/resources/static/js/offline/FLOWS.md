@@ -180,6 +180,8 @@ habittracker-offline (v1)
   "was I logged in" flag the way a fuller offline-auth design would have; a session that expired
   while offline just means direct sends keep failing until the user is back online and re-logs in.
 
+- **PWA icons are cached aggressively** — the browser/OS snapshots manifest icons at install time. Bumping `sw.js` `VERSION` refreshes tab favicons and the shell cache, but an installed Android PWA may keep the old home-screen icon until reinstall (WebAPK updates are lazy); iOS only reads `apple-touch-icon.png` when "Add to Home Screen" is tapped, so re-add to refresh. `/favicon.svg` must stay permitted in `SecurityConfig` (`/*.svg`) or SW install's `addAll` fails.
+
 ## Change Index
 
 | What to change | Where |
@@ -204,3 +206,4 @@ habittracker-offline (v1)
 | Today pull timeout / snapshot keys | `store.js` `PULL_TIMEOUT_MS` / `SNAPSHOT_KEY` |
 | Direct-send timeout | `outbox.js` `SEND_TIMEOUT_MS` |
 | Persistent update-available topbar button | `js/topbar.js` `TopbarUpdate`/`initTopbar()`, styled in `styles/organisms/topbar.css` `.topbar__update` |
+| App icon / favicon / maskable icon | `static/favicon.svg` (source), PNGs `static/android-chrome-*.png`, `apple-touch-icon.png`, `favicon-*.png`, `favicon.ico`; wired in `static/site.webmanifest` `icons` + `<link rel="icon">` in each `<head>`; precached in `../../sw.js` `SHELL_URLS` (bump `VERSION`); alternates + regen notes in `docs/designs/logo/README.md` |
