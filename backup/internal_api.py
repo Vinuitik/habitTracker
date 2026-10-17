@@ -5,6 +5,7 @@ no published port: reachable only as mongo-backup:8092 on the docker network. No
 isolation is the only gate. Reuses the MCP tool functions directly — no logic is duplicated here.
 """
 import asyncio
+from typing import Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -17,6 +18,7 @@ from trello_mcp.tools_planning import apply_schedule
 
 PORT = 8092
 _plan_lock = asyncio.Lock()  # single-flight: one `claude -p` at a time
+_capability_lock = asyncio.Lock()  # single-flight: one capability generation at a time
 
 
 class BoardIn(BaseModel):
@@ -26,6 +28,16 @@ class BoardIn(BaseModel):
 class PlanIn(BaseModel):
     boardId: str
     description: str
+
+
+class CapabilityIn(BaseModel):
+    mode: Literal["propose", "generate"]
+    kpiName: str
+    description: str
+    proposal: str | None = None
+    declaredCapabilities: dict | None = None
+    previousCode: str | None = None
+    previousError: str | None = None
 
 
 class ApplyIn(BaseModel):
@@ -78,6 +90,22 @@ async def agent_plan(body: PlanIn) -> dict:
         name = await _board_name(body.boardId)
         try:
             return await claude_cli.run_plan(name, body.description)
+        except claude_cli.CliError as e:
+            raise HTTPException(e.status, str(e))
+
+
+@app.post("/internal/agent/capability")
+async def agent_capability(body: CapabilityIn) -> dict:
+    # propose -> {proposal, platform, declaredCapabilities}; generate -> {sourceCode}. No MCP tools.
+    if body.mode == "generate" and not (body.proposal or "").strip():
+        raise HTTPException(422, "generate requires an approved proposal")
+    if _capability_lock.locked():
+        raise HTTPException(409, "a capability request is already running")
+    async with _capability_lock:
+        try:
+            return await claude_cli.run_capability(
+                body.mode, body.kpiName, body.description, body.proposal,
+                body.declaredCapabilities, body.previousCode, body.previousError)
         except claude_cli.CliError as e:
             raise HTTPException(e.status, str(e))
 
