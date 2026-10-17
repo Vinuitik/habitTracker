@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v9';
+const VERSION = 'v10';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -32,6 +32,8 @@ const SHELL_URLS = [
   '/android-chrome-192x192.png',
   '/android-chrome-512x512.png',
   '/apple-touch-icon.png',
+  '/android-chrome-maskable-512x512.png',
+  '/favicon.svg',
   '/favicon-32x32.png',
   '/favicon-16x16.png',
 ];
