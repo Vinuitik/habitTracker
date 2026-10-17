@@ -86,7 +86,19 @@ javaapp ──(no auth)──► mongo-backup:8092 (FastAPI, thread in mcp_serve
          → _board_name() → claude_cli.run_plan() → `claude -p` → MCP localhost:8091/mcp
            (get_state → describe_graph → create_cards → propose_schedule)         → {cards, proposal}
   POST   /internal/agent/apply {boardId,deadline?,pace?} → tools_planning.apply_schedule()
+  POST   /internal/agent/capability {mode,kpiName,description,proposal?,declaredCapabilities?,previousCode?,previousError?}
+         → claude_cli.run_capability() → `claude -p` with NO tools and NO MCP servers (pure text)
+           mode=propose  → {proposal, platform, declaredCapabilities:{network,secrets}}
+           mode=generate → {sourceCode}      (needs a non-empty `proposal`, else 422)
+         caller: javaapp KPI/HttpCapabilityGenerator (KPI agent loop, see KPI/FLOWS.md)
 ```
+
+`/agent/capability` is single-flight on its own lock (`internal_api._capability_lock`, 409 when busy), independent of
+`_plan_lock`. The CLI gets an empty strict MCP config and `--tools ""` (`claude_cli.build_capability_cmd()`), so a
+prompt-injected description cannot reach Trello, files or the network; the output is only data that Java stores and
+runs exclusively in the sandbox sidecar. `parse_capability_result()` validates the JSON shape and 64KB source cap
+(→ 502 on garbage). Same CLI env knobs apply (`CLAUDE_TIMEOUT_S` 300s → 504; `CLAUDE_BIN`), turns capped at 3.
+Auth expiry / non-zero exit → 502 with stderr tail, surfaced to the user as "Code generation failed".
 
 Not in `caddy/Caddyfile`, no published port. Boards are addressed by id at the API but the MCP tools
 resolve boards by name, so `_board_name()` looks the name up first. `plan` never applies: the CLI's
@@ -500,5 +512,7 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Board create/hard-delete | `internal_api.py` | `create_board()`, `delete_board()` | only hard delete in the system |
 | Plan single-flight | `internal_api.py` | `_plan_lock` | 409 on concurrent |
 | Claude CLI invocation | `claude_cli.py` | `build_cmd()`, `ALLOWED_TOOLS`, `build_prompt()`, `parse_result()` | tools allowlist excludes apply_schedule |
+| Capability agent endpoint | `internal_api.py` | `agent_capability()`, `CapabilityIn`, `_capability_lock` | 409 when busy |
+| Capability prompts / parsing | `claude_cli.py` | `build_capability_prompt()`, `build_capability_cmd()`, `parse_capability_result()`, `run_capability()` | no tools, no MCP; tests in `tests/test_capability_agent.py` |
 | CLI limits | `claude_cli.py` | `CLAUDE_TIMEOUT_S`, `CLAUDE_MAX_TURNS`, `CLAUDE_BIN`, `CLAUDE_MCP_URL` env | 300s / 25 |
 | CLI credentials mount | `docker-compose.yml` | `CLAUDE_HOME` env → `/root/.claude` | rw |

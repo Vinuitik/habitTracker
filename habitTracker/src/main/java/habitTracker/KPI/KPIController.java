@@ -105,8 +105,8 @@ public class KPIController {
     }
 
     // M12 manual reset: clears proxyStatus back to ACTIVE and zeroes consecutiveProxyFailures for
-    // the current user's own KPI. The only supported way out of NEEDS_REPAIR until the real
-    // auto-repair pipeline (M8) exists.
+    // the current user's own KPI. Manual escape hatch out of NEEDS_REPAIR; the real
+    // repair is POST /api/kpis/{name}/capability/repair (M8).
     @PutMapping("/{name}/proxy/reset")
     public ResponseEntity<?> resetProxyHealth(@PathVariable String name) {
         try {

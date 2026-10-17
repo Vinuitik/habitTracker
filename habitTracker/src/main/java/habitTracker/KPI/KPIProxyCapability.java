@@ -35,8 +35,9 @@ public class KPIProxyCapability {
     private String language = "python";
     private String sourceCode;
 
-    // e.g. {"network": ["api.trello.com"], "secrets": ["trelloToken"]}. Not enforced by M7
-    // (sandbox is always network=none, no secrets); recorded for M8+.
+    // e.g. {"network": ["api.trello.com"], "secrets": ["trelloToken"]}. The sandbox is always
+    // network=none with no secrets, so M8 refuses proposals declaring either (the enforcement
+    // boundary today is: nothing non-empty is ever approved).
     private Map<String, List<String>> declaredCapabilities;
 
     @Builder.Default
@@ -45,6 +46,15 @@ public class KPIProxyCapability {
     private Integer version = 1;
     @Builder.Default
     private Integer consecutiveFailures = 0;
+
+    // M8 agent loop: what the user asked for, the approved written spec, and test-gate bookkeeping.
+    private String description;
+    private String proposal;
+    // Generation attempts that produced code for this version (cap: CapabilityAgentService.MAX_ATTEMPTS).
+    @Builder.Default
+    private Integer attempts = 0;
+    // Why the last test gate failed (or what broke, when seeding a repair); fed back into the next prompt.
+    private String failureReason;
 
     private LocalDateTime createdAt;
     private LocalDateTime lastRunAt;
