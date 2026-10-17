@@ -112,10 +112,21 @@ CAPABILITY_MAX_TURNS = 3
 MAX_SOURCE_BYTES = 64 * 1024  # sandbox's own source cap; fail early instead of at the sidecar
 
 _SANDBOX_FACTS = (
-    "Execution environment for the script: python 3.12 standard library only, NO network, NO "
-    "environment secrets, read-only filesystem, ~30s timeout. A module-level string constant "
+    "Execution environment for the script: python 3.12 STANDARD LIBRARY ONLY (no requests, no pip), "
+    "read-only filesystem, ~30s timeout. A module-level string constant "
     'TARGET_DATE = "YYYY-MM-DD" is prepended before your code. The script must print the KPI '
-    "value for TARGET_DATE as a plain number on the LAST line of stdout (extra earlier lines are ignored)."
+    "value for TARGET_DATE as a plain number on the LAST line of stdout (extra earlier lines are ignored).\n"
+    "NETWORK: by default there is none. The ONLY network access is to the exact hostnames listed in the approved "
+    "declaredCapabilities.network (https on 443 or http on 80, any path on those hosts), reached through a "
+    "mandatory HTTP proxy that is already configured in the HTTPS_PROXY/HTTP_PROXY environment variables. Use "
+    "urllib.request ONLY: urlopen() picks the proxy (and its credentials) up from the environment automatically, "
+    "so do not set proxies yourself, do not print or log them, and do NOT use http.client, socket, or ssl "
+    "directly (they bypass the proxy and will fail). Any other host, an IP address, or a non-80/443 port is "
+    "denied (you will see HTTP 403 / 'Tunnel connection failed'). Always pass timeout=15 to urlopen. "
+    "Example: urllib.request.urlopen(urllib.request.Request('https://api.example.com/v1/x', "
+    "headers={'Authorization': 'Bearer ' + os.environ['API_TOKEN']}), timeout=15).\n"
+    "SECRETS: each name in the approved declaredCapabilities.secrets is available as an environment variable "
+    "with EXACTLY that name (os.environ['NAME']). Never print, log or return a secret. No other secrets exist."
 )
 
 
@@ -128,10 +139,13 @@ def build_capability_prompt(mode: str, kpi_name: str, description: str, proposal
             f"KPI name: {kpi_name}\nUser wants this captured automatically: {description}\n\n"
             f"{_SANDBOX_FACTS}\n"
             "Write a concrete proposal: the data-source strategy and exactly what the script would need "
-            "to touch. Be TRUTHFUL in declaredCapabilities: list every network host and every secret the "
-            "script would genuinely need, even though the sandbox currently offers none (the server will "
-            "reject what it cannot grant). platform is SERVER for code that runs on the server, WINDOWS or "
-            "ANDROID if the data only exists on a user device.\n"
+            "to touch. Be TRUTHFUL and MINIMAL in declaredCapabilities: list every network host and every secret the "
+            "script would genuinely need, and nothing more; the user's approval grants exactly that list. "
+            "network entries must be plain public hostnames only (e.g. api.github.com): no IP addresses, no "
+            "ports, no wildcards, no URLs, nothing internal (localhost, *.local, *.internal). secrets entries "
+            "are environment-variable style names the user will fill in (e.g. GITHUB_TOKEN: letters, digits, "
+            "underscore). Prefer a source that needs no secret when one exists. platform is SERVER for code "
+            "that runs on the server, WINDOWS or ANDROID if the data only exists on a user device.\n"
             "Reply with ONLY one JSON object, no prose, no code fences: "
             '{"proposal": "<2-6 sentence plain-language spec>", "platform": "SERVER|WINDOWS|ANDROID", '
             '"declaredCapabilities": {"network": [<hostnames>], "secrets": [<secret names>]}}'

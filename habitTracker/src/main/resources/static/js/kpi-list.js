@@ -222,6 +222,83 @@ function setAutomateBusy(busy) {
     document.querySelectorAll('#automateBody button').forEach(b => { b.disabled = busy; });
 }
 
+// Declared hosts + secrets of a proposal. Secret inputs are write-only: the server never returns a value,
+// only which names are set. All text via textContent (names/hosts are LLM output).
+function renderAutomateAccess(body, cap) {
+    const declared = cap.declaredCapabilities || {};
+    const hosts = declared.network || [];
+    const secrets = declared.secrets || [];
+    const box = automateEl('div', 'automate__access');
+    box.append(automateEl('div', 'automate__text', `Platform: ${cap.platform || 'SERVER'}`));
+    box.append(automateEl('div', 'form-group__hint', hosts.length
+        ? 'Network: this script may reach ONLY these hosts (any path on them). Approving grants exactly this.'
+        : 'Network: none.'));
+    if (hosts.length) {
+        const chips = automateEl('div', 'automate__chips');
+        hosts.forEach(h => chips.append(automateEl('span', 'automate__chip', h)));
+        box.append(chips);
+    }
+    box.append(automateEl('div', 'form-group__hint', secrets.length
+        ? 'Secrets: injected as environment variables with exactly these names, for this script only.'
+        : 'Secrets: none.'));
+    secrets.forEach(name => {
+        const row = automateEl('div', 'automate__secret');
+        const status = automateEl('span', 'automate__secret-state', 'checking...');
+        const input = automateEl('input', 'input input--sm');
+        input.type = 'password';
+        input.autocomplete = 'new-password';
+        input.placeholder = 'Paste value (write-only)';
+        input.setAttribute('aria-label', `Value for ${name}`);
+        const save = automateButton('Save', 'btn--ghost btn--sm', async () => {
+            const value = input.value;
+            if (!value) return;
+            const ok = await automateSecretCall(name, 'PUT', { value }, status);
+            if (ok) input.value = '';
+        });
+        const remove = automateButton('Remove', 'btn--ghost btn--sm', () => automateSecretCall(name, 'DELETE', null, status));
+        row.append(automateEl('span', 'automate__secret-name', name), status, input, save, remove);
+        box.append(row);
+        automateSecretNames().then(names => setSecretState(status, names.includes(name)))
+            .catch(() => { status.textContent = 'unknown'; });
+    });
+    body.append(box);
+}
+
+function setSecretState(el, isSet) {
+    el.textContent = isSet ? 'set' : 'not set';
+    el.className = 'automate__secret-state ' + (isSet ? 'automate__secret-state--set' : 'automate__secret-state--unset');
+}
+
+async function automateSecretNames() {
+    const res = await fetch(ENV.ENDPOINTS.KPI_SECRETS, { credentials: 'include' });
+    if (!res.ok) throw new Error('secrets list failed');
+    return (await res.json()).names || [];
+}
+
+async function automateSecretCall(name, method, body, statusEl) {
+    try {
+        const res = await fetch(ENV.ENDPOINTS.KPI_SECRET(name), {
+            method,
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
+            body: body ? JSON.stringify(body) : undefined
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const errEl = document.getElementById('automateError');
+            errEl.textContent = data.error || `Could not save secret (${res.status})`;
+            errEl.hidden = false;
+            return false;
+        }
+        document.getElementById('automateError').hidden = true;
+        setSecretState(statusEl, method === 'PUT');
+        return true;
+    } catch (e) {
+        statusEl.textContent = 'unknown';
+        return false;
+    }
+}
+
 function renderAutomate(cap, error) {
     AUTOMATE.current = cap;
     const body = document.getElementById('automateBody');
@@ -244,7 +321,7 @@ function renderAutomate(cap, error) {
         ta.placeholder = 'e.g. Count the lines of code in my project folder each day';
         group.append(label, ta,
             automateEl('span', 'form-group__hint',
-                'The agent proposes a plan first. Nothing runs until you approve it. Scripts run in a sandbox with no network access.'));
+                'The agent proposes a plan first. Nothing runs until you approve it. Scripts run in a sandbox: no network unless a host is declared in the proposal and you approve it.'));
         const actions = automateEl('div', 'modal-box__actions');
         actions.append(automateButton('Propose', 'btn--primary', () => {
             const description = ta.value.trim();
@@ -260,8 +337,8 @@ function renderAutomate(cap, error) {
     if (status === 'PROPOSED') {
         body.append(automateEl('div', 'form-group__label', 'Proposal'),
             automateEl('div', 'automate__text', cap.proposal),
-            automateEl('div', 'form-group__label', 'Access requested'),
-            automateEl('div', 'automate__text', 'Platform: SERVER · network: none · secrets: none'));
+            automateEl('div', 'form-group__label', 'Access requested'));
+        renderAutomateAccess(body, cap);
         const actions = automateEl('div', 'modal-box__actions');
         actions.append(
             automateButton('Approve', 'btn--primary', () => automateCall(`/${cap.id}/approve`)),
@@ -271,6 +348,7 @@ function renderAutomate(cap, error) {
         body.append(automateEl('div', 'form-group__label', 'Test gate failed'),
             automateEl('pre', 'automate__code', cap.failureReason || 'Unknown failure'),
             automateEl('div', 'form-group__hint', `Attempts used: ${cap.attempts} of ${cap.maxAttempts}`));
+        renderAutomateAccess(body, cap);
         const actions = automateEl('div', 'modal-box__actions');
         if (cap.attempts < cap.maxAttempts) {
             actions.append(automateButton('Regenerate', 'btn--primary', () => automateCall(`/${cap.id}/regenerate`)));

@@ -16,6 +16,8 @@ window.ENV = {
     KPI_CONFIRM:     (name, date) => `/api/kpis/${encodeURIComponent(name)}/data/${date}/confirm`,
     KPI_EDIT_DATA:   (name, date) => `/api/kpis/${encodeURIComponent(name)}/data/${date}`,
     KPI_PROXY:       (name) => `/api/kpis/${encodeURIComponent(name)}/proxy`,
+    KPI_SECRETS:     '/api/kpi-secrets',
+    KPI_SECRET:      (name) => `/api/kpi-secrets/${encodeURIComponent(name)}`,
     PROJECTS:        '/api/projects',
     PROJECT:         (id) => `/api/projects/${id}`,
     SYNC_OAUTH_URL:  '/api/sync/oauth/url',
