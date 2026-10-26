@@ -11,6 +11,10 @@ window.Board = (() => {
   let S = null;           // { data, el, h }
   let tmpSeq = 0;
   const pend = new Map(); // cardId -> in-flight write count (server response applied only at 0)
+  let writes = 0;         // in-flight writes of any kind; remote poll results are not applied while > 0
+  let epoch = 0;          // bumped when a write starts; a poll that straddles a write is discarded
+  const beginWrite = () => { writes += 1; epoch += 1; };
+  const endWrite = () => { writes = Math.max(0, writes - 1); };
 
   const isTmp = (id) => String(id).startsWith('tmp-');
   const openLists = () => S.data.lists.filter((l) => !l.closed).sort((a, b) => a.pos - b.pos);
@@ -60,10 +64,15 @@ window.Board = (() => {
   function renderColumns() {
     const sc = S.el.querySelector('.board__scroller');
     const left = sc.scrollLeft;
+    const tops = new Map([...sc.querySelectorAll('.list-column[data-list-id]')]
+      .map((c) => [c.dataset.listId, c.querySelector('.list-column__cards').scrollTop]));
     sc.innerHTML = openLists().map(columnHtml).join('') + addColHtml();
     sc.querySelectorAll('.list-column[data-list-id]').forEach(wireColumn);
     Composer.bind(sc.querySelector('[data-add-list] .composer'), addList);
     sc.scrollLeft = left;
+    sc.querySelectorAll('.list-column[data-list-id]').forEach((c) => {
+      if (tops.has(c.dataset.listId)) c.querySelector('.list-column__cards').scrollTop = tops.get(c.dataset.listId);
+    });
   }
 
   function refreshList(listId) {
@@ -85,14 +94,15 @@ window.Board = (() => {
     el.className = 'board';
     S = { data, el, h };
     pend.clear();
+    writes = 0;
     const url = safeUrl(data.url);
     el.innerHTML = `
       <header class="board__header">
         <a class="btn btn--ghost board__back" href="#/" aria-label="Back to boards">${Icons.back}</a>
         <h1 class="board__name">${esc(data.name)}</h1>
         <div class="board__tools">
-          ${stale ? '<span class="badge badge--warning">Trello unreachable, showing cached data</span>' : ''}
-          <span class="board__synced">synced ${esc(timeAgo(data.syncedAt))}</span>
+          <span class="badge badge--warning" data-stale ${stale ? '' : 'hidden'}>Trello unreachable, showing cached data</span>
+          <span class="board__synced" data-synced>synced ${esc(timeAgo(data.syncedAt))}</span>
           ${url ? `<a class="btn btn--ghost" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Trello</a>` : ''}
           <button class="btn btn--ghost" data-act="refresh">Refresh</button>
           <button class="btn btn--primary" data-act="plan">Plan with AI</button>
@@ -100,6 +110,12 @@ window.Board = (() => {
       </header>
       <div class="board__scroller"></div>`;
     root.replaceChildren(el);
+    el.querySelector('.board__header').insertAdjacentHTML('beforeend', `
+      <div class="board__banner" data-banner hidden>
+        <span>This board no longer exists in Trello</span>
+        <button class="btn btn--danger btn--sm" data-act="unlink">Unlink</button>
+      </div>`);
+    setMissing(!!data.boardMissing);
     renderColumns();
     el.querySelector('.board__scroller').scrollLeft = prevScroll;
 
@@ -107,6 +123,7 @@ window.Board = (() => {
       const act = e.target.closest('[data-act]');
       if (act && act.dataset.act === 'refresh') { h.onRefresh(act); return; }
       if (act && act.dataset.act === 'plan') { h.onPlan(act); return; }
+      if (act && act.dataset.act === 'unlink') { h.onUnlink(act); return; }
       if (act && act.dataset.act === 'list-menu') { listMenu(act); return; }
       const tile = e.target.closest('.card-tile');
       if (!tile) return;
@@ -145,15 +162,18 @@ window.Board = (() => {
     const oldList = card.idList;
     Object.assign(card, local);
     pend.set(card.id, (pend.get(card.id) || 0) + 1);
+    beginWrite();
     refreshLists(oldList, card.idList);
     try {
       const resp = await call();
       const n = pend.get(card.id) - 1;
       pend.set(card.id, n);
       if (!n && resp) Object.assign(card, resp);
+      endWrite();
       refreshLists(oldList, card.idList);
       return card;
     } catch (e) {
+      endWrite();
       pend.set(card.id, pend.get(card.id) - 1);
       const cur = card.idList;
       Object.assign(card, prev);
@@ -198,14 +218,17 @@ window.Board = (() => {
     if (isTmp(listId)) { Toast.show('Still creating that list…'); return; }
     const tmp = { id: `tmp-${++tmpSeq}`, idList: listId, name, desc: '', pos: lastPos(listId) + STEP, labels: [], badges: {}, closed: false, done: false };
     S.data.cards.push(tmp);
+    beginWrite();
     refreshList(listId);
     const box = colEl(listId)?.querySelector('.list-column__cards');
     if (box) box.scrollTop = box.scrollHeight;
     try {
       const resp = await Api.request(EP.PROJECT_CARDS(S.h.projectId), 'POST', { idList: listId, name, pos: tmp.pos });
       Object.assign(tmp, resp);
+      endWrite();
       refreshLists(listId, tmp.idList);
     } catch (e) {
+      endWrite();
       S.data.cards = S.data.cards.filter((c) => c !== tmp);
       refreshList(listId);
       fail(e, 'Could not add card');
@@ -239,6 +262,7 @@ window.Board = (() => {
     const ls = openLists();
     const tmp = { id: `tmp-${++tmpSeq}`, name, pos: (ls.length ? ls[ls.length - 1].pos : 0) + STEP, closed: false };
     S.data.lists.push(tmp);
+    beginWrite();
     const sc = S.el.querySelector('.board__scroller');
     sc.querySelector('[data-add-list]').insertAdjacentHTML('beforebegin', columnHtml(tmp));
     const col = colEl(tmp.id);
@@ -248,7 +272,9 @@ window.Board = (() => {
       const resp = await Api.request(EP.PROJECT_LISTS(S.h.projectId), 'POST', { name, pos: tmp.pos });
       Object.assign(tmp, resp);
       col.dataset.listId = tmp.id;
+      endWrite();
     } catch (e) {
+      endWrite();
       S.data.lists = S.data.lists.filter((l) => l !== tmp);
       col.remove();
       fail(e, 'Could not add list');
@@ -261,8 +287,10 @@ window.Board = (() => {
     const old = list.name;
     list.name = name;
     syncName(list);
+    beginWrite();
     try { Object.assign(list, await patchList(list.id, { name })); syncName(list); }
     catch (e) { list.name = old; syncName(list); fail(e, 'Could not rename list'); }
+    finally { endWrite(); }
   }
   function syncName(list) {
     const col = colEl(list.id);
@@ -275,8 +303,10 @@ window.Board = (() => {
   async function archiveList(list) {
     list.closed = true;
     colEl(list.id)?.remove();
+    beginWrite();
     try {
       await patchList(list.id, { closed: true });
+      endWrite();
       Toast.show('List archived', ENV.TIMING.UNDO_TOAST_MS, {
         label: 'Undo',
         onClick: async () => {
@@ -286,6 +316,7 @@ window.Board = (() => {
         },
       });
     } catch (e) {
+      endWrite();
       list.closed = false;
       renderColumns();
       fail(e, 'Could not archive list');
@@ -328,8 +359,58 @@ window.Board = (() => {
     ]);
   }
 
+  // ── remote sync (poll results from Trello-side edits) ─────────────────
+  function setMissing(on) {
+    const b = S.el.querySelector('[data-banner]');
+    if (b) b.hidden = !on;
+  }
+
+  /** True while applying a remote snapshot could clobber the user's in-progress work. */
+  function isBusy() {
+    if (!S) return true;
+    return writes > 0 || document.body.classList.contains('dnd-active')
+      || !!S.el.querySelector('.composer__form:not([hidden]), .list-column__name-input')
+      || CardModal.isDirty();
+  }
+  const stamp = () => epoch;
+
+  const listSig = (l) => [l.id, l.name, l.pos, l.closed].join('|');
+  const cardSig = (c) => JSON.stringify([c.idList, c.name, c.desc, c.pos, c.due, c.dueComplete, c.closed, c.done, c.url,
+    (c.labels || []).map((l) => [l.id, l.name, l.color]), c.badges || null]);
+
+  /**
+   * Replaces local data with a fresh server snapshot, re-rendering only what differs: all columns if the
+   * set/order/names of open lists changed, else just the lists whose cards changed.
+   * Returns the set of card ids that changed or disappeared (for the open card modal).
+   */
+  function apply(data, stale) {
+    const lists = data.lists || [];
+    const cards = data.cards || [];
+    const oldCards = new Map(S.data.cards.map((c) => [c.id, c]));
+    const newIds = new Set(cards.map((c) => c.id));
+    const open = (ls) => ls.filter((l) => !l.closed).sort((a, b) => a.pos - b.pos).map(listSig).join(';');
+    const structural = open(S.data.lists) !== open(lists);
+    const changed = new Set();
+    const dirty = new Set();
+    cards.forEach((c) => {
+      const o = oldCards.get(c.id);
+      if (!o || cardSig(o) !== cardSig(c)) { changed.add(c.id); dirty.add(c.idList); if (o) dirty.add(o.idList); }
+    });
+    oldCards.forEach((o, id) => { if (!newIds.has(id)) { changed.add(id); dirty.add(o.idList); } });
+
+    Object.assign(S.data, { name: data.name, url: data.url, syncedAt: data.syncedAt, boardMissing: data.boardMissing, lists, cards });
+    if (structural) renderColumns();
+    else refreshLists(...dirty);
+
+    S.el.querySelector('.board__name').textContent = data.name;
+    S.el.querySelector('[data-synced]').textContent = `synced ${timeAgo(data.syncedAt)}`;
+    S.el.querySelector('[data-stale]').hidden = !stale;
+    setMissing(!!data.boardMissing);
+    return changed;
+  }
+
   return {
-    render, getCard, listName, openLists: () => openLists().map((l) => ({ id: l.id, name: l.name })),
+    isBusy, stamp, apply, render, getCard, listName, openLists: () => openLists().map((l) => ({ id: l.id, name: l.name })),
     updateCard, completeCard, reopenCard, moveCardToList, archiveCard,
   };
 })();

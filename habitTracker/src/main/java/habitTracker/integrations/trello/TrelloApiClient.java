@@ -29,7 +29,7 @@ public class TrelloApiClient {
 
     private static final String CARD_FIELDS =
             "name,desc,idList,idBoard,pos,due,dueComplete,closed,labels,badges,url,dateLastActivity";
-    private static final String BOARD_QS = "fields=name,url&lists=all&list_fields=name,pos,closed&cards=all"
+    private static final String BOARD_QS = "fields=name,url,dateLastActivity&lists=all&list_fields=name,pos,closed&cards=all"
             + "&card_fields=" + CARD_FIELDS;
 
     private final TrelloCredentialRepository credentials;
@@ -66,6 +66,13 @@ public class TrelloApiClient {
     public Map<String, Object> getBoard(String userId, String boardId) {
         return call(userId, HttpMethod.GET, "/1/boards/" + boardId, BOARD_QS,
                 new ParameterizedTypeReference<Map<String, Object>>() {});
+    }
+
+    /** Cheap change probe: board.dateLastActivity (ISO string) or null if Trello omitted it. 404 → TrelloGatewayException(status 404). */
+    public String getBoardActivity(String userId, String boardId) {
+        Map<String, Object> res = call(userId, HttpMethod.GET, "/1/boards/" + boardId, "fields=dateLastActivity", MAP);
+        Object d = res == null ? null : res.get("dateLastActivity");
+        return d == null ? null : d.toString();
     }
 
     /** Creates an empty board (no default lists); returns its id. */

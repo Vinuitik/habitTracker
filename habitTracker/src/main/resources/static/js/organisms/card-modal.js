@@ -139,6 +139,23 @@ window.CardModal = (() => {
     }
   }
 
+  /** Unsaved edits: description draft differing from the card, or a retitled-but-not-yet-saved title. */
+  function isDirty() {
+    if (!cur) return false;
+    const card = Board.getCard(cur.id);
+    if (!card) return false;
+    const title = $('cd-title');
+    return (cur.descDraft != null && cur.descDraft !== stripMeta(card.desc)) || (!!title && title.value.trim() !== card.name);
+  }
+
+  /** After a remote board update: re-render the open card if it changed; close it if it was deleted/archived. */
+  function onRemote(changed) {
+    if (!cur || !changed.has(cur.id)) return;
+    const card = Board.getCard(cur.id);
+    if (!card || card.closed) { close(); Toast.show('This card was deleted or archived in Trello'); return; }
+    render();
+  }
+
   function close() { Dom.close('card-modal'); cur = null; }
 
   function init() {
@@ -157,5 +174,5 @@ window.CardModal = (() => {
     });
   }
 
-  return { open, init };
+  return { open, init, isDirty, onRemote };
 })();

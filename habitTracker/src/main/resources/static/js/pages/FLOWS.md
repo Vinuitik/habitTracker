@@ -46,6 +46,14 @@ To change optimistic behaviour: `mutate()`; list pos step / drag thresholds: `EN
 - Mark complete / Reopen (by `card.done`) → POST complete/reopen. Archive → PATCH `{closed:true}`, modal closes, Undo toast PATCHes `{closed:false}`.
 Mobile: action buttons sit in one row directly under the title (`.card-detail__actions`).
 
+## Live sync (Trello-side edits)
+`showBoard()` → `startPoll(id, my)` → every `ENV.TIMING.BOARD_POLL_MS` (60s), plus `window` focus / `visibilitychange` → `pollBoard()` → skipped unless `document.visibilityState==='visible'` and `!Board.isBusy()` (drag `dnd-active`, in-flight write, open composer / inline list rename, `CardModal.isDirty()`) → `Api.raw(PROJECT_BOARD(id,false))` → result dropped if route changed, or `Board.stamp()` moved / `isBusy()` became true during the request → `Board.apply(data, stale)` → `CardModal.onRemote(changedIds)`.
+- `Board.apply()`: diffs lists (`listSig`) and cards (`cardSig`); open-list set/order/name change → `renderColumns()` (keeps horizontal + per-column scroll); else `refreshLists()` only for lists whose cards changed. Header name/synced/stale badge updated in place.
+- Open card modal: changed remotely and not dirty → `render()`; deleted/archived → `close()` + toast. Dirty modal skips the whole tick.
+- `route()` → `stopPoll()`. 412 during poll → `showConnect()`; other errors silent.
+- `boardMissing` in the response → `Board.setMissing()` shows the header banner "This board no longer exists in Trello" + Unlink → `h.onUnlink` → `unlinkMissing()` → `startDelete()` (normal two-step; navigates to `#/` afterwards).
+To change: poll interval `ENV.TIMING.BOARD_POLL_MS`; busy rules `Board.isBusy()`; diff fields `cardSig()`.
+
 ## Trello not connected (HTTP 412)
 Any index/board/import/create call → `Api.isTrelloAuth(err)` → `showConnect()` → `ConnectPanel.render()` → PUT `TRELLO_CREDENTIALS {apiKey, token}` → `route()` (retry).
 `trello_token_invalid` changes only the panel copy.
@@ -72,6 +80,10 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 | Quick-complete button | CardTile.html, styles/molecules/card-tile.css |
 | Card modal fields | CardModal.render / onClick / onChange |
 | Undo toast | Toast.show(msg, ms, {label,onClick}), `ENV.TIMING.UNDO_TOAST_MS` |
+| Poll interval | `ENV.TIMING.BOARD_POLL_MS` |
+| Poll gating / apply | projects.js `pollBoard()`, `Board.isBusy()/stamp()/apply()` |
+| Open-modal remote refresh / dirty check | `CardModal.onRemote()/isDirty()` |
+| Missing-board banner + Unlink | `Board.setMissing()`, `.board__banner` in styles/organisms/board.css, projects.js `unlinkMissing()` |
 | Mobile snap columns | styles/molecules/list-column.css, organisms/board.css (≤768px) |
 
 ## Technology Notes
@@ -82,7 +94,7 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 - Trello strings are escaped with `Dom.esc`; hrefs allow only `https://` (`Dom.safeUrl`).
 - Board height uses `100dvh` minus top/tab bars; older browsers without `dvh` fall back poorly.
 - Progress bar uses `<progress>` (avoids inline width styles).
-- Concurrent edits made in Trello (or another tab) are not reflected until Refresh / page reload; no polling yet [NOT IMPLEMENTED, Stage 3]. Optimistic writes can therefore overwrite newer Trello-side values (last write wins).
+- Trello-side edits arrive via 60s polling while the board is open and visible (server side: 15-min background sync + `dateLastActivity` probe), so latency is up to ~1-2 min; webhooks/push [NOT IMPLEMENTED]. Polling pauses during writes/drags/edits, so a long-open composer or dirty modal defers updates. Optimistic writes can still overwrite newer Trello-side values (last write wins). Each poll is one GET (a Trello probe only after the 60s server TTL); background tabs don't poll, and a poll runs on return to the tab.
 - Temp ids (`tmp-N`) exist only client-side until the POST returns; those cards/lists reject drag, menu and add-card actions.
 - `pos` is a float; repeated midpoint drops between the same two cards eventually exhaust double precision (~50 halvings); Trello rebalances server-side but the client does not.
 - Touch drag relies on a non-passive `touchmove` listener on the board (iOS ignores preventDefault from listeners added mid-gesture); `touch-action` stays pan-x/pan-y so scrolling works before the long-press fires.

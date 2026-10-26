@@ -27,6 +27,7 @@
       if (!isCurrent(my)) return;
     }
     firstRender = false;
+    stopPoll();
     PlanDrawer.close();
     $('projects-page').classList.toggle('projects-page--board', !!m);
     v.innerHTML = '<div class="projects-empty">Loading…</div>';
@@ -130,9 +131,54 @@
         Toast.show('Board refreshed');
       },
       onPlan: () => PlanDrawer.toggle(id),
+      onUnlink: () => unlinkMissing(id),
       onCard: (card) => CardModal.open(card),
     });
+    startPoll(id, my);
     PlanDrawer.setOnChange(() => { if (location.hash === `#/b/${encodeURIComponent(id)}`) showBoard(id, seq, true); });
+  }
+
+  // Missing board: reuse the normal two-step delete (imported projects are only unlinked).
+  async function unlinkMissing(id) {
+    try {
+      const list = await Api.request(ENV.ENDPOINTS.PROJECTS);
+      const p = (list || []).find((x) => x.id === id);
+      if (p) startDelete(p);
+    } catch (e) {
+      Toast.show(e.message);
+    }
+  }
+
+  // ── live sync: poll the open board for changes made directly in Trello ──
+  let poll = null; // { id, my, timer, busy }
+
+  function stopPoll() {
+    if (poll) clearInterval(poll.timer);
+    poll = null;
+  }
+
+  function startPoll(id, my) {
+    stopPoll();
+    poll = { id, my, busy: false, timer: setInterval(pollBoard, ENV.TIMING.BOARD_POLL_MS) };
+  }
+
+  async function pollBoard() {
+    const p = poll;
+    if (!p || p.busy || !isCurrent(p.my) || document.visibilityState !== 'visible' || Board.isBusy()) return;
+    p.busy = true;
+    const mark = Board.stamp();
+    try {
+      const r = await Api.raw(ENV.ENDPOINTS.PROJECT_BOARD(p.id, false));
+      // Drop the result if we navigated away, or a write/drag/edit started while the request was in flight.
+      if (poll !== p || !isCurrent(p.my) || mark !== Board.stamp() || Board.isBusy()) return;
+      const changed = Board.apply(r.data, r.res.headers.get('X-Stale') === 'true');
+      CardModal.onRemote(changed);
+    } catch (e) {
+      if (poll === p && Api.isTrelloAuth(e)) { stopPoll(); showConnect(e, route); }
+      // other errors: stay silent, next tick retries
+    } finally {
+      p.busy = false;
+    }
   }
 
   // ── create ────────────────────────────────────────────────────────────
@@ -274,7 +320,7 @@
       resetDelete();
       Dom.close('delete-modal');
       Toast.show(imported ? 'Project unlinked' : 'Project and board deleted');
-      refreshIndex();
+      if (/^#\/b\//.test(location.hash)) location.hash = '#/'; else refreshIndex();
     } catch (err) {
       $('delete-error').textContent = err.message;
       $('delete-error').hidden = false;
@@ -295,6 +341,8 @@
     view().addEventListener('click', onViewClick);
     view().addEventListener('keydown', onViewKey);
     window.addEventListener('hashchange', route);
+    window.addEventListener('focus', pollBoard);
+    document.addEventListener('visibilitychange', pollBoard);
     route();
   })();
 })();

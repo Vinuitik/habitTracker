@@ -32,9 +32,14 @@ public class BoardSnapshot {
     private String name;
     private String url;
     private Instant syncedAt;
-    // Reserved for incremental sync (Stage 3).
+    // Reserved for action-based incremental sync (unused; sync compares dateLastActivity instead).
     @JsonIgnore
     private String lastActionId;
+    // Trello board.dateLastActivity at last full fetch; the cheap change probe compares against it.
+    @JsonIgnore
+    private String dateLastActivity;
+    // Trello answered 404 for the board (deleted/closed/access lost). Project is kept; cleared on next successful probe.
+    private boolean boardMissing;
     @Builder.Default
     private List<ListView> lists = new ArrayList<>();
     @Builder.Default

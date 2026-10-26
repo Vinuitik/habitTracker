@@ -63,6 +63,7 @@ window.ENV = {
     VIEW_FADE_MS: 180,
     DRAG_HOLD_MS: 250,        // touch long-press before a card drag starts
     UNDO_TOAST_MS: 6000,
+    BOARD_POLL_MS: 60000,     // open-board poll for changes made directly in Trello
   },
   BOARD: {
     POS_STEP: 65536,          // Trello pos spacing for append / empty list

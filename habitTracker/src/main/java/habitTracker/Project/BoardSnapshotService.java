@@ -26,7 +26,11 @@ public class BoardSnapshotService {
 
     public record Result(BoardSnapshot snapshot, boolean stale) {}
 
-    /** Cached snapshot if fresh (<60s) and !refresh; else Trello. On Trello failure falls back to a stale snapshot. */
+    public enum Outcome { UNCHANGED, UPDATED, MISSING }
+
+    public record Synced(BoardSnapshot snapshot, Outcome outcome) {}
+
+    /** Cached snapshot if fresh (<60s) and !refresh; stale cache is probed (dateLastActivity) and fully refetched only if changed. On Trello failure falls back to a stale snapshot. */
     public Result get(Project p, boolean refresh) {
         BoardSnapshot cached = repository.findByProjectId(p.getId()).orElse(null);
         if (cached != null && !refresh && cached.getSyncedAt() != null
@@ -34,11 +38,41 @@ public class BoardSnapshotService {
             return new Result(cached, false);
         }
         try {
+            if (cached != null && !refresh) return new Result(syncIfChanged(p, cached).snapshot(), false);
             return new Result(store(p, trello.getBoard(p.getUserId(), p.getTrelloBoardId())), false);
         } catch (TrelloGatewayException e) {
-            if (cached != null) return new Result(cached, true);
+            if (cached != null) {
+                if (e.getStatus() == 404) return new Result(markMissing(cached), false);
+                return new Result(cached, true);
+            }
             throw e;
         }
+    }
+
+    /**
+     * Probes dateLastActivity; equal to the snapshot's → bump syncedAt only (UNCHANGED), else full fetch + upsert (UPDATED).
+     * Trello 404 → boardMissing=true (MISSING). Other Trello errors propagate. Shared by GET /board and BoardSyncScheduler.
+     */
+    public Synced syncIfChanged(Project p, BoardSnapshot cached) {
+        try {
+            String activity = cached.getDateLastActivity() == null ? null
+                    : trello.getBoardActivity(p.getUserId(), p.getTrelloBoardId());
+            if (activity != null && activity.equals(cached.getDateLastActivity())) {
+                cached.setSyncedAt(Instant.now());
+                cached.setBoardMissing(false);
+                return new Synced(repository.save(cached), Outcome.UNCHANGED);
+            }
+            return new Synced(store(p, trello.getBoard(p.getUserId(), p.getTrelloBoardId())), Outcome.UPDATED);
+        } catch (TrelloGatewayException e) {
+            if (e.getStatus() == 404) return new Synced(markMissing(cached), Outcome.MISSING);
+            throw e;
+        }
+    }
+
+    private BoardSnapshot markMissing(BoardSnapshot s) {
+        s.setBoardMissing(true);
+        s.setSyncedAt(Instant.now());
+        return repository.save(s);
     }
 
     /** Maps a raw Trello board (from TrelloApiClient.getBoard) and upserts it for the project. */
@@ -50,6 +84,8 @@ public class BoardSnapshotService {
         s.setName(str(rawBoard.get("name")));
         s.setUrl(str(rawBoard.get("url")));
         s.setSyncedAt(Instant.now());
+        s.setDateLastActivity(str(rawBoard.get("dateLastActivity")));
+        s.setBoardMissing(false);
         map(rawBoard, s);
         return repository.save(s);
     }
