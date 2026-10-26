@@ -26,6 +26,13 @@
   box-shadow: var(--shadow-lg);
 }
 
+.modal-box--wide {
+  max-width: 720px;
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .modal-box__header {
   display: flex;
   align-items: center;
@@ -99,6 +106,13 @@
     height: 4px;
     border-radius: var(--radius-full);
     background: var(--color-border-hover);
+  }
+
+  /* Wide variant (card detail): full-height sheet */
+  .modal-box--wide {
+    max-width: none;
+    height: calc(100dvh - var(--safe-top));
+    max-height: none;
   }
 
   .modal-box__close {

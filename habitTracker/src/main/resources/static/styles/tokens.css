@@ -24,6 +24,7 @@
   --color-success:        #4caf85;
   --color-success-dim:    rgba(76, 175, 133, 0.12);
   --color-warning:        #d4a017;
+  --color-warning-dim:    rgba(212, 160, 23, 0.14);
 
   /* Borders */
   --color-border:         rgba(255, 255, 255, 0.07);
@@ -74,6 +75,7 @@
   --topbar-height:  56px;
   --tabbar-height:  0px;   /* bottom tab bar — only exists on phones, see media block below */
   --page-x:         var(--space-8);
+  --list-width:     272px;   /* project board list column */
 
   /* Device safe areas (notch, home indicator) — 0 everywhere except notched phones with
      viewport-fit=cover, which every page sets. */

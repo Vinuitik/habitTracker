@@ -1,6 +1,10 @@
 package habitTracker.Project;
 
+import habitTracker.integrations.trello.TrelloGatewayException;
+
 import lombok.RequiredArgsConstructor;
+import habitTracker.integrations.trello.TrelloAuthException;
+import habitTracker.integrations.trello.TrelloNotConnectedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,8 +19,26 @@ public class ProjectController {
     private final ProjectService service;
 
     @GetMapping
-    public List<Project> list() {
+    public List<ProjectView> list() {
         return service.list();
+    }
+
+    @GetMapping("/trello/boards")
+    public List<Map<String, Object>> trelloBoards() {
+        return service.trelloBoards();
+    }
+
+    @PostMapping("/import")
+    public ResponseEntity<List<Project>> importBoards(@RequestBody Map<String, List<String>> body) {
+        return ResponseEntity.status(201).body(service.importBoards(body.get("trelloBoardIds")));
+    }
+
+    @GetMapping("/{id}/board")
+    public ResponseEntity<BoardSnapshot> board(@PathVariable String id, @RequestParam(defaultValue = "false") boolean refresh) {
+        BoardSnapshotService.Result r = service.board(id, refresh);
+        ResponseEntity.BodyBuilder b = ResponseEntity.ok();
+        if (r.stale()) b.header("X-Stale", "true");
+        return b.body(r.snapshot());
     }
 
     @GetMapping("/{id}")
@@ -60,6 +82,16 @@ public class ProjectController {
     @ExceptionHandler(TrelloGatewayException.class)
     ResponseEntity<Map<String, String>> upstream(TrelloGatewayException e) {
         return ResponseEntity.status(e.isConflict() ? 409 : 502).body(Map.of("error", e.getMessage()));
+    }
+
+    @ExceptionHandler(TrelloNotConnectedException.class)
+    ResponseEntity<Map<String, String>> notConnected() {
+        return ResponseEntity.status(412).body(Map.of("error", "trello_not_connected"));
+    }
+
+    @ExceptionHandler(TrelloAuthException.class)
+    ResponseEntity<Map<String, String>> badTrelloToken() {
+        return ResponseEntity.status(412).body(Map.of("error", "trello_token_invalid"));
     }
 
     @ExceptionHandler(ProjectService.NotFoundException.class)

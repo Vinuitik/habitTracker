@@ -1,0 +1,47 @@
+.card-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.card-tile:hover,
+.card-tile:focus-visible {
+  border-color: var(--color-border-hover);
+  outline: none;
+}
+
+.card-tile__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.card-tile__title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.card-tile__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.card-tile--done .card-tile__title { color: var(--color-text-muted); }
+
+.card-tile__check {
+  display: inline-flex;
+  padding-top: 2px;
+  color: var(--color-success);
+}

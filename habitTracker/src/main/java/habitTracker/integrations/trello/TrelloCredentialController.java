@@ -1,4 +1,4 @@
-package habitTracker.KPI;
+package habitTracker.integrations.trello;
 
 import habitTracker.auth.SecurityUtils;
 import lombok.RequiredArgsConstructor;

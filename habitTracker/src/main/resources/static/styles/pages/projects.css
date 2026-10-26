@@ -4,6 +4,21 @@
   padding: var(--page-top) calc(var(--page-x) + var(--safe-right)) var(--page-bottom) calc(var(--page-x) + var(--safe-left));
 }
 
+/* Board view uses the full width and a fixed-height layout (the board scrolls, not the page). */
+.projects-page--board {
+  max-width: none;
+  padding-top: calc(var(--topbar-height) + var(--safe-top) + var(--space-4));
+  padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-4));
+  overflow-x: hidden;
+}
+
+.projects-view {
+  opacity: 1;
+  transition: opacity 180ms ease-out;
+}
+
+.projects-view--fading { opacity: 0; }
+
 .projects-page__header {
   display: flex;
   align-items: center;
@@ -20,116 +35,17 @@
   letter-spacing: var(--tracking-heading);
 }
 
-.projects-list {
+.projects-page__actions {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .projects-empty {
   color: var(--color-text-secondary);
   text-align: center;
   padding: var(--space-12) 0;
-}
-
-/* ── Project card ── */
-.project {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4) var(--space-6);
-  transition: border-color var(--transition-fast);
-}
-
-.project:hover {
-  border-color: var(--color-border-hover);
-}
-
-.project__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.project__info {
-  flex: 1;
-  min-width: 0;
-}
-
-.project__name {
-  font-family: var(--font-heading);
-  font-size: var(--text-md);
-  font-weight: 600;
-  letter-spacing: var(--tracking-heading);
-}
-
-.project__desc {
-  color: var(--color-text-secondary);
-  font-size: var(--text-base);
-  margin-top: var(--space-1);
-}
-
-.project__meta {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-  margin-top: var(--space-2);
-  word-break: break-all;
-}
-
-.project__actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-/* ── Planner panel ── */
-.planner {
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.planner[hidden] {
-  display: none;
-}
-
-.planner__row {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  align-items: flex-end;
-}
-
-.planner__status {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.planner__status--error {
-  color: var(--color-danger);
-}
-
-.planner__verdict {
-  font-size: var(--text-base);
-  color: var(--color-text-primary);
-}
-
-.planner__list,
-.planner__schedule {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3) var(--space-4);
-  max-height: 240px;
-  overflow: auto;
-  white-space: pre-wrap;
+  line-height: 1.6;
 }
 
 .projects-warn {
@@ -138,29 +54,63 @@
   line-height: 1.5;
 }
 
-@media (max-width: 768px) {
-
-  .project {
-    padding: var(--space-4);
-  }
-
-  .project__actions {
-    width: 100%;
-  }
-
-  .project__actions .btn {
-    flex: 1;
-  }
+/* Import checklist */
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 50dvh;
+  overflow-y: auto;
 }
 
-/* Phones: the top bar already says "Projects" */
-@media (max-width: 768px) {
-  .projects-page__title {
-    display: none;
-  }
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
 
-  .projects-page__header {
-    justify-content: flex-end;
-    margin-bottom: var(--space-4);
-  }
+.check-row--disabled { opacity: 0.6; cursor: default; }
+.check-row__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Connect Trello panel */
+.connect-panel {
+  max-width: 520px;
+  margin: var(--space-8) auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.connect-panel__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+}
+
+.connect-panel__text { color: var(--color-text-secondary); }
+.connect-panel__form { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Card detail modal content */
+.card-detail__list { color: var(--color-text-secondary); font-size: var(--text-sm); }
+.card-detail__labels,
+.card-detail__meta { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.card-detail__section { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.card-detail__desc {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.card-detail__empty { color: var(--color-text-muted); }
+
+@media (max-width: 768px) {
+  .projects-page__title { display: none; }
+  .projects-page__header { justify-content: flex-end; margin-bottom: var(--space-4); }
 }

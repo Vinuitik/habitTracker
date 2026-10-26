@@ -25,4 +25,6 @@ public class Project {
     private String userId;
     private String trelloBoardId;
     private LocalDateTime createdAt;
+    // true = board adopted from the user's Trello; deleting the project only unlinks it.
+    private boolean imported;
 }

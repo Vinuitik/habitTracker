@@ -14,10 +14,19 @@
   <link rel="stylesheet" href="/styles/atoms/button.css">
   <link rel="stylesheet" href="/styles/atoms/input.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
+  <link rel="stylesheet" href="/styles/atoms/badge.css">
+  <link rel="stylesheet" href="/styles/atoms/icon.css">
+  <link rel="stylesheet" href="/styles/atoms/progress.css">
   <link rel="stylesheet" href="/styles/molecules/card.css">
   <link rel="stylesheet" href="/styles/molecules/form-group.css">
   <link rel="stylesheet" href="/styles/molecules/modal.css">
+  <link rel="stylesheet" href="/styles/molecules/menu.css">
+  <link rel="stylesheet" href="/styles/molecules/board-tile.css">
+  <link rel="stylesheet" href="/styles/molecules/card-tile.css">
+  <link rel="stylesheet" href="/styles/molecules/list-column.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/board.css">
+  <link rel="stylesheet" href="/styles/organisms/drawer.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/pages/projects.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
@@ -39,12 +48,8 @@
     </div>
   </header>
 
-  <main class="projects-page">
-    <div class="projects-page__header">
-      <h1 class="projects-page__title">Projects</h1>
-      <button class="btn btn--primary" id="new-project-btn">New project</button>
-    </div>
-    <div class="projects-list" id="projects-list"></div>
+  <main class="projects-page" id="projects-page">
+    <div class="projects-view" id="projects-view"></div>
   </main>
 
   <!-- Create -->
@@ -77,6 +82,52 @@
     </div>
   </div>
 
+  <!-- Import from Trello -->
+  <div class="modal-overlay" id="import-modal">
+    <div class="modal-box">
+      <div class="modal-box__header">
+        <span class="modal-box__title">Import from Trello</span>
+        <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="check-list" id="import-list"></div>
+      <div class="form-group__error" id="import-error" hidden></div>
+      <div class="modal-box__actions">
+        <button class="btn btn--primary" id="import-submit" disabled>Import selected</button>
+        <button class="btn btn--ghost" data-close>Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card detail (read-only) -->
+  <div class="modal-overlay" id="card-modal">
+    <div class="modal-box modal-box--wide">
+      <div class="modal-box__header">
+        <span class="modal-box__title" id="card-modal-title"></span>
+        <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="modal-box__fields" id="card-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Plan with AI drawer -->
+  <aside class="drawer" id="plan-drawer" aria-label="Plan with AI">
+    <div class="drawer__header">
+      <span class="drawer__title">Plan with AI</span>
+      <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+    </div>
+    <div class="drawer__body">
+      <div class="form-group">
+        <label class="form-group__label" for="plan-desc">Describe a problem</label>
+        <textarea class="input" id="plan-desc" rows="4" placeholder="What do you want to build or solve? The agent breaks it into cards."></textarea>
+      </div>
+      <div class="planner__row">
+        <button class="btn btn--primary btn--sm" id="plan-draft">Draft plan</button>
+        <span class="planner__status" id="plan-status"></span>
+      </div>
+      <div class="planner__result" id="plan-result" hidden></div>
+    </div>
+  </aside>
+
   <!-- Two-step delete -->
   <div class="modal-overlay" id="delete-modal">
     <div class="modal-box">
@@ -85,7 +136,7 @@
         <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
       </div>
       <div class="modal-box__fields" id="delete-step-1">
-        <p class="projects-warn">This deletes the project <strong>and its Trello board</strong>. All cards on the board are lost. This cannot be undone.</p>
+        <p class="projects-warn" id="delete-warning"></p>
         <div class="modal-box__actions">
           <button class="btn btn--danger" id="delete-continue">Continue</button>
           <button class="btn btn--ghost" data-close>Cancel</button>
@@ -110,6 +161,15 @@
   <script src="/js/topbar.js"></script>
   <script src="/js/registerSW.js"></script>
   <script src="/js/atoms/toast.js"></script>
-  <script src="/js/projects.js"></script>
+  <script src="/js/atoms/dom.js"></script>
+  <script src="/js/atoms/api.js"></script>
+  <script src="/js/atoms/icons.js"></script>
+  <script src="/js/atoms/menu.js"></script>
+  <script src="/js/molecules/connect-panel.js"></script>
+  <script src="/js/molecules/card-tile.js"></script>
+  <script src="/js/organisms/board.js"></script>
+  <script src="/js/organisms/card-modal.js"></script>
+  <script src="/js/organisms/plan-drawer.js"></script>
+  <script src="/js/pages/projects.js"></script>
 </body>
 </html>

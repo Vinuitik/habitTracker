@@ -1,0 +1,75 @@
+/* Board view: header + horizontal list scroller sized to the viewport between top bar and tab bar. */
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: calc(100dvh - var(--topbar-height) - var(--safe-top) - var(--tabbar-height) - var(--safe-bottom) - var(--space-8));
+  min-width: 0;
+}
+
+.board__header {
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.board__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+  overflow-wrap: anywhere;
+}
+
+.board__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.board__synced {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.board__back {
+  padding: var(--space-2);
+}
+
+.board__scroller {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .board__header {
+    gap: var(--space-2);
+  }
+
+  .board__name {
+    flex-basis: calc(100% - 64px);
+    font-size: var(--text-lg);
+  }
+
+  .board__tools {
+    width: 100%;
+  }
+
+  .board__scroller {
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 0;
+  }
+}

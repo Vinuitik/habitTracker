@@ -1,5 +1,9 @@
 package habitTracker.KPI;
 
+import habitTracker.integrations.trello.TrelloCredentialRepository;
+
+import habitTracker.integrations.trello.TrelloCredential;
+
 import com.sun.net.httpserver.HttpServer;
 import habitTracker.updater.KPIProxyFillService;
 import org.junit.jupiter.api.AfterEach;

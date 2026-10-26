@@ -20,6 +20,14 @@ window.ENV = {
     KPI_SECRET:      (name) => `/api/kpi-secrets/${encodeURIComponent(name)}`,
     PROJECTS:        '/api/projects',
     PROJECT:         (id) => `/api/projects/${id}`,
+    PROJECTS_IMPORT: '/api/projects/import',
+    PROJECTS_TRELLO_BOARDS: '/api/projects/trello/boards',
+    PROJECT_BOARD:   (id, refresh) => `/api/projects/${id}/board?refresh=${refresh ? 'true' : 'false'}`,
+    PROJECT_PLAN:    (id) => `/api/projects/${id}/plan`,
+    PROJECT_APPLY:   (id) => `/api/projects/${id}/apply`,
+    PROJECT_DELETE_REQUEST: (id) => `/api/projects/${id}/delete-request`,
+    PROJECT_DELETE:  (id, token) => `/api/projects/${id}?token=${encodeURIComponent(token)}`,
+    TRELLO_CREDENTIALS: '/api/integrations/trello/credentials',
     SYNC_OAUTH_URL:  '/api/sync/oauth/url',
     SYNC_DISCONNECT: '/api/sync/disconnect',
     SYNC_STATUS:     '/api/sync/status',
@@ -41,6 +49,12 @@ window.ENV = {
     CONNECT_DRIVE:   '/connect-drive',
     INSTALL:         '/install',
     PROJECTS:        '/projects',
+  },
+  EXTERNAL: {
+    TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',
+  },
+  TIMING: {
+    VIEW_FADE_MS: 180,
   },
   FEATURES: {
     ANIMATIONS: true,

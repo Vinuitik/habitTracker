@@ -1,5 +1,7 @@
 package habitTracker.Project;
 
+import habitTracker.integrations.trello.TrelloGatewayException;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import habitTracker.auth.AuthTestHelper;
 import habitTracker.auth.JwtUtil;
@@ -41,6 +43,7 @@ class ProjectAgentEndpointsTest {
     @Autowired JwtUtil jwtUtil;
     @Autowired ObjectMapper json;
     @SpyBean TrelloBoardGateway gateway;
+    @org.springframework.boot.test.mock.mockito.MockBean habitTracker.integrations.trello.TrelloApiClient trello;
 
     AuthTestHelper auth;
     UserPrincipal alice;
@@ -52,6 +55,7 @@ class ProjectAgentEndpointsTest {
         mongoTemplate.dropCollection(Project.class);
         mongoTemplate.dropCollection(User.class);
         reset(gateway);
+        when(trello.createBoard(any(), any())).thenAnswer(i -> "tb-" + java.util.UUID.randomUUID());
         alice = auth.register("alice@test.com");
         bob = auth.register("bob@test.com");
     }
