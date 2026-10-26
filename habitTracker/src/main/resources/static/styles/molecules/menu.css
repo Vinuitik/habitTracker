@@ -31,3 +31,9 @@
 @media (max-width: 768px) {
   .menu__item { min-height: 44px; }
 }
+
+.menu__text {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}

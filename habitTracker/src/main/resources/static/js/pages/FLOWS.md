@@ -1,6 +1,6 @@
 # Projects page (frontend) FLOWS
 
-Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/card-modal.js, js/organisms/plan-drawer.js, js/molecules/card-tile.js, js/molecules/connect-panel.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
+Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/card-modal.js, js/organisms/plan-drawer.js, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
 
 ## Routing
 `hashchange` → `route()` → fade out 180ms (`ENV.TIMING.VIEW_FADE_MS`) → `showIndex()` (`#/`) or `showBoard(id)` (`#/b/<id>`) → fade in.
@@ -18,9 +18,33 @@ To change tile content: `tileHtml()`; tile CSS: styles/molecules/board-tile.css.
 ## Board view
 `showBoard()` → `Api.raw(PROJECT_BOARD(id, refresh))` (reads `X-Stale`) → `Board.render()` → columns (lists by pos, closed skipped) → `CardTile.html()` per card.
 Refresh button → `showBoard(id, seq, true)` (`?refresh=true`).
-Card click → `CardModal.open()` (read-only; strips ```meta blocks from desc; escapes everything).
+Card click → `CardModal.open()` (editable, see Card writes).
 "Plan with AI" → `PlanDrawer.toggle(id)` → POST `PROJECT_PLAN` → (optional) POST `PROJECT_APPLY` → `onChange` re-fetches board with refresh=true.
 To change label colors: `CardTile.tagClass()`; due thresholds: `CardTile.dueInfo()` (48h warning).
+
+## Board writes (optimistic)
+All in `Board` (js/organisms/board.js); state `S.data` is the single source, DOM is refreshed per list via `refreshList()`.
+Pattern: `mutate(card, localFields, call)` → apply local fields + `refreshLists()` → API call → success: `Object.assign(card, serverCard)` (only when no other write to that card is in flight, `pend` map) → failure: restore only the touched fields, refresh, `fail()` toast.
+`fail()`: 412 → `h.onAuth` (connect panel); 429/`trello_rate_limited` → "Trello is rate limiting, try again in a moment"; else server message.
+- Add card: list footer `Composer` → `addCard()` → temp card `tmp-N` (dimmed, not clickable/draggable) → POST `PROJECT_CARDS {idList,name,pos}` → temp object merged with server card; failure removes it. Enter keeps composer open.
+- Add list: trailing dashed column `Composer` → `addList()` → temp column → POST `PROJECT_LISTS {name,pos}`; failure removes column.
+- Rename list: kebab (`listMenu()`) → `startRename()` inline input (Enter/blur saves, Esc cancels) → `renameList()` → PATCH `PROJECT_LIST {name}`.
+- Archive list: kebab → inline confirm inside `Menu` (`confirm:` item option) → `archiveList()` → PATCH `{closed:true}`; Undo toast PATCHes `{closed:false}`.
+- Drag card: `Dnd.init` (pointer events) → `Board.onDrop()` → `posBetween(prev,next)` → `mutate` → PATCH `{idList,pos}`.
+  pos math: both neighbours = (prev.pos+next.pos)/2; top = next.pos/2; bottom = prev.pos + 65536 (`ENV.BOARD.POS_STEP`); empty list = 65536. Dropping where it already sits is a no-op.
+  Mouse: drag after 5px move. Touch/pen: only after 250ms hold with <8px movement (else the browser scrolls normally). Ghost follows pointer, dashed placeholder shows the slot, rAF loop auto-scrolls the board (horizontal) and the hovered list (vertical) within 48px of an edge; Esc cancels; the click after a drag is swallowed.
+- Quick complete: hover check button on tile (`data-act="quick"`, hover-capable devices only) → `completeCard()`/`reopenCard()` → POST `.../complete` or `.../reopen`; server may move the card (e.g. to Completed), `mutate` refreshes old + new list.
+- Plan drawer apply → `PlanDrawer` onChange → `showBoard(id, seq, true)` re-fetch (replaces all local state).
+To change optimistic behaviour: `mutate()`; list pos step / drag thresholds: `ENV.BOARD`; long-press ms / undo toast ms: `ENV.TIMING`.
+
+## Card modal (editable)
+`CardModal.open(card)` → `render()` from `Board.getCard(id)`; every control → `act(fn)` = optimistic Board action, render now, render again after the server answer/rollback.
+- Title: input, blur/Enter saves (`saveTitle()`), Esc reverts → PATCH `{name}`.
+- Description: textarea + Save/Cancel (shown when dirty). ```meta blocks are stripped from the editor (`stripMeta`) and re-appended unchanged on save (`metaBlocks`). Unsaved text survives re-renders (`descDraft`).
+- Due: date + optional time (default `ENV.BOARD.DEFAULT_DUE_TIME`, local → ISO via `toISOString()`); Clear → `{due:null,dueComplete:false}`.
+- Move to…: select of open lists → `Board.moveCardToList()` → PATCH `{idList,pos:"bottom"}` (non-drag move).
+- Mark complete / Reopen (by `card.done`) → POST complete/reopen. Archive → PATCH `{closed:true}`, modal closes, Undo toast PATCHes `{closed:false}`.
+Mobile: action buttons sit in one row directly under the title (`.card-detail__actions`).
 
 ## Trello not connected (HTTP 412)
 Any index/board/import/create call → `Api.isTrelloAuth(err)` → `showConnect()` → `ConnectPanel.render()` → PUT `TRELLO_CREDENTIALS {apiKey, token}` → `route()` (retry).
@@ -38,6 +62,16 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 | Label/due styling | CardTile.tagClass / dueInfo, styles/atoms/badge.css |
 | Card detail layout | CardModal.open, `.modal-box--wide` in styles/molecules/modal.css |
 | Drawer / bottom sheet | styles/organisms/drawer.css |
+| Write endpoints | js/env.js (`PROJECT_LISTS/LIST/CARDS/CARD/CARD_COMPLETE/CARD_REOPEN`) |
+| Optimistic write / rollback | Board.mutate, Board.fail |
+| Drop position math | Board.posBetween, `ENV.BOARD.POS_STEP` |
+| Drag thresholds, autoscroll, long-press | `ENV.BOARD`, `ENV.TIMING.DRAG_HOLD_MS`, js/atoms/dnd.js |
+| Drag ghost / placeholder look | styles/atoms/dnd.css |
+| Composer (add card/list) | js/molecules/composer.js, styles/molecules/composer.css |
+| List kebab items / inline confirm | Board.listMenu, Menu `confirm` option |
+| Quick-complete button | CardTile.html, styles/molecules/card-tile.css |
+| Card modal fields | CardModal.render / onClick / onChange |
+| Undo toast | Toast.show(msg, ms, {label,onClick}), `ENV.TIMING.UNDO_TOAST_MS` |
 | Mobile snap columns | styles/molecules/list-column.css, organisms/board.css (≤768px) |
 
 ## Technology Notes
@@ -48,4 +82,9 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 - Trello strings are escaped with `Dom.esc`; hrefs allow only `https://` (`Dom.safeUrl`).
 - Board height uses `100dvh` minus top/tab bars; older browsers without `dvh` fall back poorly.
 - Progress bar uses `<progress>` (avoids inline width styles).
-- Read-only this stage: no card moves/edits; Refresh is the only way to see Trello-side changes.
+- Concurrent edits made in Trello (or another tab) are not reflected until Refresh / page reload; no polling yet [NOT IMPLEMENTED, Stage 3]. Optimistic writes can therefore overwrite newer Trello-side values (last write wins).
+- Temp ids (`tmp-N`) exist only client-side until the POST returns; those cards/lists reject drag, menu and add-card actions.
+- `pos` is a float; repeated midpoint drops between the same two cards eventually exhaust double precision (~50 halvings); Trello rebalances server-side but the client does not.
+- Touch drag relies on a non-passive `touchmove` listener on the board (iOS ignores preventDefault from listeners added mid-gesture); `touch-action` stays pan-x/pan-y so scrolling works before the long-press fires.
+- Rollback restores only the fields a failed write touched; an in-flight second write on the same card defers applying the server response until both finish.
+- Hover quick-complete is hidden on touch devices (`@media (hover: hover)`); use the modal there.

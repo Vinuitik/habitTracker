@@ -9,6 +9,7 @@ window.Icons = (() => {
     desc:    svg('<path d="M4 6h16M4 12h16M4 18h10"/>'),
     comment: svg('<path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z"/>'),
     kebab:   svg('<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>'),
+    close:   svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     plus:    svg('<path d="M12 5v14M5 12h14"/>'),
   };
 })();

@@ -45,3 +45,43 @@
   padding-top: 2px;
   color: var(--color-success);
 }
+
+.card-tile { position: relative; touch-action: pan-x pan-y; -webkit-touch-callout: none; }
+.card-tile__title { padding-right: var(--space-6); }
+.card-tile--pending { opacity: 0.6; }
+
+.card-tile__quick {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.card-tile__quick:hover {
+  background: var(--color-success-dim);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.card-tile__quick--on {
+  background: var(--color-success-dim);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+/* Desktop: revealed on hover/focus. Touch: use the card modal. */
+@media (hover: hover) {
+  .card-tile:hover .card-tile__quick,
+  .card-tile:focus-within .card-tile__quick { display: inline-flex; }
+}

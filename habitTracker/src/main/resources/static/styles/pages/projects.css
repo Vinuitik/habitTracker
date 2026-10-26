@@ -114,3 +114,28 @@
   .projects-page__title { display: none; }
   .projects-page__header { justify-content: flex-end; margin-bottom: var(--space-4); }
 }
+
+/* Card detail: editable controls */
+.card-detail__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-heading);
+}
+
+.card-detail__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.card-detail__due {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.card-detail__due .input { flex: 1 1 140px; width: auto; }
+.card-detail__desc-actions { display: flex; gap: var(--space-2); }
+
+@media (max-width: 768px) {
+  /* Action buttons stay in one row under the title */
+  .card-detail__actions { flex-wrap: nowrap; }
+  .card-detail__actions .btn { flex: 1; }
+}

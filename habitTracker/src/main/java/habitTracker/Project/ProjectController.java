@@ -17,6 +17,7 @@ import java.util.Map;
 public class ProjectController {
 
     private final ProjectService service;
+    private final ProjectBoardService boardService;
 
     @GetMapping
     public List<ProjectView> list() {
@@ -79,8 +80,45 @@ public class ProjectController {
         return service.apply(id, body);
     }
 
+    // ---- write-through board editing (Trello first, then snapshot patch) ----
+
+    @PostMapping("/{id}/lists")
+    public BoardSnapshot.ListView createList(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        return boardService.createList(id, body);
+    }
+
+    @PatchMapping("/{id}/lists/{listId}")
+    public BoardSnapshot.ListView updateList(@PathVariable String id, @PathVariable String listId, @RequestBody Map<String, Object> body) {
+        return boardService.updateList(id, listId, body);
+    }
+
+    @PostMapping("/{id}/cards")
+    public BoardSnapshot.CardView createCard(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        return boardService.createCard(id, body);
+    }
+
+    @PatchMapping("/{id}/cards/{cardId}")
+    public BoardSnapshot.CardView updateCard(@PathVariable String id, @PathVariable String cardId, @RequestBody Map<String, Object> body) {
+        return boardService.updateCard(id, cardId, body);
+    }
+
+    @PostMapping("/{id}/cards/{cardId}/complete")
+    public BoardSnapshot.CardView complete(@PathVariable String id, @PathVariable String cardId) {
+        return boardService.complete(id, cardId);
+    }
+
+    @PostMapping("/{id}/cards/{cardId}/reopen")
+    public BoardSnapshot.CardView reopen(@PathVariable String id, @PathVariable String cardId) {
+        return boardService.reopen(id, cardId);
+    }
+
     @ExceptionHandler(TrelloGatewayException.class)
     ResponseEntity<Map<String, String>> upstream(TrelloGatewayException e) {
+        if (e.getStatus() == 429) {
+            ResponseEntity.BodyBuilder b = ResponseEntity.status(429);
+            if (e.getRetryAfter() != null) b.header("Retry-After", e.getRetryAfter());
+            return b.body(Map.of("error", "trello_rate_limited"));
+        }
         return ResponseEntity.status(e.isConflict() ? 409 : 502).body(Map.of("error", e.getMessage()));
     }
 

@@ -30,6 +30,7 @@ public class ProjectService {
 
     public static class NotFoundException extends RuntimeException {
         public NotFoundException() { super("Project not found"); }
+        protected NotFoundException(String message) { super(message); }
     }
 
     public static class InvalidTokenException extends RuntimeException {

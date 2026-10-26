@@ -1,6 +1,6 @@
 # Project Flows
 
-Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `TrelloBoardGateway.java`, `HttpTrelloBoardGateway.java`, `StubTrelloBoardGateway.java` (test only). Direct Trello access: see `../integrations/trello/FLOWS.md`
+Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `ProjectBoardService.java`, `TrelloBoardGateway.java`, `HttpTrelloBoardGateway.java`, `StubTrelloBoardGateway.java` (test only). Direct Trello access: see `../integrations/trello/FLOWS.md`
 
 A Project (name, description, userId, trelloBoardId, createdAt, imported) is 1:1 with a Trello board. Collection `projects`.
 
@@ -17,6 +17,14 @@ A Project (name, description, userId, trelloBoardId, createdAt, imported) is 1:1
 - Trello failure with an existing snapshot → snapshot returned with `X-Stale: true`; without → 502.
 - Mapping: list `_meta` and its cards dropped; card `done` = label named "done" (ci) OR list named Done/Completed (ci). To change: `BoardSnapshotService.map()`, TTL `BoardSnapshotService.TTL_SECONDS`.
 - Errors: no creds → 412 `{error:"trello_not_connected"}`; Trello 401 → 412 `{error:"trello_token_invalid"}`. To change: `ProjectController` handlers.
+
+## Board editing (write-through)
+`POST /api/projects/{id}/lists {name,pos?}` · `PATCH .../lists/{listId} {name?,pos?,closed?}` · `POST .../cards {idList,name,desc?,pos?}` · `PATCH .../cards/{cardId} {name?,desc?,due?,dueComplete?,idList?,pos?,closed?}` · `POST .../cards/{cardId}/complete` · `POST .../cards/{cardId}/reopen` → `ProjectController` → `ProjectBoardService.<op>()` → `owned()` (404) → validate (blank name / empty PATCH / bad pos → 400) → `ensureList()/ensureCard()` → `TrelloApiClient` write → `BoardSnapshotService.patchList()/patchCard()` → list view `{id,name,pos,closed}` or card view (CardView, incl. `done`)
+- Integrity: id is accepted if present in the cached snapshot, else Trello `getList/getCard` and `idBoard` must equal the project's board; mismatch or Trello 404 → 404. To change: `ProjectBoardService.ensureList()/ensureCard()/checkBoard()`.
+- PATCH sends only keys present in the body; `"due":null` → Trello `due=null` (clears); `pos` = number or "top"/"bottom". To change: `ProjectBoardService.updateCard()`.
+- complete: `getCard` → ensure board label "done" (`getBoardLabels`, else `createLabel` green) → `addCardLabel` (skipped if already on card) → if an open list named Completed (preferred) or Done exists → `updateCard(idList,pos=top)` → `getCard` → patch. Never creates lists. reopen: `removeCardLabel` for "done" only, no move. To change: `ProjectBoardService.complete()/completedList()`.
+- Patch: card/list replaced by the Trello response via the same `mapCard` as board sync, `done` recomputed (list rename recomputes its cards); card landing in an unknown/_meta list is dropped; no snapshot yet → no patch. `syncedAt` is NOT bumped, so the 60s TTL still decides when GET /board refetches. To change: `BoardSnapshotService.patchCard()/patchList()`.
+- Errors as board read, plus Trello 429 → 429 `{error:"trello_rate_limited"}` + `Retry-After` passthrough. To change: `ProjectController.upstream()`.
 
 ## Two-step delete
 `POST /api/projects/{id}/delete-request` → `ProjectService.requestDelete()` (ownership check) → `ProjectDeleteTokenService.issue()` → `{token}` (60s)
@@ -35,6 +43,9 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 - Timeouts: connect 5s; read 30s (apply), 6 min for plan. To change: `HttpTrelloBoardGateway` `READ_MS` / `PLAN_READ_MS`.
 
 ## Technology Notes
+- Edits are synchronous write-through: each costs ~300-800ms per Trello call (complete = 4-6 calls). No retries; a 429 is returned to the client (with Retry-After) and the UI decides.
+- Snapshot patch can diverge: if Trello applied a write but the response was lost (timeout), the client sees 502 and the snapshot is unpatched; the next refresh (`?refresh=true` or TTL expiry) heals it. Patch is read-modify-write on the whole snapshot doc, so concurrent edits on one board can lose one patch until the next refresh.
+- Membership check trusts the cached snapshot; a card moved to another board directly in Trello within the cache window could still be edited through this project.
 - Delete tokens are in-memory (`ConcurrentHashMap`): lost on restart, single-node only, expired entries are only purged when redeemed (small leak of unredeemed tokens until restart).
 - A failed redeem still consumes the token (remove-first); the user must request a new one.
 - Cross-user ids return 404 (not 403) deliberately, to avoid leaking existence.
@@ -50,6 +61,11 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 ## Change Index
 | What | Where |
 |---|---|
+| Board edit endpoints | `ProjectController` (lists/cards/complete/reopen), `ProjectBoardService` |
+| Complete/reopen semantics, Completed/Done list choice, "done" label name | `ProjectBoardService.complete()/reopen()/completedList()`, `DONE_LABEL` |
+| Board-membership 404 check | `ProjectBoardService.ensureList()/ensureCard()` |
+| Snapshot patching after writes | `BoardSnapshotService.patchCard()/patchList()` |
+| 429 mapping | `ProjectController.upstream()` |
 | Ownership guard | `ProjectService.owned()`, `ProjectRepository.findByIdAndUserId` |
 | Delete token TTL / format | `ProjectDeleteTokenService` |
 | Trello bridge URL | `trello.internal.base-url` in `application.properties` |

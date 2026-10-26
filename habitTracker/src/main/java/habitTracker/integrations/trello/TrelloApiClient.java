@@ -15,6 +15,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,8 +27,10 @@ public class TrelloApiClient {
     private static final int CONNECT_MS = 5_000;
     private static final int READ_MS = 15_000;
 
+    private static final String CARD_FIELDS =
+            "name,desc,idList,idBoard,pos,due,dueComplete,closed,labels,badges,url,dateLastActivity";
     private static final String BOARD_QS = "fields=name,url&lists=all&list_fields=name,pos,closed&cards=all"
-            + "&card_fields=name,desc,idList,pos,due,dueComplete,closed,labels,badges,url,dateLastActivity";
+            + "&card_fields=" + CARD_FIELDS;
 
     private final TrelloCredentialRepository credentials;
     private final RestTemplate rest;
@@ -79,6 +82,67 @@ public class TrelloApiClient {
                 new ParameterizedTypeReference<Object>() {});
     }
 
+    // ---- write-through editing (one Trello call each; params are only what the caller provides) ----
+
+    private static final ParameterizedTypeReference<Map<String, Object>> MAP = new ParameterizedTypeReference<>() {};
+
+    /** POST /1/lists; returns list JSON {id,name,pos,closed,idBoard}. */
+    public Map<String, Object> createList(String userId, String boardId, String name, String pos) {
+        Map<String, String> v = new LinkedHashMap<>();
+        v.put("idBoard", boardId); v.put("name", name); v.put("pos", pos == null ? "bottom" : pos);
+        return call(userId, HttpMethod.POST, "/1/lists", qs(v), MAP, v);
+    }
+
+    /** PUT /1/lists/{id} with only the given params (name,pos,closed). */
+    public Map<String, Object> updateList(String userId, String listId, Map<String, String> params) {
+        return call(userId, HttpMethod.PUT, "/1/lists/" + listId, qs(params), MAP, params);
+    }
+
+    public Map<String, Object> getList(String userId, String listId) {
+        return call(userId, HttpMethod.GET, "/1/lists/" + listId, "fields=name,pos,closed,idBoard", MAP);
+    }
+
+    /** POST /1/cards (params: idList,name,desc?,pos); returns full card JSON. */
+    public Map<String, Object> createCard(String userId, Map<String, String> params) {
+        return call(userId, HttpMethod.POST, "/1/cards", qs(params), MAP, params);
+    }
+
+    /** PUT /1/cards/{id} with only the given params; value "null" clears (due). */
+    public Map<String, Object> updateCard(String userId, String cardId, Map<String, String> params) {
+        return call(userId, HttpMethod.PUT, "/1/cards/" + cardId, qs(params), MAP, params);
+    }
+
+    public Map<String, Object> getCard(String userId, String cardId) {
+        return call(userId, HttpMethod.GET, "/1/cards/" + cardId, "fields=" + CARD_FIELDS, MAP);
+    }
+
+    public List<Map<String, Object>> getBoardLabels(String userId, String boardId) {
+        return call(userId, HttpMethod.GET, "/1/boards/" + boardId + "/labels", "fields=name,color&limit=1000",
+                new ParameterizedTypeReference<List<Map<String, Object>>>() {});
+    }
+
+    public Map<String, Object> createLabel(String userId, String boardId, String name, String color) {
+        Map<String, String> v = new LinkedHashMap<>();
+        v.put("name", name); v.put("color", color); v.put("idBoard", boardId);
+        return call(userId, HttpMethod.POST, "/1/labels", qs(v), MAP, v);
+    }
+
+    public void addCardLabel(String userId, String cardId, String labelId) {
+        call(userId, HttpMethod.POST, "/1/cards/" + cardId + "/idLabels", "value={value}",
+                new ParameterizedTypeReference<Object>() {}, Map.of("value", labelId));
+    }
+
+    public void removeCardLabel(String userId, String cardId, String labelId) {
+        call(userId, HttpMethod.DELETE, "/1/cards/" + cardId + "/idLabels/" + labelId, null,
+                new ParameterizedTypeReference<Object>() {});
+    }
+
+    private static String qs(Map<String, String> params) {
+        StringBuilder b = new StringBuilder();
+        for (String k : params.keySet()) b.append(b.length() == 0 ? "" : "&").append(k).append("={").append(k).append("}");
+        return b.toString();
+    }
+
     private <T> T call(String userId, HttpMethod method, String path, String qs, ParameterizedTypeReference<T> type) {
         return call(userId, method, path, qs, type, Map.of());
     }
@@ -98,7 +162,8 @@ public class TrelloApiClient {
         } catch (HttpStatusCodeException e) {
             if (e.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) throw new TrelloAuthException();
             throw new TrelloGatewayException("Trello " + e.getStatusCode().value() + " on " + method + " " + path,
-                    false, e, e.getStatusCode().value());
+                    false, e, e.getStatusCode().value(),
+                    e.getResponseHeaders() == null ? null : e.getResponseHeaders().getFirst("Retry-After"));
         } catch (RestClientException e) {
             throw new TrelloGatewayException("Trello unreachable on " + method + " " + path, false, e);
         }

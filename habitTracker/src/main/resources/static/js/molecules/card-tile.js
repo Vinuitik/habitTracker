@@ -35,10 +35,11 @@ window.CardTile = (() => {
     if (b.description) badges.push(`<span class="badge">${Icons.desc}</span>`);
     if (b.comments > 0) badges.push(`<span class="badge">${Icons.comment}${esc(b.comments)}</span>`);
     return `
-      <div class="card-tile${card.done ? ' card-tile--done' : ''}" role="button" tabindex="0" data-card-id="${esc(card.id)}">
+      <div class="card-tile${String(card.id).startsWith('tmp-') ? ' card-tile--pending' : ''}${card.done ? ' card-tile--done' : ''}" role="button" tabindex="0" data-card-id="${esc(card.id)}">
         ${labels ? `<div class="card-tile__tags">${labels}</div>` : ''}
         <div class="card-tile__title">${card.done ? `<span class="card-tile__check">${Icons.check}</span>` : ''}${esc(card.name)}</div>
         ${badges.length ? `<div class="card-tile__badges">${badges.join('')}</div>` : ''}
+        <button type="button" class="card-tile__quick${card.done ? ' card-tile__quick--on' : ''}" data-act="quick" aria-label="${card.done ? 'Reopen card' : 'Mark card complete'}" title="${card.done ? 'Reopen' : 'Mark complete'}">${Icons.check}</button>
       </div>`;
   }
 

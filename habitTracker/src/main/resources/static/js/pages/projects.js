@@ -122,13 +122,15 @@
     }
     if (!isCurrent(my)) return;
     Board.render(view(), data, stale, {
+      projectId: id,
+      onAuth: (err) => showConnect(err, route),
       onRefresh: async (btn) => {
         btn.disabled = true;
         await showBoard(id, seq, true);
         Toast.show('Board refreshed');
       },
       onPlan: () => PlanDrawer.toggle(id),
-      onCard: (card, listName) => CardModal.open(card, listName),
+      onCard: (card) => CardModal.open(card),
     });
     PlanDrawer.setOnChange(() => { if (location.hash === `#/b/${encodeURIComponent(id)}`) showBoard(id, seq, true); });
   }

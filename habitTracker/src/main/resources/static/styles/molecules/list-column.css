@@ -42,11 +42,54 @@
   min-height: 0;
 }
 
-.list-column__empty {
+.list-column__cards { min-height: 24px; }
+
+.list-column__cards:empty::before {
+  content: 'No cards';
   padding: var(--space-3);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
   text-align: center;
+}
+
+.list-column__name-input { flex: 1; min-width: 0; }
+
+.list-column__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.list-column__menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.list-column__menu:hover {
+  background: var(--color-bg-card-hover);
+  color: var(--color-text-primary);
+}
+
+.list-column__footer { padding: var(--space-1) var(--space-2) var(--space-2); }
+
+.list-column--add {
+  background: transparent;
+  border-style: dashed;
+  padding: var(--space-2);
+  align-self: flex-start;
+}
+
+@media (max-width: 768px) {
+  .list-column__menu { min-width: 44px; min-height: 44px; }
 }
 
 @media (max-width: 768px) {

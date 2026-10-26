@@ -74,25 +74,78 @@ public class BoardSnapshotService {
             Map<String, Object> c = (Map<String, Object>) o;
             String idList = str(c.get("idList"));
             if (!listNames.containsKey(idList)) continue; // meta list or unknown list
-            List<LabelView> labels = new ArrayList<>();
-            for (Object lo : listOf(c.get("labels"))) {
-                Map<String, Object> l = (Map<String, Object>) lo;
-                labels.add(new LabelView(str(l.get("id")), str(l.get("name")), str(l.get("color"))));
-            }
-            BadgesView badges = null;
-            if (c.get("badges") instanceof Map<?, ?> b) {
-                badges = new BadgesView(intOf(b.get("checkItems")), intOf(b.get("checkItemsChecked")),
-                        b.get("description") instanceof Boolean d ? d : null, intOf(b.get("comments")));
-            }
-            String listName = listNames.get(idList);
-            boolean done = labels.stream().anyMatch(l -> "done".equalsIgnoreCase(l.getName()))
-                    || "Done".equalsIgnoreCase(listName) || "Completed".equalsIgnoreCase(listName);
-            cards.add(new CardView(str(c.get("id")), idList, str(c.get("name")), str(c.get("desc")), num(c.get("pos")),
-                    str(c.get("due")), c.get("dueComplete") instanceof Boolean dc ? dc : null, bool(c.get("closed")),
-                    labels, badges, str(c.get("url")), done));
+            cards.add(mapCard(c, idList, listNames.get(idList)));
         }
         s.setLists(lists);
         s.setCards(cards);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static CardView mapCard(Map<String, Object> c, String idList, String listName) {
+        List<LabelView> labels = new ArrayList<>();
+        for (Object lo : listOf(c.get("labels"))) {
+            Map<String, Object> l = (Map<String, Object>) lo;
+            labels.add(new LabelView(str(l.get("id")), str(l.get("name")), str(l.get("color"))));
+        }
+        BadgesView badges = null;
+        if (c.get("badges") instanceof Map<?, ?> b) {
+            badges = new BadgesView(intOf(b.get("checkItems")), intOf(b.get("checkItemsChecked")),
+                    b.get("description") instanceof Boolean d ? d : null, intOf(b.get("comments")));
+        }
+        CardView v = new CardView(str(c.get("id")), idList, str(c.get("name")), str(c.get("desc")), num(c.get("pos")),
+                str(c.get("due")), c.get("dueComplete") instanceof Boolean dc ? dc : null, bool(c.get("closed")),
+                labels, badges, str(c.get("url")), false);
+        v.setDone(isDone(v, listName));
+        return v;
+    }
+
+    private static boolean isDone(CardView c, String listName) {
+        return c.getLabels().stream().anyMatch(l -> "done".equalsIgnoreCase(l.getName()))
+                || "Done".equalsIgnoreCase(listName) || "Completed".equalsIgnoreCase(listName);
+    }
+
+    // ---- write-through patching (no Trello call; no-op when the project has no snapshot yet) ----
+
+    /** Cached snapshot or null; never calls Trello. */
+    public BoardSnapshot cached(Project p) {
+        return repository.findByProjectId(p.getId()).orElse(null);
+    }
+
+    /** Replaces/appends the list from a Trello list response, recomputes done for its cards. syncedAt unchanged. */
+    public ListView patchList(Project p, Map<String, Object> rawList) {
+        String id = str(rawList.get("id"));
+        ListView v = new ListView(id, str(rawList.get("name")), num(rawList.get("pos")), bool(rawList.get("closed")));
+        BoardSnapshot s = cached(p);
+        if (s == null) return v;
+        replaceOrAdd(s.getLists(), v, ListView::getId);
+        Map<String, String> names = new HashMap<>();
+        s.getLists().forEach(l -> names.put(l.getId(), l.getName()));
+        for (CardView c : s.getCards()) {
+            if (id.equals(c.getIdList())) c.setDone(isDone(c, names.get(id)));
+        }
+        repository.save(s);
+        return v;
+    }
+
+    /** Replaces/appends the card from a Trello card response (same mapper as board sync). Card in an unknown/_meta list is dropped. */
+    public CardView patchCard(Project p, Map<String, Object> rawCard) {
+        BoardSnapshot s = cached(p);
+        String idList = str(rawCard.get("idList"));
+        String listName = s == null ? null : s.getLists().stream()
+                .filter(l -> l.getId().equals(idList)).map(ListView::getName).findFirst().orElse(null);
+        CardView v = mapCard(rawCard, idList, listName);
+        if (s == null) return v;
+        if (listName == null) s.getCards().removeIf(c -> c.getId().equals(v.getId()));
+        else replaceOrAdd(s.getCards(), v, CardView::getId);
+        repository.save(s);
+        return v;
+    }
+
+    private static <T> void replaceOrAdd(List<T> list, T item, java.util.function.Function<T, String> id) {
+        for (int i = 0; i < list.size(); i++) {
+            if (id.apply(list.get(i)).equals(id.apply(item))) { list.set(i, item); return; }
+        }
+        list.add(item);
     }
 
     private static List<?> listOf(Object o) { return o instanceof List<?> l ? l : List.of(); }
