@@ -7,6 +7,7 @@ import habitTracker.auth.SecurityUtils;
 import habitTracker.integrations.trello.TrelloApiClient;
 import habitTracker.integrations.trello.TrelloGatewayException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -16,6 +17,7 @@ import java.util.function.Supplier;
 
 // Write-through editing: Trello is the source of truth. Each method = ownership check -> board-membership
 // check -> Trello write -> BoardSnapshotService patch of the cached snapshot (no refetch needed afterwards).
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProjectBoardService {
@@ -46,6 +48,38 @@ public class ProjectBoardService {
         if (body.containsKey("closed")) params.put("closed", bool(body.get("closed")));
         if (params.isEmpty()) throw new IllegalArgumentException("no fields to update");
         return snapshots.patchList(p, trello(() -> trello.updateList(p.getUserId(), listId, params), "List"));
+    }
+
+    /**
+     * Moves a list (with its cards) to another of the user's boards. Both projects must be owned by the caller;
+     * snapshots of both boards are refetched afterwards. Returns the target board snapshot.
+     */
+    public BoardSnapshot moveList(String projectId, String listId, Map<String, Object> body) {
+        Project src = owned(projectId);
+        String targetId = str(body.get("targetProjectId"));
+        if (targetId == null || targetId.isBlank()) throw new IllegalArgumentException("targetProjectId is required");
+        Project dst = owned(targetId);
+        if (src.getId().equals(dst.getId()) || src.getTrelloBoardId().equals(dst.getTrelloBoardId())) {
+            throw new IllegalArgumentException("target must be a different board");
+        }
+        String pos = body.get("pos") != null ? pos(body.get("pos")) : "bottom";
+        ensureList(src, listId);
+        String u = src.getUserId();
+        Map<String, Object> moved = trello(() -> trello.moveListToBoard(u, listId, dst.getTrelloBoardId(), pos), "List");
+        if (moved != null && moved.get("pos") instanceof Number n && isNumber(pos) && n.doubleValue() != Double.parseDouble(pos)) {
+            trello.updateList(u, listId, Map.of("pos", pos));   // endpoint ignored pos: set it explicitly
+        }
+        BoardSnapshot target = snapshots.get(dst, true).snapshot();
+        try {
+            snapshots.get(src, true);
+        } catch (TrelloGatewayException e) {
+            log.warn("Source board refetch failed after list move (project {}): {}", src.getId(), e.getMessage());
+        }
+        return target;
+    }
+
+    private static boolean isNumber(String s) {
+        try { Double.parseDouble(s); return true; } catch (NumberFormatException e) { return false; }
     }
 
     public CardView createCard(String projectId, Map<String, Object> body) {

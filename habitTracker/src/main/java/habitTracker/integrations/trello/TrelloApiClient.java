@@ -1,5 +1,7 @@
 package habitTracker.integrations.trello;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -23,6 +25,9 @@ import java.util.Map;
 // Hand-rolled RestTemplate (javaapp is memory-capped). No retries; Trello allows ~100 req/10s per token.
 @Component
 public class TrelloApiClient {
+
+    private static final Logger log = LoggerFactory.getLogger(TrelloApiClient.class);
+    private static final int LOG_MSG_MAX = 200;
 
     private static final int CONNECT_MS = 5_000;
     private static final int READ_MS = 15_000;
@@ -105,6 +110,14 @@ public class TrelloApiClient {
         return call(userId, HttpMethod.PUT, "/1/lists/" + listId, qs(params), MAP, params);
     }
 
+    /** PUT /1/lists/{id}/idBoard?value={targetBoardId}[&pos=] : moves the list (with its cards) to another board. */
+    public Map<String, Object> moveListToBoard(String userId, String listId, String targetBoardId, String pos) {
+        Map<String, String> v = new LinkedHashMap<>();
+        v.put("value", targetBoardId);
+        if (pos != null) v.put("pos", pos);
+        return call(userId, HttpMethod.PUT, "/1/lists/" + listId + "/idBoard", qs(v), MAP, v);
+    }
+
     public Map<String, Object> getList(String userId, String listId) {
         return call(userId, HttpMethod.GET, "/1/lists/" + listId, "fields=name,pos,closed,idBoard", MAP);
     }
@@ -168,12 +181,23 @@ public class TrelloApiClient {
             return rest.exchange(uri, method, HttpEntity.EMPTY, type).getBody();
         } catch (HttpStatusCodeException e) {
             if (e.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) throw new TrelloAuthException();
+            log.warn("Trello HTTP {} on {} {}: {}", e.getStatusCode().value(), method, path, rootCause(e));
             throw new TrelloGatewayException("Trello " + e.getStatusCode().value() + " on " + method + " " + path,
                     false, e, e.getStatusCode().value(),
                     e.getResponseHeaders() == null ? null : e.getResponseHeaders().getFirst("Retry-After"));
         } catch (RestClientException e) {
-            throw new TrelloGatewayException("Trello unreachable on " + method + " " + path, false, e);
+            String cause = rootCause(e);
+            log.warn("Trello unreachable on {} {}: {}", method, path, cause);
+            throw new TrelloGatewayException("Trello unreachable on " + method + " " + path + " (" + cause + ")", false, e);
         }
+    }
+
+    /** "SimpleName: message" of the root cause, message truncated. The request URI (key/token) is never part of it. */
+    private static String rootCause(RestClientException e) {
+        Throwable t = e.getMostSpecificCause();
+        String m = t.getMessage();
+        if (m != null && m.length() > LOG_MSG_MAX) m = m.substring(0, LOG_MSG_MAX) + "...";
+        return t.getClass().getSimpleName() + (m == null ? "" : ": " + m);
     }
 
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }

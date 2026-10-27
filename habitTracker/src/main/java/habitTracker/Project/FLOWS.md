@@ -32,6 +32,14 @@ A Project (name, description, userId, trelloBoardId, createdAt, imported) is 1:1
 - Patch: card/list replaced by the Trello response via the same `mapCard` as board sync, `done` recomputed (list rename recomputes its cards); card landing in an unknown/_meta list is dropped; no snapshot yet → no patch. `syncedAt` is NOT bumped, so the 60s TTL still decides when GET /board refetches. To change: `BoardSnapshotService.patchCard()/patchList()`.
 - Errors as board read, plus Trello 429 → 429 `{error:"trello_rate_limited"}` + `Retry-After` passthrough. To change: `ProjectController.upstream()`.
 
+## Merge boards (move list between boards)
+`POST /api/projects/{id}/lists/{listId}/move {targetProjectId, pos?}` → `ProjectController.moveList()` → `ProjectBoardService.moveList()` → `owned(source)` + `owned(target)` (404 if not the caller's; missing targetProjectId or same project/board → 400) → `ensureList(source, listId)` (404) → `TrelloApiClient.moveListToBoard()` (pos default "bottom"; numeric pos re-sent via `updateList` if Trello's answer differs) → `BoardSnapshotService.get(target, refresh=true)` + `get(source, refresh=true)` (source failure only logged) → target `BoardSnapshot` JSON.
+- Reorder within a board is the existing `PATCH .../lists/{listId} {pos}`.
+- To change: `ProjectBoardService.moveList()`.
+
+## Error handling / logging
+`ProjectController.upstream()` logs every `TrelloGatewayException` once at WARN (status, message) and maps 429/409/502. `ProjectController.unexpected()` = catch-all `RuntimeException` → ERROR with stack + 500 `{error:"internal_error"}`; it first maps ErrorResponse (own status), IllegalArgument/message-conversion/type-mismatch (400) and rethrows Spring Security exceptions, because a controller-local RuntimeException handler would otherwise shadow `GlobalExceptionHandler` and Spring's MVC resolvers.
+
 ## Two-step delete
 `POST /api/projects/{id}/delete-request` → `ProjectService.requestDelete()` (ownership check) → `ProjectDeleteTokenService.issue()` → `{token}` (60s)
 → `DELETE /api/projects/{id}?token=` → `ProjectService.delete()` → `redeem(token, projectId, userId)` (atomic remove = single-use) → (`imported` → skip Trello; else `TrelloApiClient.deleteBoard()`, 404 = already gone) → `BoardSnapshotService.delete()` → `repository.deleteById()`
@@ -68,6 +76,7 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 - Trello creds are per user (`trello_credentials`), apiKey+token stored **plaintext** in Mongo (not encrypted at rest, unlike `CapabilitySecret`). Token and key travel as query params to Trello (Trello's API design); never logged here.
 - mongo-backup down → only plan/apply fail (502). Trello down → create/import/delete 502; board view falls back to stale snapshot. Delete token is consumed before the Trello call, so a failed delete needs a new token.
 - Delete order: board first, Mongo row second, so an upstream failure leaves a retryable project; a board deleted upstream but a crash before `deleteById` leaves a project pointing at a missing board.
+- Moving a list is two non-atomic steps for us (Trello move, then snapshot refetch of both boards). If the refetch fails the board view self-heals on the next refresh. Moving a list to a board the token can't write to yields a Trello 4xx surfaced as 502. Labels are board-scoped in Trello; moved cards keep their labels — verified 2026-10-27: Trello copies the labels onto the target board (same name/color, new board-scoped id).
 - No unique constraint on project name per user.
 
 ## Change Index
@@ -79,6 +88,8 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 | Board edit endpoints | `ProjectController` (lists/cards/complete/reopen), `ProjectBoardService` |
 | Complete/reopen semantics, Completed/Done list choice, "done" label name | `ProjectBoardService.complete()/reopen()/completedList()`, `DONE_LABEL` |
 | Board-membership 404 check | `ProjectBoardService.ensureList()/ensureCard()` |
+| List move between boards | `ProjectBoardService.moveList()`, `TrelloApiClient.moveListToBoard()`, `ProjectController.moveList()` |
+| Catch-all 500 / Trello WARN logging | `ProjectController.unexpected()/upstream()` |
 | Snapshot patching after writes | `BoardSnapshotService.patchCard()/patchList()` |
 | 429 mapping | `ProjectController.upstream()` |
 | Ownership guard | `ProjectService.owned()`, `ProjectRepository.findByIdAndUserId` |

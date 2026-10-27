@@ -206,4 +206,61 @@ class ProjectBoardEditIntegrationTest {
         when(trello.updateCard(any(), eq("c1"), anyMap())).thenThrow(new TrelloGatewayException("x", false, null, 500));
         send(patch("/api/projects/" + pid + "/cards/c1"), alice, "{\"name\":\"x\"}").andExpect(status().is(502));
     }
+
+    // ---- list move between boards ----
+
+    String secondProject(UserPrincipal who, String boardId) throws Exception {
+        Map<String, Object> b = new HashMap<>(Map.of("id", boardId, "name", "Other", "url", "u2",
+                "lists", List.of(list("T1", "Target list")), "cards", List.of()));
+        when(trello.getBoard(who.getId(), boardId)).thenReturn(b);
+        String res = mockMvc.perform(post("/api/projects").with(auth.session(who)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Q\",\"trelloBoardId\":\"" + boardId + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return json.readTree(res).get("id").asText();
+    }
+
+    @Test
+    void moveListHappyPathRefetchesBothSnapshots() throws Exception {
+        project(false);
+        String pid2 = secondProject(alice, "b2");
+        Map<String, Object> moved = list("L1", "To do");
+        moved.put("idBoard", "b2");
+        when(trello.moveListToBoard(alice.getId(), "L1", "b2", "bottom")).thenReturn(moved);
+        when(trello.getBoard(alice.getId(), "b1")).thenReturn(new HashMap<>(Map.of("id", "b1", "name", "Board", "url", "u",
+                "lists", List.of(), "cards", List.of())));
+        when(trello.getBoard(alice.getId(), "b2")).thenReturn(new HashMap<>(Map.of("id", "b2", "name", "Other", "url", "u2",
+                "lists", List.of(list("T1", "Target list"), moved), "cards", List.of(card("c1", "L1", "b2", List.of())))));
+        send(post("/api/projects/" + pid + "/lists/L1/move"), alice, "{\"targetProjectId\":\"" + pid2 + "\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.boardId").value("b2"))
+                .andExpect(jsonPath("$.lists.length()").value(2)).andExpect(jsonPath("$.cards.length()").value(1));
+        send(get("/api/projects/" + pid + "/board"), alice, null)
+                .andExpect(jsonPath("$.lists.length()").value(0)).andExpect(jsonPath("$.cards.length()").value(0));
+        send(get("/api/projects/" + pid2 + "/board"), alice, null).andExpect(jsonPath("$.cards.length()").value(1));
+    }
+
+    @Test
+    void moveListRejectsCrossUserTargetSameBoardAndForeignList() throws Exception {
+        project(false);
+        String bobProject = secondProject(bob, "bb");
+        String pid2 = secondProject(alice, "b2");
+        send(post("/api/projects/" + pid + "/lists/L1/move"), alice, "{\"targetProjectId\":\"" + bobProject + "\"}")
+                .andExpect(status().isNotFound());
+        send(post("/api/projects/" + pid + "/lists/L1/move"), alice, "{\"targetProjectId\":\"" + pid + "\"}")
+                .andExpect(status().isBadRequest());
+        send(post("/api/projects/" + pid + "/lists/L1/move"), alice, "{}").andExpect(status().isBadRequest());
+        when(trello.getList(alice.getId(), "LX")).thenReturn(foreignList());
+        send(post("/api/projects/" + pid + "/lists/LX/move"), alice, "{\"targetProjectId\":\"" + pid2 + "\"}")
+                .andExpect(status().isNotFound());
+        send(post("/api/projects/" + pid + "/lists/L1/move"), bob, "{\"targetProjectId\":\"" + bobProject + "\"}")
+                .andExpect(status().isNotFound());
+        verify(trello, never()).moveListToBoard(any(), any(), any(), any());
+    }
+
+    @Test
+    void listReorderSendsPos() throws Exception {
+        project(false);
+        when(trello.updateList(eq(alice.getId()), eq("L1"), anyMap())).thenReturn(list("L1", "To do"));
+        send(patch("/api/projects/" + pid + "/lists/L1"), alice, "{\"pos\":12.5}").andExpect(status().isOk());
+        verify(trello).updateList(alice.getId(), "L1", Map.of("pos", "12.5"));
+    }
 }

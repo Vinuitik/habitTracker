@@ -17,6 +17,8 @@
   padding: var(--space-3) var(--space-3) var(--space-2);
 }
 
+.list-column__header { cursor: grab; }
+
 .list-column__name {
   min-width: 0;
   font-family: var(--font-heading);

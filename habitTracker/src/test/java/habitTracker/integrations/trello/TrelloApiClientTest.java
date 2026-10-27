@@ -131,4 +131,25 @@ class TrelloApiClientTest {
         assertEquals(429, e.getStatus());
         assertEquals("7", e.getRetryAfter());
     }
+
+    @Test
+    void moveListToBoardUsesIdBoardEndpoint() {
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith("http://trello/1/lists/L1/idBoard?")))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(queryParam("value", "b2")).andExpect(queryParam("pos", "bottom"))
+                .andExpect(queryParam("key", "K")).andExpect(queryParam("token", "T"))
+                .andRespond(withSuccess("{\"id\":\"L1\",\"idBoard\":\"b2\",\"pos\":1.0}", MediaType.APPLICATION_JSON));
+        assertEquals("b2", client.moveListToBoard("u", "L1", "b2", "bottom").get("idBoard"));
+        server.verify();
+    }
+
+    @Test
+    void unreachableMessageNamesRootCauseButNeverTheUri() {
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith("http://trello/1/boards/x?")))
+                .andRespond(request -> { throw new java.net.SocketTimeoutException("Read timed out"); });
+        TrelloGatewayException e = assertThrows(TrelloGatewayException.class, () -> client.deleteBoard("u", "x"));
+        assertTrue(e.getMessage().contains("SocketTimeoutException: Read timed out"), e.getMessage());
+        assertTrue(e.getMessage().contains("DELETE /1/boards/x"), e.getMessage());
+        assertFalse(e.getMessage().contains("token") || e.getMessage().contains("K&"), e.getMessage());
+    }
 }

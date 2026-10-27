@@ -1,6 +1,6 @@
 # Projects page (frontend) FLOWS
 
-Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/card-modal.js, js/organisms/plan-drawer.js, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
+Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/merge-view.js, styles/organisms/merge-view.css, js/organisms/card-modal.js, js/organisms/plan-drawer.js, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
 
 ## Routing
 `hashchange` → `route()` → fade out 180ms (`ENV.TIMING.VIEW_FADE_MS`) → `showIndex()` (`#/`) or `showBoard(id)` (`#/b/<id>`) → fade in.
@@ -33,9 +33,16 @@ Pattern: `mutate(card, localFields, call)` → apply local fields + `refreshList
 - Drag card: `Dnd.init` (pointer events) → `Board.onDrop()` → `posBetween(prev,next)` → `mutate` → PATCH `{idList,pos}`.
   pos math: both neighbours = (prev.pos+next.pos)/2; top = next.pos/2; bottom = prev.pos + 65536 (`ENV.BOARD.POS_STEP`); empty list = 65536. Dropping where it already sits is a no-op.
   Mouse: drag after 5px move. Touch/pen: only after 250ms hold with <8px movement (else the browser scrolls normally). Ghost follows pointer, dashed placeholder shows the slot, rAF loop auto-scrolls the board (horizontal) and the hovered list (vertical) within 48px of an edge; Esc cancels; the click after a drag is swallowed.
+- Reorder lists: drag the list header (`Dnd.init` second instance, `axis:'x'`, `handleSel:'.list-column__header'`; touch = same 250ms long-press) → `Board.onListDrop()` → `posBetween(prev,next)` → optimistic `list.pos` + `renderColumns()` → PATCH `PROJECT_LIST {pos}`; failure restores pos.
 - Quick complete: hover check button on tile (`data-act="quick"`, hover-capable devices only) → `completeCard()`/`reopenCard()` → POST `.../complete` or `.../reopen`; server may move the card (e.g. to Completed), `mutate` refreshes old + new list.
 - Plan drawer apply → `PlanDrawer` onChange → `showBoard(id, seq, true)` re-fetch (replaces all local state).
 To change optimistic behaviour: `mutate()`; list pos step / drag thresholds: `ENV.BOARD`; long-press ms / undo toast ms: `ENV.TIMING`.
+
+## Merge boards
+Board header "Merge into…" → `h.pickBoard()` (projects.js `pickBoard()`: GET `PROJECTS`, `Menu` of the other projects) → `h.onMerge(target)` = `startMerge()` → `stopPoll()` + parallel GET `PROJECT_BOARD` for both → `MergeView.open()` (replaces the board view): source pane left (top on ≤768px), target pane right (bottom), each a `.board__scroller`.
+- Drag a list header within or across panes (`Dnd.init`, `axis:'x'`, drop slot = placeholder between columns). Same pane → PATCH list pos. Other pane → `moveList()`: optimistic remove (list + its cards) / insert, POST `PROJECT_LIST_MOVE {targetProjectId,pos}`, success replaces the destination side with the returned snapshot, failure restores both sides + `Board.fail()` toast. Per-list kebab "Move to “<other board>”" is the non-drag fallback; the normal board's list kebab "Move list to board…" → `Board.moveListToBoard()` (same endpoint, pos bottom).
+- Source has no open lists → banner "Everything moved. Delete this board?" → `h.onDeleteSource()` → `startDelete()` (imported = unlink copy, app-created = deletes the Trello board). "Exit merge" → `showBoard(id, seq, true)` (normal view, poll restarts).
+To change: `MergeView.moveList()/onDrop()`, `startMerge()`, `pickBoard()`.
 
 ## Card modal (editable)
 `CardModal.open(card)` → `render()` from `Board.getCard(id)`; every control → `act(fn)` = optimistic Board action, render now, render again after the server answer/rollback.
@@ -77,6 +84,8 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 | Drag ghost / placeholder look | styles/atoms/dnd.css |
 | Composer (add card/list) | js/molecules/composer.js, styles/molecules/composer.css |
 | List kebab items / inline confirm | Board.listMenu, Menu `confirm` option |
+| Merge view layout / split | styles/organisms/merge-view.css, `MergeView.open()` |
+| List reorder / list move | `Board.onListDrop()/moveListToBoard()`, `MergeView.reorder()/moveList()`, `ENDPOINTS.PROJECT_LIST_MOVE` |
 | Quick-complete button | CardTile.html, styles/molecules/card-tile.css |
 | Card modal fields | CardModal.render / onClick / onChange |
 | Undo toast | Toast.show(msg, ms, {label,onClick}), `ENV.TIMING.UNDO_TOAST_MS` |
@@ -99,4 +108,6 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 - `pos` is a float; repeated midpoint drops between the same two cards eventually exhaust double precision (~50 halvings); Trello rebalances server-side but the client does not.
 - Touch drag relies on a non-passive `touchmove` listener on the board (iOS ignores preventDefault from listeners added mid-gesture); `touch-action` stays pan-x/pan-y so scrolling works before the long-press fires.
 - Rollback restores only the fields a failed write touched; an in-flight second write on the same card defers applying the server response until both finish.
+- Merge view is a separate lightweight renderer (read-only cards, no composer/modal); it holds its own copy of both boards and the 60s poll is stopped while it is open. The rollback of a failed cross-board move re-inserts only that list and its cards, so concurrent moves don't clobber each other. Labels are board-scoped in Trello: cards moved across keep their labels — verified 2026-10-27: Trello copies the labels onto the target board (same name/color, new board-scoped id).
+- A list drag needs the pointer on the header (not the kebab/name input); a dragged tmp list (still being created) is rejected with a toast.
 - Hover quick-complete is hidden on touch devices (`@media (hover: hover)`); use the modal there.

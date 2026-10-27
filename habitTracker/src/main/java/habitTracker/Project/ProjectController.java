@@ -3,6 +3,13 @@ package habitTracker.Project;
 import habitTracker.integrations.trello.TrelloGatewayException;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.http.converter.HttpMessageConversionException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.ErrorResponse;
 import habitTracker.integrations.trello.TrelloAuthException;
 import habitTracker.integrations.trello.TrelloNotConnectedException;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +22,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 @RequestMapping("/api/projects")
 public class ProjectController {
+
+    private static final Logger log = LoggerFactory.getLogger(ProjectController.class);
 
     private final ProjectService service;
     private final ProjectBoardService boardService;
@@ -112,8 +121,15 @@ public class ProjectController {
         return boardService.reopen(id, cardId);
     }
 
+    @PostMapping("/{id}/lists/{listId}/move")
+    public BoardSnapshot moveList(@PathVariable String id, @PathVariable String listId, @RequestBody Map<String, Object> body) {
+        return boardService.moveList(id, listId, body);
+    }
+
     @ExceptionHandler(TrelloGatewayException.class)
     ResponseEntity<Map<String, String>> upstream(TrelloGatewayException e) {
+        log.warn("Trello upstream failure -> {} (trello status {}): {}",
+                e.getStatus() == 429 ? 429 : e.isConflict() ? 409 : 502, e.getStatus(), e.getMessage());
         if (e.getStatus() == 429) {
             ResponseEntity.BodyBuilder b = ResponseEntity.status(429);
             if (e.getRetryAfter() != null) b.header("Retry-After", e.getRetryAfter());
@@ -145,5 +161,20 @@ public class ProjectController {
     @ExceptionHandler(IllegalStateException.class)
     ResponseEntity<Map<String, String>> unauth(IllegalStateException e) {
         return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+    }
+
+    // Catch-all for unexpected failures. A controller-local RuntimeException handler would shadow the
+    // GlobalExceptionHandler advice and Spring's own MVC resolvers, so the known cases are mapped here first.
+    @ExceptionHandler(RuntimeException.class)
+    ResponseEntity<Map<String, String>> unexpected(RuntimeException e) {
+        if (e instanceof AccessDeniedException || e instanceof AuthenticationException) throw e;
+        if (e instanceof ErrorResponse er) {
+            return ResponseEntity.status(er.getStatusCode()).body(Map.of("error", String.valueOf(e.getMessage())));
+        }
+        if (e instanceof IllegalArgumentException || e instanceof HttpMessageConversionException || e instanceof TypeMismatchException) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage() == null ? "Invalid request" : e.getMessage()));
+        }
+        log.error("Unexpected error in ProjectController", e);
+        return ResponseEntity.status(500).body(Map.of("error", "internal_error"));
     }
 }

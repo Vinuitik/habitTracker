@@ -53,6 +53,11 @@
   font-size: var(--text-sm);
 }
 
+.board__banner--info {
+  border-color: var(--color-border-hover);
+  color: var(--color-text-primary);
+}
+
 .board__back {
   padding: var(--space-2);
 }

@@ -27,6 +27,7 @@ window.ENV = {
     PROJECT_APPLY:   (id) => `/api/projects/${id}/apply`,
     PROJECT_LISTS:   (id) => `/api/projects/${id}/lists`,
     PROJECT_LIST:    (id, listId) => `/api/projects/${id}/lists/${encodeURIComponent(listId)}`,
+    PROJECT_LIST_MOVE: (id, listId) => `/api/projects/${id}/lists/${encodeURIComponent(listId)}/move`,
     PROJECT_CARDS:   (id) => `/api/projects/${id}/cards`,
     PROJECT_CARD:    (id, cardId) => `/api/projects/${id}/cards/${encodeURIComponent(cardId)}`,
     PROJECT_CARD_COMPLETE: (id, cardId) => `/api/projects/${id}/cards/${encodeURIComponent(cardId)}/complete`,
