@@ -4,6 +4,8 @@
 //
 // Dnd.init(root, {
 //   itemSel, zoneSel, containerSel, scrollerSel, ignoreSel,   // selectors
+//   handleSel?  (drag starts only from inside this element of the item, e.g. a list header)
+//   axis?       ('y' default: items stacked vertically; 'x': items laid out in a row, zone itself is the container)
 //   cfg: {holdMs, startPx, holdSlopPx, edgePx, maxPx},        // from ENV
 //   onDrop({ item, fromContainer, toContainer, prevEl, nextEl })
 // })
@@ -12,6 +14,7 @@
 window.Dnd = (() => {
   function init(root, o) {
     const c = o.cfg;
+    const horiz = o.axis === 'x';
     let pend = null;   // pointerdown seen, drag not started yet
     let drag = null;   // active drag
 
@@ -19,6 +22,7 @@ window.Dnd = (() => {
       if (drag || pend || (e.pointerType === 'mouse' && e.button !== 0)) return;
       const item = e.target.closest(o.itemSel);
       if (!item || !root.contains(item) || e.target.closest(o.ignoreSel)) return;
+      if (o.handleSel && !e.target.closest(o.handleSel)) return;
       pend = { item, id: e.pointerId, type: e.pointerType, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, timer: null };
       if (pend.type !== 'mouse') pend.timer = setTimeout(() => { if (pend) start(); }, c.holdMs);
       window.addEventListener('pointermove', onMove);
@@ -63,13 +67,15 @@ window.Dnd = (() => {
       const ph = document.createElement('div');
       ph.className = 'dnd-placeholder';
       ph.style.height = `${r.height}px`;
+      if (horiz) { ph.style.width = `${r.width}px`; ghost.style.height = `${r.height}px`; }
       item.parentElement.insertBefore(ph, item);
       item.classList.add('dnd-source');
       document.body.appendChild(ghost);
-      const scroller = root.querySelector(o.scrollerSel);
-      scroller.classList.add('dnd-scroller');
+      const scrollers = [...root.querySelectorAll(o.scrollerSel)];
+      const scroller = scrollers[0];
+      scrollers.forEach((sc) => sc.classList.add('dnd-scroller'));
       document.body.classList.add('dnd-active');
-      drag = { item, id, ghost, ph, scroller, x, y, dx: x - r.left, dy: y - r.top, raf: 0, container: item.parentElement };
+      drag = { item, id, ghost, ph, scroller, scrollers, x, y, dx: x - r.left, dy: y - r.top, raf: 0, container: item.parentElement };
       document.addEventListener('keydown', onKey, true);
       document.addEventListener('contextmenu', blockCtx, true);
       tick();
@@ -81,9 +87,10 @@ window.Dnd = (() => {
       d.ghost.style.transform = `translate(${d.x - d.dx}px, ${d.y - d.dy}px)`;
       const under = document.elementFromPoint(d.x, d.y);   // ghost has pointer-events: none
       const zone = under && under.closest(o.zoneSel);
-      const cont = zone && zone.querySelector(o.containerSel);
+      const cont = zone && (o.containerSel ? zone.querySelector(o.containerSel) : zone);
       if (cont) d.container = cont;
-      placeIn(d.container, d.y);
+      if (horiz) d.scroller = d.container;
+      placeIn(d.container, horiz ? d.x : d.y);
       autoScroll(d);
       d.raf = requestAnimationFrame(tick);
     }
@@ -92,13 +99,19 @@ window.Dnd = (() => {
       return [...cont.children].filter((n) => n.matches(o.itemSel) && n !== d.item);
     }
 
-    function placeIn(cont, y) {
+    // pt = pointer coordinate along the item axis (y for stacked items, x for a row).
+    function placeIn(cont, pt) {
       const d = drag;
-      const before = siblings(cont, d).find((n) => {
+      const sibs = siblings(cont, d);
+      const before = sibs.find((n) => {
         const r = n.getBoundingClientRect();
-        return y < r.top + r.height / 2;
+        return pt < (horiz ? r.left + r.width / 2 : r.top + r.height / 2);
       });
       if (before) { if (d.ph.nextSibling !== before || d.ph.parentElement !== cont) cont.insertBefore(d.ph, before); }
+      else if (horiz && sibs.length) {   // keep the slot before trailing non-item children (e.g. the "add list" column)
+        const last = sibs[sibs.length - 1];
+        if (d.ph.previousSibling !== last || d.ph.parentElement !== cont) last.after(d.ph);
+      }
       else if (d.ph.parentElement !== cont || d.ph.nextSibling) cont.appendChild(d.ph);
     }
 
@@ -110,6 +123,7 @@ window.Dnd = (() => {
       const sr = d.scroller.getBoundingClientRect();
       if (d.x < sr.left + c.edgePx) d.scroller.scrollLeft -= speed(sr.left + c.edgePx - d.x);
       else if (d.x > sr.right - c.edgePx) d.scroller.scrollLeft += speed(d.x - (sr.right - c.edgePx));
+      if (horiz) return;
       const cr = d.container.getBoundingClientRect();
       if (d.y < cr.top + c.edgePx) d.container.scrollTop -= speed(cr.top + c.edgePx - d.y);
       else if (d.y > cr.bottom - c.edgePx) d.container.scrollTop += speed(d.y - (cr.bottom - c.edgePx));
@@ -125,7 +139,7 @@ window.Dnd = (() => {
       cancelAnimationFrame(d.raf);
       d.ghost.remove();
       d.item.classList.remove('dnd-source');
-      d.scroller.classList.remove('dnd-scroller');
+      d.scrollers.forEach((sc) => sc.classList.remove('dnd-scroller'));
       document.body.classList.remove('dnd-active');
       // swallow the click that follows a drag release
       const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };

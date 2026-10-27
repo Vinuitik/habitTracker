@@ -105,6 +105,7 @@ window.Board = (() => {
           <span class="board__synced" data-synced>synced ${esc(timeAgo(data.syncedAt))}</span>
           ${url ? `<a class="btn btn--ghost" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Trello</a>` : ''}
           <button class="btn btn--ghost" data-act="refresh">Refresh</button>
+          <button class="btn btn--ghost" data-act="merge">Merge into…</button>
           <button class="btn btn--primary" data-act="plan">Plan with AI</button>
         </div>
       </header>
@@ -123,6 +124,7 @@ window.Board = (() => {
       const act = e.target.closest('[data-act]');
       if (act && act.dataset.act === 'refresh') { h.onRefresh(act); return; }
       if (act && act.dataset.act === 'plan') { h.onPlan(act); return; }
+      if (act && act.dataset.act === 'merge') { h.pickBoard(act, h.onMerge); return; }
       if (act && act.dataset.act === 'unlink') { h.onUnlink(act); return; }
       if (act && act.dataset.act === 'list-menu') { listMenu(act); return; }
       const tile = e.target.closest('.card-tile');
@@ -149,6 +151,16 @@ window.Board = (() => {
         edgePx: ENV.BOARD.AUTOSCROLL_EDGE_PX, maxPx: ENV.BOARD.AUTOSCROLL_MAX_PX,
       },
       onDrop: onDrop,
+    });
+    // List reorder: drag the list header (same long-press rule on touch).
+    Dnd.init(el, {
+      itemSel: '.list-column[data-list-id]', handleSel: '.list-column__header', zoneSel: '.board__scroller',
+      scrollerSel: '.board__scroller', axis: 'x', ignoreSel: 'button,a,input,textarea',
+      cfg: {
+        holdMs: ENV.TIMING.DRAG_HOLD_MS, startPx: ENV.BOARD.DRAG_START_PX, holdSlopPx: ENV.BOARD.DRAG_HOLD_SLOP_PX,
+        edgePx: ENV.BOARD.AUTOSCROLL_EDGE_PX, maxPx: ENV.BOARD.AUTOSCROLL_MAX_PX,
+      },
+      onDrop: onListDrop,
     });
     return el;
   }
@@ -258,6 +270,40 @@ window.Board = (() => {
   }
 
   // ── list writes ───────────────────────────────────────────────────────
+  async function onListDrop(d) {
+    const list = getList(d.item.dataset.listId);
+    if (!list) return;
+    if (isTmp(list.id)) { Toast.show('Still creating that list…'); return; }
+    const prev = d.prevEl ? getList(d.prevEl.dataset.listId) : null;
+    const next = d.nextEl ? getList(d.nextEl.dataset.listId) : null;
+    if ((!prev || prev.pos < list.pos) && (!next || list.pos < next.pos)) return;   // dropped where it already sits
+    const old = list.pos;
+    list.pos = posBetween(prev, next);
+    renderColumns();
+    beginWrite();
+    try { Object.assign(list, await patchList(list.id, { pos: list.pos })); }
+    catch (e) { list.pos = old; renderColumns(); fail(e, 'Could not move list'); }
+    finally { endWrite(); }
+  }
+
+  // Moves a whole list (with its cards) to another project's board. Optimistic: gone from this board at once.
+  async function moveListToBoard(list, target) {
+    const cards = S.data.cards.filter((c) => c.idList === list.id);
+    S.data.lists = S.data.lists.filter((l) => l !== list);
+    S.data.cards = S.data.cards.filter((c) => c.idList !== list.id);
+    renderColumns();
+    beginWrite();
+    try {
+      await Api.request(EP.PROJECT_LIST_MOVE(S.h.projectId, list.id), 'POST', { targetProjectId: target.id });
+      Toast.show(`Moved “${list.name}” to ${target.name}`);
+    } catch (e) {
+      S.data.lists.push(list);
+      S.data.cards.push(...cards);
+      renderColumns();
+      fail(e, 'Could not move list');
+    } finally { endWrite(); }
+  }
+
   async function addList(name) {
     const ls = openLists();
     const tmp = { id: `tmp-${++tmpSeq}`, name, pos: (ls.length ? ls[ls.length - 1].pos : 0) + STEP, closed: false };
@@ -355,6 +401,7 @@ window.Board = (() => {
     if (isTmp(list.id)) { Toast.show('Still creating that list…'); return; }
     Menu.open(btn, [
       { label: 'Rename', onClick: () => startRename(col, list) },
+      { label: 'Move list to board…', onClick: () => S.h.pickBoard(btn, (p) => moveListToBoard(list, p)) },
       { label: 'Archive list', danger: true, confirm: 'Archive this list and hide its cards?', onClick: () => archiveList(list) },
     ]);
   }
@@ -411,6 +458,6 @@ window.Board = (() => {
 
   return {
     isBusy, stamp, apply, render, getCard, listName, openLists: () => openLists().map((l) => ({ id: l.id, name: l.name })),
-    updateCard, completeCard, reopenCard, moveCardToList, archiveCard,
+    fail, posBetween, updateCard, completeCard, reopenCard, moveCardToList, archiveCard,
   };
 })();

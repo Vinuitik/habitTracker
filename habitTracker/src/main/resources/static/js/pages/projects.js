@@ -131,11 +131,57 @@
         Toast.show('Board refreshed');
       },
       onPlan: () => PlanDrawer.toggle(id),
+      pickBoard: (anchor, onPick) => pickBoard(id, anchor, onPick),
+      onMerge: (target) => startMerge(id, target),
       onUnlink: () => unlinkMissing(id),
       onCard: (card) => CardModal.open(card),
     });
     startPoll(id, my);
     PlanDrawer.setOnChange(() => { if (location.hash === `#/b/${encodeURIComponent(id)}`) showBoard(id, seq, true); });
+  }
+
+  // Menu of the user's other projects; onPick(project) gets the chosen one.
+  let known = [];   // last fetched project list (also supplies `imported`/name for the delete flow)
+  async function pickBoard(currentId, anchor, onPick) {
+    try {
+      known = (await Api.request(ENV.ENDPOINTS.PROJECTS)) || [];
+    } catch (e) {
+      if (Api.isTrelloAuth(e)) { showConnect(e, route); return; }
+      Toast.show(e.message);
+      return;
+    }
+    const others = known.filter((p) => p.id !== currentId);
+    if (!others.length) { Toast.show('No other boards to move to'); return; }
+    Menu.open(anchor, others.map((p) => ({ label: p.name, onClick: () => onPick(p) })));
+  }
+
+  // Merge mode: source board (left/top) + target board (right/bottom); leaving rebuilds the normal board.
+  async function startMerge(sourceId, target) {
+    const my = seq;
+    stopPoll();
+    PlanDrawer.close();
+    const source = known.find((p) => p.id === sourceId);
+    let src; let tgt;
+    try {
+      [src, tgt] = await Promise.all([
+        Api.request(ENV.ENDPOINTS.PROJECT_BOARD(sourceId, false)),
+        Api.request(ENV.ENDPOINTS.PROJECT_BOARD(target.id, false)),
+      ]);
+    } catch (e) {
+      if (!isCurrent(my)) return;
+      if (Api.isTrelloAuth(e)) { showConnect(e, route); return; }
+      Toast.show(e.message);
+      showBoard(sourceId, my);
+      return;
+    }
+    if (!isCurrent(my)) return;
+    MergeView.open(view(), {
+      source: { id: sourceId, name: source ? source.name : src.name, data: src },
+      target: { id: target.id, name: target.name, data: tgt },
+    }, {
+      onExit: () => { MergeView.close(); showBoard(sourceId, seq, true); },
+      onDeleteSource: () => { if (source) startDelete(source); },
+    });
   }
 
   // Missing board: reuse the normal two-step delete (imported projects are only unlinked).
