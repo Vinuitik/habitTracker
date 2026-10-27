@@ -33,3 +33,20 @@
   background: var(--color-success);
   flex-shrink: 0;
 }
+
+.toast--actionable.toast--visible { pointer-events: auto; }
+
+.toast__action {
+  background: none;
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.toast__action:hover { background: var(--color-accent-dim); }

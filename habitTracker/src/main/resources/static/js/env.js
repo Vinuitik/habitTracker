@@ -20,6 +20,20 @@ window.ENV = {
     KPI_SECRET:      (name) => `/api/kpi-secrets/${encodeURIComponent(name)}`,
     PROJECTS:        '/api/projects',
     PROJECT:         (id) => `/api/projects/${id}`,
+    PROJECTS_IMPORT: '/api/projects/import',
+    PROJECTS_TRELLO_BOARDS: '/api/projects/trello/boards',
+    PROJECT_BOARD:   (id, refresh) => `/api/projects/${id}/board?refresh=${refresh ? 'true' : 'false'}`,
+    PROJECT_PLAN:    (id) => `/api/projects/${id}/plan`,
+    PROJECT_APPLY:   (id) => `/api/projects/${id}/apply`,
+    PROJECT_LISTS:   (id) => `/api/projects/${id}/lists`,
+    PROJECT_LIST:    (id, listId) => `/api/projects/${id}/lists/${encodeURIComponent(listId)}`,
+    PROJECT_CARDS:   (id) => `/api/projects/${id}/cards`,
+    PROJECT_CARD:    (id, cardId) => `/api/projects/${id}/cards/${encodeURIComponent(cardId)}`,
+    PROJECT_CARD_COMPLETE: (id, cardId) => `/api/projects/${id}/cards/${encodeURIComponent(cardId)}/complete`,
+    PROJECT_CARD_REOPEN:   (id, cardId) => `/api/projects/${id}/cards/${encodeURIComponent(cardId)}/reopen`,
+    PROJECT_DELETE_REQUEST: (id) => `/api/projects/${id}/delete-request`,
+    PROJECT_DELETE:  (id, token) => `/api/projects/${id}?token=${encodeURIComponent(token)}`,
+    TRELLO_CREDENTIALS: '/api/integrations/trello/credentials',
     SYNC_OAUTH_URL:  '/api/sync/oauth/url',
     SYNC_DISCONNECT: '/api/sync/disconnect',
     SYNC_STATUS:     '/api/sync/status',
@@ -41,6 +55,23 @@ window.ENV = {
     CONNECT_DRIVE:   '/connect-drive',
     INSTALL:         '/install',
     PROJECTS:        '/projects',
+  },
+  EXTERNAL: {
+    TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',
+  },
+  TIMING: {
+    VIEW_FADE_MS: 180,
+    DRAG_HOLD_MS: 250,        // touch long-press before a card drag starts
+    UNDO_TOAST_MS: 6000,
+    BOARD_POLL_MS: 60000,     // open-board poll for changes made directly in Trello
+  },
+  BOARD: {
+    POS_STEP: 65536,          // Trello pos spacing for append / empty list
+    DRAG_START_PX: 5,         // mouse movement before drag starts
+    DRAG_HOLD_SLOP_PX: 8,     // touch movement that cancels the long-press
+    AUTOSCROLL_EDGE_PX: 48,
+    AUTOSCROLL_MAX_PX: 14,
+    DEFAULT_DUE_TIME: '12:00',
   },
   FEATURES: {
     ANIMATIONS: true,

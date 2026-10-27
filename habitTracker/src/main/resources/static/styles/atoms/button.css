@@ -78,3 +78,13 @@
     padding: var(--space-3) var(--space-4);
   }
 }
+
+/* Inline text link */
+.link {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}

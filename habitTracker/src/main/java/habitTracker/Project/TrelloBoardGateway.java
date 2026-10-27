@@ -1,19 +1,13 @@
 package habitTracker.Project;
 
+import habitTracker.integrations.trello.TrelloGatewayException;
+
 import java.util.Map;
 
-// Java-side seam to Trello board lifecycle + planning agent. Java holds no Trello keys; the real
+// Java-side seam to Trello planning agent (board lifecycle is direct, see TrelloApiClient). Java holds no Trello keys; the real
 // implementation (HttpTrelloBoardGateway) calls mongo-backup's internal HTTP API.
 // All methods throw TrelloGatewayException on upstream failure.
 public interface TrelloBoardGateway {
-    /** Creates a board and returns its id. */
-    String createBoard(String name);
-
-    void deleteBoard(String boardId);
-
-    /** Validates/adopts an existing board and returns its id. */
-    String linkExisting(String boardId);
-
     /** Long-running (minutes). Returns upstream {cards, proposal} as-is. */
     Map<String, Object> plan(String boardId, String description);
 

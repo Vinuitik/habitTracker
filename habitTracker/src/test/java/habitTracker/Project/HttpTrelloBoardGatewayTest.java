@@ -1,5 +1,7 @@
 package habitTracker.Project;
 
+import habitTracker.integrations.trello.TrelloGatewayException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -23,23 +25,6 @@ class HttpTrelloBoardGatewayTest {
     void setup() {
         server = MockRestServiceServer.createServer(rt);
         gw = new HttpTrelloBoardGateway("http://mb:8092/", rt, rt);
-    }
-
-    @Test
-    void createBoardReturnsId() {
-        server.expect(requestTo("http://mb:8092/internal/boards")).andExpect(method(HttpMethod.POST))
-                .andExpect(jsonPath("$.name").value("P"))
-                .andRespond(withSuccess("{\"boardId\":\"b1\"}", MediaType.APPLICATION_JSON));
-        assertEquals("b1", gw.createBoard("P"));
-        server.verify();
-    }
-
-    @Test
-    void deleteBoard() {
-        server.expect(requestTo("http://mb:8092/internal/boards/b1")).andExpect(method(HttpMethod.DELETE))
-                .andRespond(withSuccess());
-        gw.deleteBoard("b1");
-        server.verify();
     }
 
     @Test
@@ -73,7 +58,7 @@ class HttpTrelloBoardGatewayTest {
 
     @Test
     void otherFailuresAreNotConflict() {
-        server.expect(requestTo("http://mb:8092/internal/boards")).andRespond(withServerError());
-        assertFalse(assertThrows(TrelloGatewayException.class, () -> gw.createBoard("P")).isConflict());
+        server.expect(requestTo("http://mb:8092/internal/agent/apply")).andRespond(withServerError());
+        assertFalse(assertThrows(TrelloGatewayException.class, () -> gw.apply("b1", null)).isConflict());
     }
 }

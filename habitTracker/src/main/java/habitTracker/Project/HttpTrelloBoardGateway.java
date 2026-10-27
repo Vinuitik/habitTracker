@@ -1,5 +1,7 @@
 package habitTracker.Project;
 
+import habitTracker.integrations.trello.TrelloGatewayException;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -51,27 +53,6 @@ public class HttpTrelloBoardGateway implements TrelloBoardGateway {
         f.setConnectTimeout(CONNECT_MS);
         f.setReadTimeout(readMs);
         return new RestTemplate(f);
-    }
-
-    @Override
-    public String createBoard(String name) {
-        Map<String, Object> res = call(shortClient, HttpMethod.POST, "/internal/boards", Map.of("name", name));
-        Object id = res == null ? null : res.get("boardId");
-        if (id == null || id.toString().isBlank()) {
-            throw new TrelloGatewayException("Upstream returned no boardId", false, null);
-        }
-        return id.toString();
-    }
-
-    @Override
-    public void deleteBoard(String boardId) {
-        call(shortClient, HttpMethod.DELETE, "/internal/boards/" + boardId, null);
-    }
-
-    // No upstream endpoint to validate a board; adopt the id as given.
-    @Override
-    public String linkExisting(String boardId) {
-        return boardId;
     }
 
     @Override

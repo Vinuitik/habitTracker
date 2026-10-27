@@ -1,4 +1,4 @@
-package habitTracker.KPI;
+package habitTracker.integrations.trello;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

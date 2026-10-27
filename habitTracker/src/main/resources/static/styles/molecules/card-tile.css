@@ -1,0 +1,87 @@
+.card-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.card-tile:hover,
+.card-tile:focus-visible {
+  border-color: var(--color-border-hover);
+  outline: none;
+}
+
+.card-tile__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.card-tile__title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.card-tile__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.card-tile--done .card-tile__title { color: var(--color-text-muted); }
+
+.card-tile__check {
+  display: inline-flex;
+  padding-top: 2px;
+  color: var(--color-success);
+}
+
+.card-tile { position: relative; touch-action: pan-x pan-y; -webkit-touch-callout: none; }
+.card-tile__title { padding-right: var(--space-6); }
+.card-tile--pending { opacity: 0.6; }
+
+.card-tile__quick {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.card-tile__quick:hover {
+  background: var(--color-success-dim);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.card-tile__quick--on {
+  background: var(--color-success-dim);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+/* Desktop: revealed on hover/focus. Touch: use the card modal. */
+@media (hover: hover) {
+  .card-tile:hover .card-tile__quick,
+  .card-tile:focus-within .card-tile__quick { display: inline-flex; }
+}

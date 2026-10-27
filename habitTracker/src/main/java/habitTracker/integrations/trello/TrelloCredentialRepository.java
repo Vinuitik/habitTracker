@@ -1,4 +1,4 @@
-package habitTracker.KPI;
+package habitTracker.integrations.trello;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;

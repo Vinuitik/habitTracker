@@ -1,0 +1,29 @@
+/* Drag-and-drop states (see js/atoms/dnd.js) */
+.dnd-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 700;
+  margin: 0;
+  pointer-events: none;
+  opacity: 0.92;
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-accent);
+}
+
+.dnd-placeholder {
+  flex-shrink: 0;
+  border: 1px dashed var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-dim);
+}
+
+.dnd-source { display: none; }
+
+.dnd-active {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+
+.dnd-scroller { scroll-snap-type: none; }

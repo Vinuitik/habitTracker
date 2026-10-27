@@ -1,5 +1,9 @@
 package habitTracker.KPI;
 
+import habitTracker.integrations.trello.TrelloCredentialRepository;
+
+import habitTracker.integrations.trello.TrelloCredential;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
