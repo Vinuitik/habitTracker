@@ -31,9 +31,24 @@ public class CapabilityAgentController {
         return service.propose(name, d == null ? null : d.toString());
     }
 
+    // body {option: n} picks which offered option to approve; may be omitted when only one was offered.
     @PostMapping("/{id}/approve")
-    public CapabilityDTO approve(@PathVariable String name, @PathVariable String id) {
-        return service.approve(name, id);
+    public CapabilityDTO approve(@PathVariable String name, @PathVariable String id,
+                                 @RequestBody(required = false) Map<String, Object> body) {
+        Object o = body == null ? null : body.get("option");
+        Integer option;
+        try {
+            option = o == null ? null : Integer.valueOf(o.toString());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("option must be a number");
+        }
+        return service.approve(name, id, option);
+    }
+
+    @PostMapping("/{id}/refine")
+    public CapabilityDTO refine(@PathVariable String name, @PathVariable String id, @RequestBody Map<String, Object> body) {
+        Object m = body.get("message");
+        return service.refine(name, id, m == null ? null : m.toString());
     }
 
     @PostMapping("/{id}/reject")

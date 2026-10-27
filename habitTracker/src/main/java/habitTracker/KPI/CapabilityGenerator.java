@@ -11,9 +11,20 @@ import java.util.Map;
  */
 public interface CapabilityGenerator {
 
-    record Proposal(String proposal, String platform, Map<String, List<String>> declaredCapabilities) {}
+    /** reply = the agent's short message to the user (may be null); options = 1..n alternatives. */
+    record Proposal(String reply, List<CapabilityOption> options) {
+        /** Single-option proposal (tests, legacy upstream reply). */
+        public Proposal(String summary, String platform, Map<String, List<String>> declaredCapabilities) {
+            this(null, List.of(CapabilityOption.of(summary, platform, declaredCapabilities)));
+        }
+    }
 
-    Proposal propose(String kpiName, String description);
+    /**
+     * conversation/previousOptions are empty on the first proposal; on a refinement the conversation ends
+     * with the user's latest message and previousOptions are the options it reacts to.
+     */
+    Proposal propose(String kpiName, String description, List<CapabilityTurn> conversation,
+                     List<CapabilityOption> previousOptions);
 
     /** previousCode/previousError are non-null when seeding a retry or repair with a failure. */
     String generate(String kpiName, String description, String proposal,

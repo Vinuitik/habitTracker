@@ -35,9 +35,33 @@ class HttpCapabilityGeneratorTest {
                 .andExpect(jsonPath("$.description").value("d"))
                 .andRespond(withSuccess("{\"proposal\":\"spec\",\"platform\":\"SERVER\","
                         + "\"declaredCapabilities\":{\"network\":[\"a.com\"],\"secrets\":[]}}", MediaType.APPLICATION_JSON));
-        CapabilityGenerator.Proposal p = gen.propose("K", "d");
-        assertEquals("spec", p.proposal());
-        assertEquals(Map.of("network", List.of("a.com"), "secrets", List.of()), p.declaredCapabilities());
+        CapabilityGenerator.Proposal p = gen.propose("K", "d", List.of(), List.of());
+        assertEquals("spec", p.options().get(0).summary());
+        assertEquals(Map.of("network", List.of("a.com"), "secrets", List.of()), p.options().get(0).declaredCapabilities());
+        server.verify();
+    }
+
+    @Test
+    void proposeSendsConversation_andParsesLabelledOptions() {
+        server.expect(requestTo("http://mb:8092/internal/agent/capability"))
+                .andExpect(jsonPath("$.conversation[0].role").value("user"))
+                .andExpect(jsonPath("$.conversation[0].text").value("only free"))
+                .andExpect(jsonPath("$.previousOptions[0].title").value("Old"))
+                .andRespond(withSuccess("{\"reply\":\"ok\",\"options\":[{\"title\":\"T\",\"summary\":\"S\","
+                        + "\"cost\":\"free_tier\",\"method\":\"OFFICIAL_API\",\"sources\":[\"https://x.com\"]},"
+                        + "{\"title\":\"no summary, dropped\"}]}", MediaType.APPLICATION_JSON));
+        CapabilityGenerator.Proposal p = gen.propose("K", "d", List.of(new CapabilityTurn("user", "only free")),
+                List.of(CapabilityOption.of("old", "SERVER", Map.of()).vetted(Map.of(), null)) .stream()
+                        .map(o -> new CapabilityOption("Old", o.summary(), o.platform(), o.declaredCapabilities(), o.cost(),
+                                null, null, o.method(), o.difficulty(), null, List.of(), null)).toList());
+        assertEquals("ok", p.reply());
+        assertEquals(1, p.options().size());
+        CapabilityOption o = p.options().get(0);
+        assertEquals("FREE_TIER", o.cost());
+        assertEquals("UNKNOWN", o.difficulty());
+        assertEquals("SERVER", o.platform());
+        assertEquals(List.of("https://x.com"), o.sources());
+        assertEquals(Map.of("network", List.of(), "secrets", List.of()), o.declaredCapabilities());
         server.verify();
     }
 
@@ -56,14 +80,14 @@ class HttpCapabilityGeneratorTest {
     @Test
     void conflictIsBusy() {
         server.expect(requestTo("http://mb:8092/internal/agent/capability")).andRespond(withStatus(HttpStatus.CONFLICT));
-        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> gen.propose("K", "d"));
+        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> gen.propose("K", "d", List.of(), List.of()));
         assertTrue(e.isBusy());
     }
 
     @Test
     void otherErrorsAreNotBusy_andMissingFieldsFail() {
         server.expect(requestTo("http://mb:8092/internal/agent/capability")).andRespond(withServerError());
-        assertFalse(assertThrows(CapabilityGeneratorException.class, () -> gen.propose("K", "d")).isBusy());
+        assertFalse(assertThrows(CapabilityGeneratorException.class, () -> gen.propose("K", "d", List.of(), List.of())).isBusy());
 
         server.reset();
         server.expect(requestTo("http://mb:8092/internal/agent/capability"))

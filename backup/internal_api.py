@@ -38,6 +38,8 @@ class CapabilityIn(BaseModel):
     declaredCapabilities: dict | None = None
     previousCode: str | None = None
     previousError: str | None = None
+    conversation: list[dict] | None = None      # propose refinements: [{role, text}], last = user's message
+    previousOptions: list[dict] | None = None   # the options that message reacts to
 
 
 class ApplyIn(BaseModel):
@@ -96,7 +98,7 @@ async def agent_plan(body: PlanIn) -> dict:
 
 @app.post("/internal/agent/capability")
 async def agent_capability(body: CapabilityIn) -> dict:
-    # propose -> {proposal, platform, declaredCapabilities}; generate -> {sourceCode}. No MCP tools.
+    # propose -> {reply, options[]} (WebSearch/WebFetch only); generate -> {sourceCode} (no tools). No MCP.
     if body.mode == "generate" and not (body.proposal or "").strip():
         raise HTTPException(422, "generate requires an approved proposal")
     if _capability_lock.locked():
@@ -105,7 +107,8 @@ async def agent_capability(body: CapabilityIn) -> dict:
         try:
             return await claude_cli.run_capability(
                 body.mode, body.kpiName, body.description, body.proposal,
-                body.declaredCapabilities, body.previousCode, body.previousError)
+                body.declaredCapabilities, body.previousCode, body.previousError,
+                conversation=body.conversation, previous_options=body.previousOptions)
         except claude_cli.CliError as e:
             raise HTTPException(e.status, str(e))
 

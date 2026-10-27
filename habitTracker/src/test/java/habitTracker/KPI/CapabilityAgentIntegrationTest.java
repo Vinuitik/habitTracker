@@ -95,7 +95,7 @@ class CapabilityAgentIntegrationTest {
     }
 
     private void generatorProposes(Map<String, List<String>> declared) {
-        when(generator.propose(anyString(), anyString()))
+        when(generator.propose(anyString(), anyString(), any(), any()))
                 .thenReturn(new CapabilityGenerator.Proposal("Count the things", "SERVER", declared));
     }
 
@@ -173,7 +173,7 @@ class CapabilityAgentIntegrationTest {
     @Test
     void nonServerPlatformProposal_isRejected() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString()))
+        when(generator.propose(anyString(), anyString(), any(), any()))
                 .thenReturn(new CapabilityGenerator.Proposal("Read steps", "ANDROID", NO_ACCESS));
         propose(alice, "Widgets", 422);
         assertEquals(0, capabilityRepository.count());
@@ -257,7 +257,7 @@ class CapabilityAgentIntegrationTest {
     @Test
     void proposeWhenGeneratorBusy_is409() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString())).thenThrow(new CapabilityGeneratorException("busy", true, null));
+        when(generator.propose(anyString(), anyString(), any(), any())).thenThrow(new CapabilityGeneratorException("busy", true, null));
         propose(alice, "Widgets", 409);
     }
 
@@ -384,6 +384,96 @@ class CapabilityAgentIntegrationTest {
         when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
         when(sandboxClient.run(any())).thenReturn(ok("1"));
         assertEquals("ACTIVE", act(alice, "Widgets", id, "approve", 200).get("status").asText());
+    }
+
+    // ── options + refinement ─────────────────────────────────────────────────
+
+    private static CapabilityOption opt(String title, String platform, Map<String, List<String>> declared, String cost) {
+        return new CapabilityOption(title, title + " spec", platform, declared, cost, null, null, "OFFICIAL_API",
+                "LOW", null, List.of("https://docs.example.com"), null);
+    }
+
+    @Test
+    void multipleOptions_mustPickOne_blockedOptionIsShownButNotApprovable_choiceBecomesTheGrant() throws Exception {
+        kpi(alice, "Widgets");
+        Map<String, List<String>> paidApi = Map.of("network", List.of("api.paid.com"), "secrets", List.of());
+        when(generator.propose(anyString(), anyString(), any(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Found three ways.", List.of(opt("Free", "SERVER", NO_ACCESS, "FREE"),
+                        opt("Paid API", "SERVER", paidApi, "PAID"), opt("Phone", "ANDROID", NO_ACCESS, "FREE"))));
+        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
+        when(sandboxClient.run(any())).thenReturn(ok("1"));
+
+        JsonNode p = propose(alice, "Widgets", 200);
+        assertEquals(3, p.get("options").size());
+        assertTrue(p.get("options").get(2).get("blockedReason").asText().contains("ANDROID"));
+        assertTrue(p.get("proposal").isNull(), "no spec until an option is chosen");
+        assertEquals("Found three ways.", p.get("conversation").get(0).get("text").asText());
+        String id = p.get("id").asText();
+
+        act(alice, "Widgets", id, "approve", 400); // must choose
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/approve", "{\"option\":2}", 422);
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/approve", "{\"option\":7}", 400);
+        verifyNoInteractions(sandboxClient);
+
+        JsonNode res = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/approve", "{\"option\":1}", 200);
+        assertEquals("ACTIVE", res.get("status").asText());
+        assertEquals(1, res.get("selectedOption").asInt());
+        assertEquals("Paid API: Paid API spec", res.get("proposal").asText());
+        assertEquals(List.of("api.paid.com"), capabilityRepository.findById(id).orElseThrow().getDeclaredCapabilities().get("network"));
+    }
+
+    @Test
+    void refine_sendsConversationAndPreviousOptions_replacesOptions_inPlace() throws Exception {
+        kpi(alice, "Widgets");
+        when(generator.propose(anyString(), anyString(), any(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Two ways.", List.of(opt("Scrape", "SERVER", NO_ACCESS, "FREE"), opt("Paid", "SERVER", NO_ACCESS, "PAID"))));
+        JsonNode p = propose(alice, "Widgets", 200);
+        String id = p.get("id").asText();
+
+        when(generator.propose(anyString(), anyString(), any(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Dropped the paid one.", List.of(opt("Scrape", "SERVER", NO_ACCESS, "FREE"))));
+        JsonNode r = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/refine",
+                "{\"message\":\"only free please\"}", 200);
+
+        assertEquals(id, r.get("id").asText());
+        assertEquals(p.get("version").asInt(), r.get("version").asInt());
+        assertEquals("PROPOSED", r.get("status").asText());
+        assertEquals(1, r.get("options").size());
+        assertEquals("Scrape spec", r.get("proposal").asText(), "single option is preset as the spec");
+        assertEquals(List.of("agent", "user", "agent"), r.get("conversation").findValuesAsText("role"));
+        assertEquals(CapabilityAgentService.MAX_REFINEMENTS - 1, r.get("refinementsLeft").asInt());
+
+        ArgumentCaptor<List<CapabilityTurn>> convo = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<CapabilityOption>> prev = ArgumentCaptor.forClass(List.class);
+        verify(generator, times(2)).propose(eq("Widgets"), eq("count my widgets"), convo.capture(), prev.capture());
+        assertEquals("only free please", convo.getValue().get(convo.getValue().size() - 1).text());
+        assertEquals(2, prev.getValue().size());
+
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/refine", "{\"message\":\" \"}", 400);
+    }
+
+    @Test
+    void refine_whenEveryNewOptionIsBlocked_is422_andKeepsPreviousOptions() throws Exception {
+        kpi(alice, "Widgets");
+        generatorProposes(NO_ACCESS);
+        String id = propose(alice, "Widgets", 200).get("id").asText();
+        when(generator.propose(anyString(), anyString(), any(), any()))
+                .thenReturn(new CapabilityGenerator.Proposal("Read steps", "ANDROID", NO_ACCESS));
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/refine", "{\"message\":\"phone\"}", 422);
+        KPIProxyCapability stored = capabilityRepository.findById(id).orElseThrow();
+        assertEquals("Count the things", stored.getOptions().get(0).summary());
+        assertEquals(CapabilityAgentService.MAX_REFINEMENTS, CapabilityAgentService.refinementsLeft(stored));
+    }
+
+    @Test
+    void refine_onlyWhileProposed_andNotForOtherUsers() throws Exception {
+        kpi(alice, "Widgets");
+        generatorProposes(NO_ACCESS);
+        String id = propose(alice, "Widgets", 200).get("id").asText();
+        kpi(bob, "Widgets");
+        call(auth.session(bob), "POST", "/api/kpis/Widgets/capability/" + id + "/refine", "{\"message\":\"x\"}", 400);
+        act(alice, "Widgets", id, "reject", 200);
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/refine", "{\"message\":\"x\"}", 409);
     }
 
     @Test

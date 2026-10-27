@@ -15,8 +15,8 @@ os.environ.setdefault("TRELLO_TOKEN", "test-token")
 import claude_cli
 import internal_api
 
-PROPOSAL = {"proposal": "Count lines", "platform": "SERVER",
-            "declaredCapabilities": {"network": [], "secrets": []}}
+PROPOSAL = {"reply": "One way.", "options": [{"title": "Lines", "summary": "Count lines", "platform": "SERVER",
+            "declaredCapabilities": {"network": [], "secrets": []}}]}
 BODY = {"mode": "propose", "kpiName": "K", "description": "d"}
 
 
@@ -44,7 +44,16 @@ def test_propose_returns_result(client):
     with patch("internal_api.claude_cli.run_capability", AsyncMock(return_value=PROPOSAL)) as run:
         r = client.post("/internal/agent/capability", json=BODY)
     assert r.json() == PROPOSAL
-    run.assert_awaited_once_with("propose", "K", "d", None, None, None, None)
+    run.assert_awaited_once_with("propose", "K", "d", None, None, None, None,
+                                 conversation=None, previous_options=None)
+
+
+def test_refine_passes_conversation(client):
+    convo = [{"role": "user", "text": "only free"}]
+    prev = [{"title": "Paid", "summary": "x"}]
+    with patch("internal_api.claude_cli.run_capability", AsyncMock(return_value=PROPOSAL)) as run:
+        client.post("/internal/agent/capability", json={**BODY, "conversation": convo, "previousOptions": prev})
+    assert run.await_args.kwargs == {"conversation": convo, "previous_options": prev}
 
 
 def test_generate_requires_proposal(client):
@@ -75,6 +84,14 @@ def test_cli_error_maps_status_and_releases_lock(client):
 
 # ── claude_cli ───────────────────────────────────────────────────────────────
 
+def test_propose_cmd_allows_only_web_tools_and_no_mcp_servers():
+    cmd = claude_cli.build_capability_cmd("p", "propose")
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch,WebFetch"
+    assert cmd[cmd.index("--allowedTools") + 1] == "WebSearch,WebFetch"
+    assert json.loads(cmd[cmd.index("--mcp-config") + 1]) == {"mcpServers": {}}
+    assert "--strict-mcp-config" in cmd
+
+
 def test_cmd_has_no_tools_and_no_mcp_servers():
     cmd = claude_cli.build_capability_cmd("p")
     assert "--allowedTools" not in cmd
@@ -90,17 +107,39 @@ def test_prompt_feeds_error_back():
     assert "FAILED" not in claude_cli.build_capability_prompt("generate", "K", "d", "spec")
 
 
-def test_parse_propose_normalises():
-    out = claude_cli.parse_capability_result("propose", envelope(
-        {"proposal": " x ", "platform": "server", "declaredCapabilities": {"network": ["a.com"]}}))
-    assert out == {"proposal": "x", "platform": "SERVER",
-                   "declaredCapabilities": {"network": ["a.com"], "secrets": []}}
+def test_parse_propose_normalises_options():
+    out = claude_cli.parse_capability_result("propose", envelope({"reply": " hi ", "options": [
+        {"title": "A", "summary": " x ", "platform": "server", "declaredCapabilities": {"network": ["a.com"]},
+         "cost": "free_tier", "method": "telepathy", "sources": ["https://a.com/p", "javascript:alert(1)", 3]},
+        {"title": "no summary"},
+    ]}))
+    assert out["reply"] == "hi"
+    assert len(out["options"]) == 1
+    o = out["options"][0]
+    assert o["summary"] == "x" and o["platform"] == "SERVER"
+    assert o["declaredCapabilities"] == {"network": ["a.com"], "secrets": []}
+    assert (o["cost"], o["method"], o["difficulty"]) == ("FREE_TIER", "UNKNOWN", "UNKNOWN")
+    assert o["sources"] == ["https://a.com/p"]
+
+
+def test_parse_propose_accepts_single_proposal_shape():
+    out = claude_cli.parse_capability_result("propose", envelope({"proposal": "x", "platform": "SERVER"}))
+    assert out["options"][0]["summary"] == "x" and out["reply"] is None
+
+
+def test_refine_prompt_includes_conversation_and_previous_options():
+    p = claude_cli.build_capability_prompt("propose", "K", "d", conversation=[{"role": "user", "text": "no scraping"}],
+                                           previous_options=[{"title": "Scrape it"}])
+    assert "user: no scraping" in p and "Scrape it" in p
+    assert "Conversation so far" not in claude_cli.build_capability_prompt("propose", "K", "d")
 
 
 @pytest.mark.parametrize("mode,obj", [
     ("propose", {"platform": "SERVER"}),
-    ("propose", {"proposal": "x", "declaredCapabilities": "nope"}),
-    ("propose", {"proposal": "x", "declaredCapabilities": {"network": "a.com"}}),
+    ("propose", {"options": []}),
+    ("propose", {"options": [{"title": "no summary"}]}),
+    ("propose", {"options": [{"summary": "x", "declaredCapabilities": "nope"}]}),
+    ("propose", {"options": [{"summary": "x", "declaredCapabilities": {"network": "a.com"}}]}),
     ("generate", {"sourceCode": "  "}),
     ("generate", {"other": 1}),
     ("generate", {"sourceCode": "x" * (64 * 1024 + 1)}),
@@ -151,3 +190,5 @@ def test_prompts_describe_proxy_and_secret_contract():
     assert "NO network" not in gen and "currently offers none" not in gen
     prop = claude_cli.build_capability_prompt("propose", "K", "d")
     assert "plain public hostnames" in prop and "no IP addresses" in prop
+    for needle in ("WebSearch", "untrusted DATA", "FREE_TIER", "UNOFFICIAL_API", "difficulty"):
+        assert needle in prop

@@ -56,6 +56,12 @@ public class KPIProxyCapability {
     // Why the last test gate failed (or what broke, when seeding a repair); fed back into the next prompt.
     private String failureReason;
 
+    // Propose/refine: the alternatives on offer and the conversation that shaped them. On approve the chosen
+    // option's summary + grants are copied into proposal / declaredCapabilities (the approved spec).
+    private List<CapabilityOption> options;
+    private List<CapabilityTurn> conversation;
+    private Integer selectedOption;
+
     private LocalDateTime createdAt;
     private LocalDateTime lastRunAt;
     private String lastResult;

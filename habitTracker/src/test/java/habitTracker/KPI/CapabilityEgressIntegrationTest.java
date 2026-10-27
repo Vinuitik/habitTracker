@@ -110,7 +110,7 @@ class CapabilityEgressIntegrationTest {
     }
 
     private String proposeGithub(UserPrincipal u, String kpiName) throws Exception {
-        when(generator.propose(anyString(), anyString()))
+        when(generator.propose(anyString(), anyString(), any(), any()))
                 .thenReturn(new CapabilityGenerator.Proposal("Count my open PRs", "SERVER", GITHUB));
         return call(u, "POST", "/api/kpis/" + kpiName + "/capability/propose", "{\"description\":\"open PRs\"}", 200)
                 .get("id").asText();
@@ -239,7 +239,7 @@ class CapabilityEgressIntegrationTest {
     void capabilityWithNoDeclaredAccess_getsNoHostsAndNoSecrets_evenIfUserHasSecrets() throws Exception {
         kpi(alice, "Widgets");
         setSecret(alice, "GITHUB_TOKEN", "ghp_alice_value", 200);
-        when(generator.propose(anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
+        when(generator.propose(anyString(), anyString(), any(), any())).thenReturn(new CapabilityGenerator.Proposal(
                 "Count", "SERVER", Map.of("network", List.of(), "secrets", List.of())));
         when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
         when(sandboxClient.run(any())).thenReturn(ok("1"));

@@ -8,14 +8,16 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
  * M8 agent loop, stages 1-4 for SERVER capabilities:
- *   propose (LLM writes a spec; server rejects what the sandbox cannot grant)
- *   -> approve (user's approval = permission grant) -> generate sourceCode (LLM, scoped to the spec)
+ *   propose (LLM researches and offers options labelled with cost / method / difficulty; options the
+ *   sandbox cannot grant are kept but blocked) -> refine (user replies, LLM revises the options, repeatable)
+ *   -> approve one option (user's approval = permission grant) -> generate sourceCode (LLM, scoped to it)
  *   -> test gate (dry run in the M7 sandbox for yesterday; exit 0 + parseable number) -> ACTIVE + KPI wired.
  * Failure keeps the version non-active with failureReason stored; regenerate feeds it back (cap MAX_ATTEMPTS).
  * Repair (M12) = a new version seeded with the old code + failure, same test gate.
@@ -29,6 +31,8 @@ public class CapabilityAgentService {
     private static final Logger log = LoggerFactory.getLogger(CapabilityAgentService.class);
 
     public static final int MAX_ATTEMPTS = 3;
+    public static final int MAX_REFINEMENTS = 8;
+    private static final int MAX_OPTIONS = 4;
     private static final int MAX_DESCRIPTION_CHARS = 2000;
     private final KPIRepository kpiRepository;
     private final KPIProxyCapabilityRepository repository;
@@ -72,8 +76,8 @@ public class CapabilityAgentService {
             throw new IllegalStateException("This KPI already has an active capability");
         }
 
-        CapabilityGenerator.Proposal p = generator.propose(kpi.getName(), description.trim());
-        Map<String, List<String>> granted = checkGrantable(p.platform(), p.declaredCapabilities());
+        CapabilityGenerator.Proposal p = generator.propose(kpi.getName(), description.trim(), List.of(), List.of());
+        List<CapabilityOption> options = vet(p.options());
 
         // A newer proposal supersedes any unfinished older one.
         for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
@@ -86,22 +90,70 @@ public class CapabilityAgentService {
         KPIProxyCapability cap = KPIProxyCapability.builder()
                 .userId(userId).kpiId(kpi.getId())
                 .platform(CapabilityPlatform.SERVER).language("python")
-                .description(description.trim()).proposal(p.proposal())
-                .declaredCapabilities(granted)
+                .description(description.trim())
+                .options(options)
+                .conversation(withReply(new ArrayList<>(), p.reply()))
                 .status(CapabilityStatus.PROPOSED)
                 .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
                 .createdAt(LocalDateTime.now())
                 .build();
+        presetSingle(cap);
         return CapabilityDTO.from(repository.save(cap));
     }
 
+    /**
+     * The user answers the proposal ("only free options", "use Garmin instead"); the agent revises the
+     * options. Same version, still PROPOSED. Nothing is granted until approve.
+     */
+    public CapabilityDTO refine(String kpiName, String capabilityId, String message) {
+        String userId = currentUser();
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        if (cap.getStatus() != CapabilityStatus.PROPOSED) {
+            throw new IllegalStateException("Only a proposed capability can be refined (status " + cap.getStatus() + ")");
+        }
+        if (message == null || message.isBlank()) throw new IllegalArgumentException("Write what should change");
+        if (message.length() > MAX_DESCRIPTION_CHARS) {
+            throw new IllegalArgumentException("Message too long (max " + MAX_DESCRIPTION_CHARS + " chars)");
+        }
+        if (refinementsLeft(cap) <= 0) {
+            throw new IllegalStateException("Refinement limit reached (" + MAX_REFINEMENTS + "); start over with a new description");
+        }
+        List<CapabilityTurn> convo = new ArrayList<>(cap.getConversation() == null ? List.of() : cap.getConversation());
+        convo.add(new CapabilityTurn(CapabilityTurn.USER, message.trim()));
+        CapabilityGenerator.Proposal p = generator.propose(kpi.getName(), cap.getDescription(), List.copyOf(convo),
+                cap.getOptions() == null ? List.of() : cap.getOptions());
+        cap.setOptions(vet(p.options())); // all blocked -> 422, nothing saved (the user's message is not kept)
+        cap.setConversation(withReply(convo, p.reply()));
+        presetSingle(cap);
+        return CapabilityDTO.from(repository.save(cap));
+    }
+
+    static int refinementsLeft(KPIProxyCapability c) {
+        long used = c.getConversation() == null ? 0
+                : c.getConversation().stream().filter(t -> CapabilityTurn.USER.equals(t.role())).count();
+        return (int) Math.max(0, MAX_REFINEMENTS - used);
+    }
+
     /** Stages 3-4. Approval is the permission grant for exactly the stored declaredCapabilities. */
-    public CapabilityDTO approve(String kpiName, String capabilityId) {
+    public CapabilityDTO approve(String kpiName, String capabilityId, Integer optionIndex) {
         String userId = currentUser();
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
         if (cap.getStatus() != CapabilityStatus.PROPOSED) {
             throw new IllegalStateException("Only a proposed capability can be approved (status " + cap.getStatus() + ")");
+        }
+        List<CapabilityOption> options = cap.getOptions();
+        if (options != null && !options.isEmpty()) { // legacy rows (no options) approve their stored spec
+            if (optionIndex == null && options.size() != 1) throw new IllegalArgumentException("Pick one of the options to approve");
+            int idx = optionIndex == null ? 0 : optionIndex;
+            if (idx < 0 || idx >= options.size()) throw new IllegalArgumentException("No such option");
+            CapabilityOption chosen = options.get(idx);
+            if (chosen.blockedReason() != null) throw new CapabilityRejectedException(chosen.blockedReason());
+            cap.setProposal(chosen.title() == null || chosen.title().isBlank()
+                    ? chosen.summary() : chosen.title() + ": " + chosen.summary());
+            cap.setDeclaredCapabilities(checkGrantable(chosen.platform(), chosen.declaredCapabilities()));
+            cap.setSelectedOption(idx);
         }
         checkGrantable(cap); // defence in depth: re-validate the stored spec at the grant moment
         return CapabilityDTO.from(attempt(cap, kpi));
@@ -274,6 +326,35 @@ public class CapabilityAgentService {
         fresh.setConsecutiveProxyFailures(0);
         fresh.setUpdatedAt(LocalDateTime.now());
         kpiRepository.save(fresh);
+    }
+
+    /** Marks options the sandbox cannot grant (kept, shown, not approvable). All blocked -> 422, nothing stored. */
+    private static List<CapabilityOption> vet(List<CapabilityOption> raw) {
+        if (raw == null || raw.isEmpty()) throw new CapabilityGeneratorException("The agent returned no options", false, null);
+        List<CapabilityOption> out = new ArrayList<>();
+        List<String> reasons = new ArrayList<>();
+        for (CapabilityOption o : raw.subList(0, Math.min(raw.size(), MAX_OPTIONS))) {
+            try {
+                out.add(o.vetted(checkGrantable(o.platform(), o.declaredCapabilities()), null));
+            } catch (CapabilityRejectedException e) {
+                out.add(o.vetted(o.declaredCapabilities(), e.getMessage()));
+                reasons.add(e.getMessage());
+            }
+        }
+        if (reasons.size() == out.size()) throw new CapabilityRejectedException(String.join(" ", reasons));
+        return out;
+    }
+
+    // A lone option needs no choice: expose it as the spec right away (approve without a body works).
+    private static void presetSingle(KPIProxyCapability cap) {
+        boolean single = cap.getOptions().size() == 1;
+        cap.setProposal(single ? cap.getOptions().get(0).summary() : null);
+        cap.setDeclaredCapabilities(single ? cap.getOptions().get(0).declaredCapabilities() : null);
+    }
+
+    private static List<CapabilityTurn> withReply(List<CapabilityTurn> convo, String reply) {
+        if (reply != null && !reply.isBlank()) convo.add(new CapabilityTurn(CapabilityTurn.AGENT, reply.strip()));
+        return convo;
     }
 
     private static void checkGrantable(KPIProxyCapability c) {

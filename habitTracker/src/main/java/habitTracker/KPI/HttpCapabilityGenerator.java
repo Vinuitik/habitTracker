@@ -54,22 +54,57 @@ public class HttpCapabilityGenerator implements CapabilityGenerator {
     }
 
     @Override
-    public Proposal propose(String kpiName, String description) {
-        Map<String, Object> res = call(base("propose", kpiName, description));
-        Object proposal = res.get("proposal");
-        if (!(proposal instanceof String s) || s.isBlank()) {
-            throw new CapabilityGeneratorException("Upstream returned no proposal", false, null);
+    public Proposal propose(String kpiName, String description, List<CapabilityTurn> conversation,
+                            List<CapabilityOption> previousOptions) {
+        Map<String, Object> body = base("propose", kpiName, description);
+        if (!conversation.isEmpty()) body.put("conversation", conversation);
+        if (!previousOptions.isEmpty()) body.put("previousOptions", previousOptions);
+        Map<String, Object> res = call(body);
+
+        List<CapabilityOption> options = new ArrayList<>();
+        if (res.get("options") instanceof List<?> l) {
+            for (Object o : l) {
+                if (o instanceof Map<?, ?> m && str(m, "summary") != null) options.add(option(m));
+            }
+        } else if (str(res, "proposal") != null) { // single-proposal reply shape (pre-options upstream)
+            options.add(CapabilityOption.of(str(res, "proposal"), platform(res), declared(res)));
         }
+        if (options.isEmpty()) throw new CapabilityGeneratorException("Upstream returned no options", false, null);
+        return new Proposal(str(res, "reply"), options);
+    }
+
+    private static CapabilityOption option(Map<?, ?> m) {
+        List<String> sources = new ArrayList<>();
+        if (m.get("sources") instanceof List<?> l) l.forEach(v -> sources.add(String.valueOf(v)));
+        return new CapabilityOption(str(m, "title"), str(m, "summary"), platform(m), declared(m),
+                label(m, "cost"), str(m, "costNote"), str(m, "access"), label(m, "method"),
+                label(m, "difficulty"), str(m, "difficultyNote"), sources, null);
+    }
+
+    private static Map<String, List<String>> declared(Map<?, ?> m) {
         Map<String, List<String>> declared = new HashMap<>();
         for (String key : List.of("network", "secrets")) {
             List<String> vals = new ArrayList<>();
-            if (res.get("declaredCapabilities") instanceof Map<?, ?> m && m.get(key) instanceof List<?> l) {
+            if (m.get("declaredCapabilities") instanceof Map<?, ?> d && d.get(key) instanceof List<?> l) {
                 l.forEach(v -> vals.add(String.valueOf(v)));
             }
             declared.put(key, vals);
         }
-        String platform = res.get("platform") == null ? "SERVER" : res.get("platform").toString();
-        return new Proposal(s, platform, declared);
+        return declared;
+    }
+
+    private static String platform(Map<?, ?> m) {
+        String p = str(m, "platform");
+        return p == null ? "SERVER" : p;
+    }
+
+    private static String label(Map<?, ?> m, String key) {
+        String v = str(m, key);
+        return v == null ? "UNKNOWN" : v.toUpperCase();
+    }
+
+    private static String str(Map<?, ?> m, String key) {
+        return m.get(key) instanceof String s && !s.isBlank() ? s.strip() : null;
     }
 
     @Override

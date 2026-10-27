@@ -17,12 +17,19 @@ public record CapabilityDTO(
         int attempts,
         int maxAttempts,
         String failureReason,
-        String lastResult) {
+        String lastResult,
+        List<CapabilityOption> options,
+        List<CapabilityTurn> conversation,
+        Integer selectedOption,
+        int refinementsLeft) {
 
     static CapabilityDTO from(KPIProxyCapability c) {
         return new CapabilityDTO(c.getId(), c.getKpiId(), c.getVersion() == null ? 1 : c.getVersion(),
                 c.getStatus(), c.getDescription(), c.getProposal(), c.getPlatform(), c.getDeclaredCapabilities(),
                 c.getSourceCode(), c.getAttempts() == null ? 0 : c.getAttempts(),
-                CapabilityAgentService.MAX_ATTEMPTS, c.getFailureReason(), c.getLastResult());
+                CapabilityAgentService.MAX_ATTEMPTS, c.getFailureReason(), c.getLastResult(),
+                c.getOptions() == null ? List.of() : c.getOptions(),
+                c.getConversation() == null ? List.of() : c.getConversation(),
+                c.getSelectedOption(), CapabilityAgentService.refinementsLeft(c));
     }
 }
