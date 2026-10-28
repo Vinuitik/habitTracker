@@ -22,7 +22,7 @@ class TrelloApiClientTest {
     RestTemplate rt = new RestTemplate();
     MockRestServiceServer server = MockRestServiceServer.createServer(rt);
     TrelloCredentialRepository creds = mock(TrelloCredentialRepository.class);
-    TrelloApiClient client = new TrelloApiClient(creds, rt, "http://trello/");
+    TrelloApiClient client = new TrelloApiClient(creds, new habitTracker.sync.VaultEncryptionService(), rt, "http://trello/");
 
     @BeforeEach
     void setup() {

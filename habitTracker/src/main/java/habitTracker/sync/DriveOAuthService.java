@@ -74,11 +74,11 @@ public class DriveOAuthService {
 
         UserSyncSettings settings = syncSettingsRepository.findByUserId(userId)
                 .orElseGet(() -> UserSyncSettings.builder().userId(userId).build());
-        settings.setDriveRefreshToken(tokens.refreshToken());
+        settings.storeDriveRefreshToken(encryptionService, tokens.refreshToken());
         settings.setDriveFolderId(rootFolderId);
         settings.setMailboxFolderId(mailboxFolderId);
         if (settings.getEncryptionKey() == null) {
-            settings.setEncryptionKey(encryptionService.generateKey());
+            settings.storeEncryptionKey(encryptionService, encryptionService.generateKey());
         }
         syncSettingsRepository.save(settings);
     }

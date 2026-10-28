@@ -51,13 +51,14 @@ public class MailboxConsumeService {
     }
 
     private void consumeForUser(UserSyncSettings settings) {
-        String accessToken = driveService.getAccessToken(settings.getDriveRefreshToken());
+        String accessToken = driveService.getAccessToken(settings.plainDriveRefreshToken(encryptionService));
+        String vaultKey = settings.plainEncryptionKey(encryptionService);
         List<DriveService.DriveFile> files = driveService.listFiles(accessToken, settings.getMailboxFolderId());
 
         for (DriveService.DriveFile file : files) {
             try {
                 byte[] wire = driveService.downloadFile(accessToken, file.id());
-                byte[] plain = encryptionService.decrypt(settings.getEncryptionKey(), wire);
+                byte[] plain = encryptionService.decrypt(vaultKey, wire);
                 MailboxBatch batch = objectMapper.readValue(plain, MailboxBatch.class);
 
                 boolean allCommitted = true;

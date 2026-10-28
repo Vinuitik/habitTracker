@@ -18,6 +18,7 @@ public class SyncController {
     private final UserSyncSettingsRepository syncSettingsRepository;
     private final DriveService driveService;
     private final PairingCodeService pairingCodeService;
+    private final VaultEncryptionService encryptionService;
 
     @GetMapping("/oauth/url")
     public ResponseEntity<Map<String, String>> oauthUrl(@RequestParam String origin) {
@@ -69,7 +70,7 @@ public class SyncController {
         }
         UserSyncSettings settings = settingsOpt.get();
         try {
-            DriveService.TokenResponse token = driveService.getAccessTokenWithExpiry(settings.getDriveRefreshToken());
+            DriveService.TokenResponse token = driveService.getAccessTokenWithExpiry(settings.plainDriveRefreshToken(encryptionService));
             long expiresAt = System.currentTimeMillis()
                     + (token.expiresInSeconds() != null ? token.expiresInSeconds() * 1000 : 3600_000L);
             Map<String, Object> body = new java.util.HashMap<>();
@@ -77,7 +78,7 @@ public class SyncController {
             body.put("driveAccessToken", token.accessToken());
             body.put("driveAccessTokenExpiresAt", expiresAt);
             body.put("mailboxFolderId", settings.getMailboxFolderId());
-            body.put("encryptionKey", settings.getEncryptionKey());
+            body.put("encryptionKey", settings.plainEncryptionKey(encryptionService));
             return ResponseEntity.ok(body);
         } catch (Exception e) {
             // Refresh token likely revoked/expired at Google — surface as connected=false so the
@@ -131,7 +132,7 @@ public class SyncController {
         // /pair's existing (tested) behavior/latency unchanged for the M5 case.
         Map<String, Object> responseBody = new java.util.HashMap<>();
         responseBody.put("mailboxFolderId", settings.getMailboxFolderId());
-        responseBody.put("encryptionKey", settings.getEncryptionKey());
+        responseBody.put("encryptionKey", settings.plainEncryptionKey(encryptionService));
         responseBody.put("capabilityDeployFolderId", settings.getCapabilityDeployFolderId());
         return ResponseEntity.ok(responseBody);
     }

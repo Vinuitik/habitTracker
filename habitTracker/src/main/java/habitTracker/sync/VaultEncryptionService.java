@@ -1,5 +1,7 @@
 package habitTracker.sync;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Cipher;
@@ -23,6 +25,20 @@ public class VaultEncryptionService {
     private static final int IV_BYTES = 12;
     private static final int TAG_BITS = 128;
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    // Server at-rest key (see serverKey()) for encryptAtRest/decryptAtRest. null only in unit tests
+    // that build this with the no-arg constructor and never touch at-rest secrets.
+    private final String atRestKey;
+
+    public VaultEncryptionService() {
+        this.atRestKey = null;
+    }
+
+    @Autowired
+    public VaultEncryptionService(@Value("${kpi.secrets.key:}") String configuredKey,
+                                  @Value("${jwt.secret}") String jwtSecret) {
+        this.atRestKey = serverKey(configuredKey, jwtSecret);
+    }
 
     public String generateKey() {
         try {
@@ -80,6 +96,26 @@ public class VaultEncryptionService {
 
     public byte[] encryptString(String base64Key, String plaintext) {
         return encrypt(base64Key, plaintext.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Encrypts a secret for storage in Mongo under the server key: base64 of the wire format (same
+     * as CapabilitySecretService). null stays null. Used for UserSyncSettings / TrelloCredential.
+     */
+    public String encryptAtRest(String plaintext) {
+        if (plaintext == null) return null;
+        return Base64.getEncoder().encodeToString(encryptString(requireAtRestKey(), plaintext));
+    }
+
+    /** Inverse of encryptAtRest(). Throws IllegalStateException if the server key changed. */
+    public String decryptAtRest(String stored) {
+        if (stored == null) return null;
+        return new String(decrypt(requireAtRestKey(), Base64.getDecoder().decode(stored)), StandardCharsets.UTF_8);
+    }
+
+    private String requireAtRestKey() {
+        if (atRestKey == null) throw new IllegalStateException("At-rest key not configured");
+        return atRestKey;
     }
 
     private SecretKey keyFrom(String base64Key) {

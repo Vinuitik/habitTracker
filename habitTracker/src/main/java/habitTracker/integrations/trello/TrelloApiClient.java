@@ -1,5 +1,6 @@
 package habitTracker.integrations.trello;
 
+import habitTracker.sync.VaultEncryptionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,18 +39,20 @@ public class TrelloApiClient {
             + "&card_fields=" + CARD_FIELDS;
 
     private final TrelloCredentialRepository credentials;
+    private final VaultEncryptionService vault;
     private final RestTemplate rest;
     private final String baseUrl;
 
     @Autowired
-    public TrelloApiClient(TrelloCredentialRepository credentials,
+    public TrelloApiClient(TrelloCredentialRepository credentials, VaultEncryptionService vault,
                            @Value("${trello.api.base-url:https://api.trello.com}") String baseUrl) {
-        this(credentials, client(), baseUrl);
+        this(credentials, vault, client(), baseUrl);
     }
 
     // Test constructor: inject a RestTemplate bound to MockRestServiceServer.
-    TrelloApiClient(TrelloCredentialRepository credentials, RestTemplate rest, String baseUrl) {
+    TrelloApiClient(TrelloCredentialRepository credentials, VaultEncryptionService vault, RestTemplate rest, String baseUrl) {
         this.credentials = credentials;
+        this.vault = vault;
         this.rest = rest;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
@@ -170,11 +173,20 @@ public class TrelloApiClient {
     private <T> T call(String userId, HttpMethod method, String path, String qs, ParameterizedTypeReference<T> type,
                        Map<String, String> vars) {
         TrelloCredential c = credentials.findByUserId(userId).orElseThrow(TrelloNotConnectedException::new);
-        if (isBlank(c.getApiKey()) || isBlank(c.getToken())) throw new TrelloNotConnectedException();
+        String apiKey;
+        String token;
+        try {
+            apiKey = c.plainApiKey(vault);
+            token = c.plainToken(vault);
+        } catch (IllegalStateException e) {
+            log.warn("Trello credential for user {} could not be decrypted (server key changed?)", userId);
+            throw new TrelloNotConnectedException();
+        }
+        if (isBlank(apiKey) || isBlank(token)) throw new TrelloNotConnectedException();
 
         Map<String, String> all = new HashMap<>(vars);
-        all.put("key", c.getApiKey());
-        all.put("token", c.getToken());
+        all.put("key", apiKey);
+        all.put("token", token);
         URI uri = UriComponentsBuilder.fromHttpUrl(baseUrl + path + "?" + (qs == null ? "" : qs + "&") + "key={key}&token={token}")
                 .encode().build(all);
         try {

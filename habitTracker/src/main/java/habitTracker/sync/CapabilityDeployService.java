@@ -45,13 +45,13 @@ public class CapabilityDeployService {
         UserSyncSettings settings = syncSettingsRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException("User has not connected Google Drive: " + userId));
 
-        String accessToken = driveService.getAccessToken(settings.getDriveRefreshToken());
+        String accessToken = driveService.getAccessToken(settings.plainDriveRefreshToken(encryptionService));
         String folderId = ensureFolder(settings, accessToken);
 
         try {
             CapabilityPayload payload = new CapabilityPayload(capabilityId, version, sourceCode);
             byte[] plain = objectMapper.writeValueAsBytes(payload);
-            byte[] wire = encryptionService.encrypt(settings.getEncryptionKey(), plain);
+            byte[] wire = encryptionService.encrypt(settings.plainEncryptionKey(encryptionService), plain);
             // deviceId isn't relevant here (there's no per-device targeting yet — one capability
             // mailbox per user, every paired companion of that user's account sees every file),
             // so the filename just needs to be unique per write; capabilityId+version make it
