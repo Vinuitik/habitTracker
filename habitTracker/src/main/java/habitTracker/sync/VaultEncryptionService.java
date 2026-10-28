@@ -8,6 +8,8 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -57,6 +59,22 @@ public class VaultEncryptionService {
             return cipher.doFinal(wire, IV_BYTES, wire.length - IV_BYTES);
         } catch (Exception e) {
             throw new IllegalStateException("Decryption failed (wrong key or corrupted file)", e);
+        }
+    }
+
+    /**
+     * The server's own at-rest key (capability secrets, TOTP secrets): KPI_SECRETS_KEY if set, else derived
+     * from jwt.secret. The derivation label predates other users of this key; changing it would make
+     * already-stored secrets undecryptable.
+     */
+    public static String serverKey(String configuredKey, String jwtSecret) {
+        if (configuredKey != null && !configuredKey.isBlank()) return configuredKey.trim();
+        try {
+            byte[] h = MessageDigest.getInstance("SHA-256")
+                    .digest(("kpi-capability-secrets|" + jwtSecret).getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(h);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
     }
 

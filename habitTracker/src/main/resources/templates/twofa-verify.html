@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <title>Two-factor — HabitTracker</title>
+  <link rel="stylesheet" th:href="@{/css/auth.css}">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+</head>
+<body>
+<div class="auth-card">
+  <a href="/today" class="auth-logo">HabitTracker</a>
+
+  <h2>Enter your code</h2>
+  <p class="auth-hint">Open your authenticator app and type the 6-digit code for HabitTracker.</p>
+
+  <div class="auth-error" th:if="${error}" th:text="${error}"></div>
+
+  <form th:action="@{/2fa/verify}" method="post">
+    <input type="hidden" name="next" th:value="${next}">
+    <div>
+      <label for="code">6-digit code</label>
+      <input id="code" type="text" name="code" required autofocus inputmode="numeric"
+             autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]*">
+    </div>
+    <button type="submit">Continue</button>
+  </form>
+
+  <a href="/today" class="auth-back">← Back to HabitTracker</a>
+</div>
+</body>
+</html>

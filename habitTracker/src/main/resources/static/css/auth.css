@@ -196,6 +196,12 @@ body {
 
 .auth-back:hover { color: #8b90a0; }
 
+/* Relay 2FA pages (twofa-setup.html, twofa-verify.html) */
+.auth-hint { color: #8b90a0; font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+.auth-qr { width: 200px; height: 200px; margin: 8px auto 12px; border-radius: 8px; overflow: hidden; }
+.auth-qr svg { display: block; width: 100%; height: 100%; }
+.auth-secret { font-family: ui-monospace, Menlo, Consolas, monospace; color: #c9ccd6; word-break: break-all; }
+
 /* Phones: card chrome dropped, clear of notch/home indicator, 16px inputs so iOS doesn't zoom */
 @media (max-width: 480px) {
   body {
