@@ -15,7 +15,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(twoFactorInterceptor).addPathPatterns("/relay", "/relay/**");
+        // /relay/pair (pairing code is the credential) and /relay/uplink (device token) are not browser sessions.
+        registry.addInterceptor(twoFactorInterceptor).addPathPatterns("/relay", "/relay/**")
+                .excludePathPatterns("/relay/pair", "/relay/uplink");
     }
 
     @Override

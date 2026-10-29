@@ -19,6 +19,9 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.AnyRequestMatcher;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -69,7 +72,9 @@ public class SecurityConfig {
                     "/inputView/**", "/listView/**", "/editView/**",
                     "/tableView/**", "/addHabitView/**",
                     "/*.html", "/*.css", "/*.js", "/*.png", "/*.ico", "/*.svg", "/*.webmanifest",
-                    "/api/sync/pair"
+                    "/api/sync/pair",
+                    // Runner side of the relay: pairing code / device bearer token, no session (relay/FLOWS.md).
+                    "/relay/pair", "/relay/uplink"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
@@ -83,6 +88,12 @@ public class SecurityConfig {
                 .defaultSuccessUrl("/today", true)
                 .userInfoEndpoint(ui -> ui.oidcUserService(this::loadOidcUser))
             )
+            // Relay JSON API: 401 instead of a 302 to /login, so fetch() callers can tell.
+            .exceptionHandling(ex -> ex.defaultAuthenticationEntryPointFor(
+                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED), new AntPathRequestMatcher("/relay/api/**"))
+                // Explicit fallback: once any mapping exists, the first one would otherwise be the default.
+                .defaultAuthenticationEntryPointFor(
+                    new LoginUrlAuthenticationEntryPoint("/login"), AnyRequestMatcher.INSTANCE))
             .logout(logout -> logout
                 .logoutSuccessUrl("/landing")
                 .permitAll()
@@ -94,7 +105,7 @@ public class SecurityConfig {
                 // session and never receives the XSRF-TOKEN cookie, so it can't carry a CSRF
                 // token. That's fine: the pairing code itself is the anti-forgery credential
                 // here (single-use, short-lived, see SyncController.pair()).
-                .ignoringRequestMatchers("/api/sync/pair")
+                .ignoringRequestMatchers("/api/sync/pair", "/relay/pair")
             )
             .addFilterAfter(new CsrfCookieFilter(), UsernamePasswordAuthenticationFilter.class);
         return http.build();
