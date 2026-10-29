@@ -176,6 +176,15 @@ class RelayDeviceTest {
     }
 
     @Test
+    void relayPageRendersForVerifiedUser() throws Exception {
+        UserPrincipal alice = auth.register("alice@example.com");
+        mockMvc.perform(as(alice, get("/relay")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/js/relay/relay.js")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"relay-view\"")));
+    }
+
+    @Test
     void relayApiNeedsLoginAndFreshTotp() throws Exception {
         mockMvc.perform(get("/relay/api/devices")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/relay/api/devices/pairing-code").with(csrf())).andExpect(status().isUnauthorized());

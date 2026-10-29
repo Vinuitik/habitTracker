@@ -56,6 +56,7 @@ window.ENV = {
     CONNECT_DRIVE:   '/connect-drive',
     INSTALL:         '/install',
     PROJECTS:        '/projects',
+    RELAY:           '/relay',
   },
   EXTERNAL: {
     TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',

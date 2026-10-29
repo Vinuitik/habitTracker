@@ -10,6 +10,8 @@ const NAV_ITEMS = [
     icon: '<polyline points="3,17 9,11 13,15 21,7"/><polyline points="15,7 21,7 21,13"/>' },
   { label: 'Projects', href: 'PROJECTS',      match: ['PROJECTS'],
     icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>' },
+  { label: 'Relay',    href: 'RELAY',         match: ['RELAY'],
+    icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><polyline points="7,9 10,12 7,15"/><line x1="12" y1="15" x2="17" y2="15"/>' },
   { label: 'Settings', href: 'CONNECT_DRIVE', match: ['CONNECT_DRIVE', 'INSTALL'],
     icon: '<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2.5" fill="var(--color-bg-surface)"/><circle cx="15" cy="17" r="2.5" fill="var(--color-bg-surface)"/>' },
 ];

@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, templates/relay.html
+Files: Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -43,8 +43,33 @@ ANY /relay/api/devices/{id}/v1/** → RelayProxyController.proxy() → DeviceSer
 GET /relay/api/devices → `[{id, name, online, lastSeenAt}]` (current user only; online = live socket in UplinkRegistry)
 DELETE /relay/api/devices/{id} → owned else 404 → delete document → UplinkRegistry.disconnect() (close 4001) → 204
 
+## UI (browser)
+GET /relay (gated, see Gate) → RelayController.relay() → templates/relay.html (empty shell) → js/relay/relay.js → initTopbar(ENV.ROUTES.RELAY) → route() on hashchange
+Every call: relay.js call() → Api.raw() (sends cookie `XSRF-TOKEN` as `X-XSRF-TOKEN`) → status mapping: 401 → `/2fa/verify?next=<path+hash>` (safeNext keeps the hash, so you land back on the same chat); 503 → "Device offline (machine asleep?)"; 504 → "Device didn't answer"; fetch threw → "Network error"
+To change messages / redirect: relay.js call().
+
+### Devices `#/`
+showDevices() → GET /relay/api/devices → rows (dot = `online`, "last seen" = Dom.timeAgo(lastSeenAt)) → row → `#/d/<id>`
+"Add device" → addDevice() → POST /relay/api/devices/pairing-code → code + `runnerd pair --hub <location.origin> --code <CODE>` → Copy (navigator.clipboard; no clipboard API (plain http) → selects the text)
+"Revoke" → confirm() → DELETE /relay/api/devices/{id} → re-render. New device shows after Refresh (no auto-poll on this view).
+
+### Sessions `#/d/<id>`
+showDevice() → in parallel GET `…/v1/projects` (fills the New-session select) + GET `…/v1/sessions` (all projects; runner sorts waiting → busy → rest) → rows: title, project name, timeAgo(lastActiveAt|createdAt), preview, state badge → `#/d/<id>/s/<sid>`
+"New session" → POST `…/v1/projects/{projectId}/sessions {provider:"claude"}` → 201 Session → open its chat
+To change the provider: relay.js PROVIDER.
+
+### Chat `#/d/<id>/s/<sid>`
+showChat() → refresh() → GET `…/v1/sessions/{sid}` → render(): title, state badge, messages (user/agent bubbles via md(); tool = one mono line with toolKind + status; agent `kind` quota/auth → warning bubble) → schedule()
+schedule(): busy|waiting → 2s, idle|error → 10s, finished → stop; tab hidden → stop, visible again → refresh() at once
+Messages re-render only when JSON of `messages` changed; auto-scroll only if you were already at the bottom.
+Composer: Enter → send(), Shift+Enter newline → POST `…/message {text}` → 202 → poll at 2s; 409 → "Still working…" notice (clears when state leaves busy)
+state waiting → pendingPermission.options as buttons (allow_* = primary) → POST `…/permission {optionId}` → 200 Session → render
+Cancel (busy/waiting) → POST `…/cancel` (ends the turn, keeps session) · Stop → confirm() → POST `…/stop` (kills the agent, session finished; composer disabled)
+To change poll rates: relay.js POLL_ACTIVE_MS / POLL_IDLE_MS. Markdown subset: relay.js md()/inline() (``` fences, paragraphs, `code`, **bold**; everything escaped first via Dom.esc).
+Not in the UI (API.md has them, proxy would carry them): mode/config switch, agent-chats (open a VS Code chat), subagents, files, git, containers, schedule, tokens/usage, auth sign-in relay, VS Code permissions, handoff [NOT IMPLEMENTED].
+
 ## Not yet
-- Browser UI for devices / chat (relay.html is still a placeholder) [NOT IMPLEMENTED]
+- Browser UI beyond devices / sessions / chat (see list above) [NOT IMPLEMENTED]
 - Rename device [NOT IMPLEMENTED]
 - Reset / disable 2FA (lost phone) [NOT IMPLEMENTED] — today: unset `totpEnabled`/`totpSecret`/`totpLastStep` on the user in Mongo.
 
@@ -65,6 +90,12 @@ DELETE /relay/api/devices/{id} → owned else 404 → delete document → Uplink
 - **Indexes:** spring.data.mongodb.auto-index-creation is off, so DeviceService.ensureIndexes() creates tokenHash (unique) + userId indexes at startup.
 - **Origin:** /relay/uplink keeps Spring's default same-origin check; requests with no Origin header (runnerd) pass.
 - **Blocking proxy:** each in-flight call holds a Tomcat worker thread up to 30s (default pool 200). Fine for one user; switch to DeferredResult if that changes.
+
+- **UI is polling, no live push:** an open chat costs one proxied GET every 2s while busy/waiting (each a full transcript, up to the 4 MiB body limit, through Cloudflare → hub → WebSocket → runner) and every 10s idle; nothing while the tab is hidden or the session finished. Replies appear with up to 2s lag; a long transcript polled at 2s is the main bandwidth cost. Each poll also holds a Tomcat thread for its duration (Blocking proxy, above).
+- **UI state is in memory only:** the hash URL (`#/d/<id>/s/<sid>`) is the only thing that survives a refresh. An unsent draft is lost on refresh and on the 401 → /2fa/verify redirect; scroll position is lost too. Device names are cached per page load only.
+- **No JS tests:** HabitTracker has no JS test framework; relay.js keeps logic small (router, call(), md(), render()). The MockMvc test only proves the shell renders for a verified user.
+- **Service worker:** /relay is not in sw.js PAGE_ROUTES (precaching would follow the 2FA redirect), but a good online visit caches the shell like any navigation; /relay/api is never cached (not in API_PREFIXES). Offline you get the shell plus "Network error".
+- **Clipboard:** navigator.clipboard needs a secure context (https / localhost); on plain http the Copy button only selects the command.
 
 ## Change Index
 | Thing | Where |
@@ -90,3 +121,14 @@ DELETE /relay/api/devices/{id} → owned else 404 → delete document → Uplink
 | Redirect safety | TwoFactorController.safeNext() |
 | Error messages | TwoFactorController.message() |
 | Page look | templates/twofa-*.html, static/css/auth.css (.auth-hint, .auth-qr, .auth-secret) |
+| Relay page shell | templates/relay.html, RelayController.relay() |
+| Relay UI routes (hash) | relay.js route() |
+| Hub status → message / 2FA redirect | relay.js call() |
+| Pair command text | relay.js addDevice() |
+| New-session provider | relay.js PROVIDER |
+| Poll rates | relay.js POLL_ACTIVE_MS, POLL_IDLE_MS, schedule() |
+| State labels / badge colours | relay.js STATES |
+| Markdown subset | relay.js md(), inline() |
+| Permission buttons | relay.js render() (pendingPermission) |
+| Relay look | static/styles/pages/relay.css |
+| Nav entry | static/js/topbar.js NAV_ITEMS (Relay), env.js ROUTES.RELAY |
