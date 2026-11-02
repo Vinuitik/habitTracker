@@ -1,6 +1,6 @@
 # Projects page (frontend) FLOWS
 
-Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/merge-view.js, styles/organisms/merge-view.css, js/organisms/card-modal.js, js/organisms/plan-drawer.js, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
+Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/merge-view.js, styles/organisms/merge-view.css, js/organisms/card-modal.js, js/organisms/planner.js, js/organisms/planner-mock.js, styles/organisms/planner.css, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
 
 ## Routing
 `hashchange` → `route()` → fade out 180ms (`ENV.TIMING.VIEW_FADE_MS`) → `showIndex()` (`#/`) or `showBoard(id)` (`#/b/<id>`) → fade in.
@@ -19,7 +19,7 @@ To change tile content: `tileHtml()`; tile CSS: styles/molecules/board-tile.css.
 `showBoard()` → `Api.raw(PROJECT_BOARD(id, refresh))` (reads `X-Stale`) → `Board.render()` → columns (lists by pos, closed skipped) → `CardTile.html()` per card.
 Refresh button → `showBoard(id, seq, true)` (`?refresh=true`).
 Card click → `CardModal.open()` (editable, see Card writes).
-"Plan with AI" → `PlanDrawer.toggle(id)` → POST `PROJECT_PLAN` → (optional) POST `PROJECT_APPLY` → `onChange` re-fetches board with refresh=true.
+"Plan with AI" → `Planner.open(id, btn)` (full-screen, see Planner below).
 To change label colors: `CardTile.tagClass()`; due thresholds: `CardTile.dueInfo()` (48h warning).
 
 ## Board writes (optimistic)
@@ -35,7 +35,7 @@ Pattern: `mutate(card, localFields, call)` → apply local fields + `refreshList
   Mouse: drag after 5px move. Touch/pen: only after 250ms hold with <8px movement (else the browser scrolls normally). Ghost follows pointer, dashed placeholder shows the slot, rAF loop auto-scrolls the board (horizontal) and the hovered list (vertical) within 48px of an edge; Esc cancels; the click after a drag is swallowed.
 - Reorder lists: drag the list header (`Dnd.init` second instance, `axis:'x'`, `handleSel:'.list-column__header'`; touch = same 250ms long-press) → `Board.onListDrop()` → `posBetween(prev,next)` → optimistic `list.pos` + `renderColumns()` → PATCH `PROJECT_LIST {pos}`; failure restores pos.
 - Quick complete: hover check button on tile (`data-act="quick"`, hover-capable devices only) → `completeCard()`/`reopenCard()` → POST `.../complete` or `.../reopen`; server may move the card (e.g. to Completed), `mutate` refreshes old + new list.
-- Plan drawer apply → `PlanDrawer` onChange → `showBoard(id, seq, true)` re-fetch (replaces all local state).
+- Planner "Add to board" → `Planner` onChange → `showBoard(id, seq, true)` re-fetch (replaces all local state).
 To change optimistic behaviour: `mutate()`; list pos step / drag thresholds: `ENV.BOARD`; long-press ms / undo toast ms: `ENV.TIMING`.
 
 ## Merge boards
@@ -43,6 +43,19 @@ Board header "Merge into…" → `h.pickBoard()` (projects.js `pickBoard()`: GET
 - Drag a list header within or across panes (`Dnd.init`, `axis:'x'`, drop slot = placeholder between columns). Same pane → PATCH list pos. Other pane → `moveList()`: optimistic remove (list + its cards) / insert, POST `PROJECT_LIST_MOVE {targetProjectId,pos}`, success replaces the destination side with the returned snapshot, failure restores both sides + `Board.fail()` toast. Per-list kebab "Move to “<other board>”" is the non-drag fallback; the normal board's list kebab "Move list to board…" → `Board.moveListToBoard()` (same endpoint, pos bottom).
 - Source has no open lists → banner "Everything moved. Delete this board?" → `h.onDeleteSource()` → `startDelete()` (imported = unlink copy, app-created = deletes the Trello board). "Exit merge" → `showBoard(id, seq, true)` (normal view, poll restarts).
 To change: `MergeView.moveList()/onDrop()`, `startMerge()`, `pickBoard()`.
+
+## Planner (Plan with AI)
+`Planner.open(id)` → #planner (full-screen dialog, focus trapped, body gets `.planner-open`).
+Brief → `startJob('chat')` → POST `PLANNER_START {message, conversationId?}` → `{conversationId, jobId}` → `poll()` every `ENV.TIMING.PLANNER_POLL_MS` → GET `PLANNER_POLL(id, conv, after=nextSeq)` → `ingest()` → `renderAll()`; polling stops when `state` ≠ running.
+- `waiting_user` + `questions` → one textarea per question (`renderComposer()`, rebuilt only when questions change so typed text survives), answers sent as one message; "Lock decisions & draft" → POST `PLANNER_LOCK` → running again.
+- Work steps: events of the current job render as rows under the triggering message (`jobHtml()`): last step while running = ● + elapsed seconds (1s ticker, no looping animation), earlier = ✓; `text` = ·, `error` = ✕.
+- Draft: adopted from every poll while running (read-only), final on `drafted` (`adoptDraft()` gives each card a key `k`; schedule entries link by title → `k`). Edits (rename / delete / importance pips) mutate `S.draft` and the linked schedule entries; week strip re-renders (`renderWeek()`: one column per day first→last date or deadline, cap 62 days, blocks sized by importance).
+- "Add to board" (only Trello write) → POST `PLANNER_APPLY {draft, deadline?, pace?}` → `{created}` → toast → `discard()` → onChange.
+- Close / Esc → `requestClose()`: conversation or draft present → in-dialog confirm (Keep editing / Discard); else discard. Route change → `Planner.hide()` keeps state (reopening the same project resumes; another project discards it).
+- 409/503 `{error:"runner_offline"}` → `.planner__offline` banner linking `ENV.ROUTES.INSTALL`; the failed turn is rolled back, text stays in the field.
+- <640px (`ENV.PLANNER.MOBILE_QUERY` + CSS): Conversation / Draft tabs (`setTab()`), dot on Draft when a draft arrives, auto-switch to Draft on `drafted`.
+- Dev mock: `ENV.FEATURES.PLANNER_MOCK = true` → `api()` uses `PlannerMock` (js/organisms/planner-mock.js): timed fake steps, 3 questions, draft growing list by list; a brief containing "offline" fakes runner_offline.
+To change: endpoints `ENV.ENDPOINTS.PLANNER_*`; poll ms `ENV.TIMING.PLANNER_POLL_MS`; default pace `ENV.PLANNER.DEFAULT_PACE`; block sizes `.week-strip__block--i1..3` in styles/organisms/planner.css.
 
 ## Card modal (editable)
 `CardModal.open(card)` → `render()` from `Board.getCard(id)`; every control → `act(fn)` = optimistic Board action, render now, render again after the server answer/rollback.
@@ -76,7 +89,8 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 | List column width | `--list-width` in styles/tokens.css |
 | Label/due styling | CardTile.tagClass / dueInfo, styles/atoms/badge.css |
 | Card detail layout | CardModal.open, `.modal-box--wide` in styles/molecules/modal.css |
-| Drawer / bottom sheet | styles/organisms/drawer.css |
+| Planner layout / week strip | styles/organisms/planner.css |
+| Planner flow / API adapter / mock toggle | `Planner` (js/organisms/planner.js), `ENV.FEATURES.PLANNER_MOCK`, `ENV.ENDPOINTS.PLANNER_*` |
 | Write endpoints | js/env.js (`PROJECT_LISTS/LIST/CARDS/CARD/CARD_COMPLETE/CARD_REOPEN`) |
 | Optimistic write / rollback | Board.mutate, Board.fail |
 | Drop position math | Board.posBetween, `ENV.BOARD.POS_STEP` |
@@ -99,7 +113,10 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 - No client state persistence: every route change refetches; no localStorage. Reload on a board URL works (hash is the state).
 - Hash routing: the service worker only sees `/projects`; board URLs are not separately cacheable offline. `/api/projects` is not in sw.js API_PREFIXES, so project data is never cached offline.
 - Plain scripts + window globals; load order in projects.html matters (atoms → molecules → organisms → pages).
-- `Api.request` has no timeout; `/plan` can take minutes (UI just shows "Drafting…").
+- `Api.request` has no timeout. Planner progress is pull-based (poll every 1.2s while running, exponential backoff, gives up after 5 consecutive errors → `failed`); no SSE/websocket.
+- Planner state is in memory only: a page reload loses the conversation and any unsaved draft (server keeps the conversation, but the client has no "resume by id" [NOT IMPLEMENTED]).
+- Planner schedule entries are linked to cards by title at adoption; two cards with the same title share the first card's link.
+- Planner backend endpoints (`/api/projects/{id}/planner…`) are [NOT IMPLEMENTED] as of this frontend; use the mock flag to demo.
 - Trello strings are escaped with `Dom.esc`; hrefs allow only `https://` (`Dom.safeUrl`).
 - Board height uses `100dvh` minus top/tab bars; older browsers without `dvh` fall back poorly.
 - Progress bar uses `<progress>` (avoids inline width styles).

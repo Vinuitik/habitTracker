@@ -23,8 +23,10 @@ window.ENV = {
     PROJECTS_IMPORT: '/api/projects/import',
     PROJECTS_TRELLO_BOARDS: '/api/projects/trello/boards',
     PROJECT_BOARD:   (id, refresh) => `/api/projects/${id}/board?refresh=${refresh ? 'true' : 'false'}`,
-    PROJECT_PLAN:    (id) => `/api/projects/${id}/plan`,
-    PROJECT_APPLY:   (id) => `/api/projects/${id}/apply`,
+    PLANNER_START:   (id) => `/api/projects/${id}/planner`,
+    PLANNER_POLL:    (id, conv, after) => `/api/projects/${id}/planner/${encodeURIComponent(conv)}?after=${after}`,
+    PLANNER_LOCK:    (id, conv) => `/api/projects/${id}/planner/${encodeURIComponent(conv)}/lock`,
+    PLANNER_APPLY:   (id, conv) => `/api/projects/${id}/planner/${encodeURIComponent(conv)}/apply`,
     PROJECT_LISTS:   (id) => `/api/projects/${id}/lists`,
     PROJECT_LIST:    (id, listId) => `/api/projects/${id}/lists/${encodeURIComponent(listId)}`,
     PROJECT_LIST_MOVE: (id, listId) => `/api/projects/${id}/lists/${encodeURIComponent(listId)}/move`,
@@ -66,6 +68,7 @@ window.ENV = {
     DRAG_HOLD_MS: 250,        // touch long-press before a card drag starts
     UNDO_TOAST_MS: 6000,
     BOARD_POLL_MS: 60000,     // open-board poll for changes made directly in Trello
+    PLANNER_POLL_MS: 1200,    // planner conversation poll while the AI is working
   },
   BOARD: {
     POS_STEP: 65536,          // Trello pos spacing for append / empty list
@@ -75,7 +78,12 @@ window.ENV = {
     AUTOSCROLL_MAX_PX: 14,
     DEFAULT_DUE_TIME: '12:00',
   },
+  PLANNER: {
+    DEFAULT_PACE: 2,          // cards/day pre-filled in the planner footer
+    MOBILE_QUERY: '(max-width: 639px)',  // stacked tabs layout; keep in sync with styles/organisms/planner.css
+  },
   FEATURES: {
     ANIMATIONS: true,
+    PLANNER_MOCK: false,      // true = planner talks to js/organisms/planner-mock.js instead of the API (demo)
   },
 };

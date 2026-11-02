@@ -28,7 +28,7 @@
     }
     firstRender = false;
     stopPoll();
-    PlanDrawer.close();
+    Planner.hide();
     $('projects-page').classList.toggle('projects-page--board', !!m);
     v.innerHTML = '<div class="projects-empty">Loading…</div>';
     window.scrollTo(0, 0);
@@ -130,14 +130,14 @@
         await showBoard(id, seq, true);
         Toast.show('Board refreshed');
       },
-      onPlan: () => PlanDrawer.toggle(id),
+      onPlan: (btn) => Planner.open(id, btn),
       pickBoard: (anchor, onPick) => pickBoard(id, anchor, onPick),
       onMerge: (target) => startMerge(id, target),
       onUnlink: () => unlinkMissing(id),
       onCard: (card) => CardModal.open(card),
     });
     startPoll(id, my);
-    PlanDrawer.setOnChange(() => { if (location.hash === `#/b/${encodeURIComponent(id)}`) showBoard(id, seq, true); });
+    Planner.setOnChange(() => { if (location.hash === `#/b/${encodeURIComponent(id)}`) showBoard(id, seq, true); });
   }
 
   // Menu of the user's other projects; onPick(project) gets the chosen one.
@@ -159,7 +159,7 @@
   async function startMerge(sourceId, target) {
     const my = seq;
     stopPoll();
-    PlanDrawer.close();
+    Planner.hide();
     const source = known.find((p) => p.id === sourceId);
     let src; let tgt;
     try {
@@ -383,7 +383,7 @@
     if (!(await checkAuth())) return;
     initTopbar(ENV.ROUTES.PROJECTS);
     CardModal.init();
-    PlanDrawer.init();
+    Planner.init();
     view().addEventListener('click', onViewClick);
     view().addEventListener('keydown', onViewKey);
     window.addEventListener('hashchange', route);

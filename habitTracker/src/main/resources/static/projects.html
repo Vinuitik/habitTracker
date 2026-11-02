@@ -29,7 +29,8 @@
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/organisms/board.css">
   <link rel="stylesheet" href="/styles/organisms/merge-view.css">
-  <link rel="stylesheet" href="/styles/organisms/drawer.css">
+  <link rel="stylesheet" href="/styles/molecules/seg-tabs.css">
+  <link rel="stylesheet" href="/styles/organisms/planner.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/pages/projects.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
@@ -112,24 +113,59 @@
     </div>
   </div>
 
-  <!-- Plan with AI drawer -->
-  <aside class="drawer" id="plan-drawer" aria-label="Plan with AI">
-    <div class="drawer__header">
-      <span class="drawer__title">Plan with AI</span>
-      <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+  <!-- Plan with AI: full-screen planner (js/organisms/planner.js) -->
+  <div class="planner" id="planner" role="dialog" aria-modal="true" aria-labelledby="planner-title" data-tab="convo" hidden>
+    <header class="planner__header">
+      <h2 class="planner__title" id="planner-title">Plan with AI</h2>
+      <div class="seg-tabs planner__tabs" role="tablist" aria-label="Planner sections">
+        <button type="button" class="seg-tab active" role="tab" id="planner-tab-convo" aria-controls="planner-convo" aria-selected="true" data-tab="convo">Conversation</button>
+        <button type="button" class="seg-tab" role="tab" id="planner-tab-draft" aria-controls="planner-draft" aria-selected="false" data-tab="draft">Draft<span class="planner__tab-dot" id="planner-tab-dot" hidden></span></button>
+      </div>
+      <button type="button" class="modal-box__close" data-pl="close" aria-label="Close planner">&#x2715;</button>
+    </header>
+    <div class="planner__offline" id="planner-offline" hidden>
+      <span>Connect a runner to plan.</span>
+      <a class="btn btn--primary btn--sm" id="planner-install">Install a runner</a>
     </div>
-    <div class="drawer__body">
+    <div class="planner__body">
+      <section class="planner__pane planner__convo" id="planner-convo" role="tabpanel" aria-labelledby="planner-tab-convo">
+        <div class="planner__thread" id="planner-thread" aria-live="polite"></div>
+        <form class="planner__composer" id="planner-form">
+          <div class="planner__fields" id="planner-fields"></div>
+          <div class="planner__composer-actions">
+            <button type="submit" class="btn btn--ghost btn--sm" id="planner-send">Send</button>
+            <button type="button" class="btn btn--primary btn--sm" id="planner-lock" hidden>Lock decisions &amp; draft</button>
+          </div>
+        </form>
+      </section>
+      <section class="planner__pane planner__draft" id="planner-draft" role="tabpanel" aria-labelledby="planner-tab-draft">
+        <div class="planner__empty" id="planner-draft-empty">The draft appears here as the AI writes it. Nothing touches Trello until you click <em>Add to board</em>.</div>
+        <div class="planner__lists" id="planner-lists"></div>
+        <div class="week-strip" id="planner-week" hidden></div>
+      </section>
+    </div>
+    <footer class="planner__footer">
       <div class="form-group">
-        <label class="form-group__label" for="plan-desc">Describe a problem</label>
-        <textarea class="input" id="plan-desc" rows="4" placeholder="What do you want to build or solve? The agent breaks it into cards."></textarea>
+        <label class="form-group__label" for="planner-deadline">Deadline (optional)</label>
+        <input type="date" class="input input--sm" id="planner-deadline">
       </div>
-      <div class="planner__row">
-        <button class="btn btn--primary btn--sm" id="plan-draft">Draft plan</button>
-        <span class="planner__status" id="plan-status"></span>
+      <div class="form-group">
+        <label class="form-group__label" for="planner-pace">Cards / day</label>
+        <input type="number" class="input input--sm planner__pace" id="planner-pace" min="0.5" step="0.5">
       </div>
-      <div class="planner__result" id="plan-result" hidden></div>
+      <span class="planner__status" id="planner-status" aria-live="polite"></span>
+      <button type="button" class="btn btn--primary" id="planner-apply" disabled>Add to board</button>
+    </footer>
+    <div class="planner__confirm" id="planner-confirm" hidden>
+      <div class="planner__confirm-box" role="alertdialog" aria-labelledby="planner-confirm-text">
+        <p id="planner-confirm-text">Discard this draft? It hasn't been added to the board.</p>
+        <div class="modal-box__actions">
+          <button type="button" class="btn btn--ghost" data-pl="keep">Keep editing</button>
+          <button type="button" class="btn btn--danger" data-pl="discard">Discard</button>
+        </div>
+      </div>
     </div>
-  </aside>
+  </div>
 
   <!-- Two-step delete -->
   <div class="modal-overlay" id="delete-modal">
@@ -175,7 +211,8 @@
   <script src="/js/organisms/board.js"></script>
   <script src="/js/organisms/merge-view.js"></script>
   <script src="/js/organisms/card-modal.js"></script>
-  <script src="/js/organisms/plan-drawer.js"></script>
+  <script src="/js/organisms/planner-mock.js"></script>
+  <script src="/js/organisms/planner.js"></script>
   <script src="/js/pages/projects.js"></script>
 </body>
 </html>
