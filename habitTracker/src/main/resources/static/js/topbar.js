@@ -4,9 +4,9 @@
 const NAV_ITEMS = [
   { label: 'Today',    href: 'HOME',          match: ['HOME'],
     icon: '<circle cx="12" cy="12" r="9"/><polyline points="8,12.5 11,15.5 16.5,9.5"/>' },
-  { label: 'Habits',   href: 'HABITS_LIST',   match: ['HABITS_LIST', 'HABITS_TABLE', 'HABITS_RULES', 'HABITS_ADD', 'HABIT_EDIT', 'HABIT_INFO'],
+  { label: 'Habits',   href: 'HABITS_RULES',   match: ['HABITS_LIST', 'HABITS_TABLE', 'HABITS_RULES', 'HABITS_ADD', 'HABIT_EDIT', 'HABIT_INFO'],
     icon: '<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>' },
-  { label: 'KPIs',     href: 'KPI_LIST',      match: ['KPI_LIST', 'KPI_DASHBOARD', 'KPI_CREATE'],
+  { label: 'KPIs',     href: 'KPI_DASHBOARD',      match: ['KPI_LIST', 'KPI_DASHBOARD', 'KPI_CREATE'],
     icon: '<polyline points="3,17 9,11 13,15 21,7"/><polyline points="15,7 21,7 21,13"/>' },
   { label: 'Projects', href: 'PROJECTS',      match: ['PROJECTS'],
     icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>' },
@@ -25,8 +25,8 @@ function routeMatches(key, route) {
 // Section tabs shown at the top of <main> on pages that belong to a multi-page area.
 // Keyed by the NAV_ITEMS label that owns them.
 const TAB_GROUPS = {
-  Habits:   [{ label: 'My Habits', route: 'HABITS_LIST' }, { label: 'Overview', route: 'HABITS_TABLE' }, { label: 'Rules', route: 'HABITS_RULES' }],
-  KPIs:     [{ label: 'List', route: 'KPI_LIST' }, { label: 'Dashboard', route: 'KPI_DASHBOARD' }],
+  Habits:   [{ label: 'Rules', route: 'HABITS_RULES' }, { label: 'My Habits', route: 'HABITS_LIST' }, { label: 'Overview', route: 'HABITS_TABLE' }],
+  KPIs:     [{ label: 'Dashboard', route: 'KPI_DASHBOARD' }, { label: 'List', route: 'KPI_LIST' }],
   Settings: [{ label: 'Connect Drive', route: 'CONNECT_DRIVE' }, { label: 'Install App', route: 'INSTALL' }],
 };
 
