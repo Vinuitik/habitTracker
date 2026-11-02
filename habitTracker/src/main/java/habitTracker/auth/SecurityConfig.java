@@ -73,8 +73,8 @@ public class SecurityConfig {
                     "/tableView/**", "/addHabitView/**",
                     "/*.html", "/*.css", "/*.js", "/*.png", "/*.ico", "/*.svg", "/*.webmanifest",
                     "/api/sync/pair",
-                    // Runner side of the relay: pairing code / device bearer token, no session (relay/FLOWS.md).
-                    "/relay/pair", "/relay/uplink"
+                    // Runner side of the relay: pairing code / QR claim secret / device bearer token, no session (relay/FLOWS.md).
+                    "/relay/pair", "/relay/pair/start", "/relay/pair/poll", "/relay/uplink"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
@@ -105,7 +105,7 @@ public class SecurityConfig {
                 // session and never receives the XSRF-TOKEN cookie, so it can't carry a CSRF
                 // token. That's fine: the pairing code itself is the anti-forgery credential
                 // here (single-use, short-lived, see SyncController.pair()).
-                .ignoringRequestMatchers("/api/sync/pair", "/relay/pair")
+                .ignoringRequestMatchers("/api/sync/pair", "/relay/pair", "/relay/pair/start", "/relay/pair/poll")
             )
             .addFilterAfter(new CsrfCookieFilter(), UsernamePasswordAuthenticationFilter.class);
         return http.build();

@@ -2,12 +2,17 @@
 //   #/                       devices (pair / revoke)
 //   #/d/<device>             sessions on that machine (+ new session)
 //   #/d/<device>/s/<session> chat
+//   /relay/claim/<id>        confirm a runner's QR pairing (path, not hash: it's the link inside the QR)
 // Everything goes through /relay/api; runner calls are /relay/api/devices/<id>/v1/... (shared/API.md).
 (() => {
   const { $, esc, timeAgo } = Dom;
   const POLL_ACTIVE_MS = 2000;   // busy / waiting
   const POLL_IDLE_MS = 10000;    // idle / error
   const PROVIDER = 'claude';
+  // Hub baked into the runner (Relay repo: runner/internal/uplink.DefaultHub); any other origin needs --hub.
+  const DEFAULT_HUB = 'https://habittrackerdima.me';
+  const PAIR_CMD = '/opt/relay/bin/relay-runner pair';
+  const pairCmd = (extra = '') => PAIR_CMD + (location.origin === DEFAULT_HUB ? '' : ` --hub ${location.origin}`) + extra;
   const STATES = {
     busy:     ['Working', ''],
     waiting:  ['Needs you', 'badge--warning'],
@@ -67,8 +72,9 @@
     chat = null;
     $('relay-page').classList.remove('relay-page--chat');
     window.scrollTo(0, 0);
-    const h = location.hash.replace(/^#/, '');
     let m;
+    if ((m = location.pathname.match(/^\/relay\/claim\/([^/]+)$/))) return showClaim(decodeURIComponent(m[1]), my);
+    const h = location.hash.replace(/^#/, '');
     if ((m = h.match(/^\/d\/([^/]+)\/s\/([^/]+)$/))) return showChat(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
     if ((m = h.match(/^\/d\/([^/]+)$/))) return showDevice(decodeURIComponent(m[1]), my);
     return showDevices(my);
@@ -102,23 +108,73 @@
       <button class="btn btn--ghost btn--sm" data-act="revoke" data-id="${esc(d.id)}" data-name="${esc(d.name || '')}">Revoke</button>
     </div>`;
 
-  async function addDevice() {
-    const box = $('pair-box');
-    box.innerHTML = '<div class="relay-card">Getting a code…</div>';
+  // Phone first (runner shows a QR, this phone confirms); the code is the fallback for a desktop browser.
+  function addDevice() {
+    $('pair-box').innerHTML = `
+      <div class="relay-card">
+        <div class="relay-card__label">Recommended · with your phone</div>
+        <div class="relay-cmd"><code>${esc(pairCmd())}</code></div>
+        <p class="relay-hint">Run this on the machine (a fresh install runs it for you at the end). It shows a QR code:
+          scan it with your phone camera and tap Confirm. The machine comes online by itself.</p>
+      </div>
+      <div class="relay-card">
+        <div class="relay-card__label">Desktop alternative · pairing code</div>
+        <div id="code-box"><button class="btn btn--ghost btn--sm" data-act="code">Get a code</button></div>
+      </div>`;
+  }
+
+  async function getCode() {
+    const box = $('code-box');
+    box.innerHTML = 'Getting a code…';
     try {
       const { code, expiresInSeconds } = await call('/relay/api/devices/pairing-code', 'POST');
-      const cmd = `runnerd pair --hub ${location.origin} --code ${code}`;
       box.innerHTML = `
-        <div class="relay-card">
-          <div class="relay-card__label">Pairing code · single use · ${Math.round(expiresInSeconds / 60)} min</div>
-          <div class="relay-code">${esc(code)}</div>
-          <div class="relay-card__label">Run on the machine</div>
-          <div class="relay-cmd"><code id="pair-cmd">${esc(cmd)}</code>
-            <button class="btn btn--ghost btn--sm" data-act="copy">Copy</button></div>
-          <p class="relay-hint">The device appears in the list once runnerd connects (Refresh).</p>
-        </div>`;
+        <div class="relay-card__label">Single use · ${Math.round(expiresInSeconds / 60)} min</div>
+        <div class="relay-code">${esc(code)}</div>
+        <div class="relay-card__label">Run on the machine</div>
+        <div class="relay-cmd"><code id="pair-cmd">${esc(pairCmd(` --code ${code}`))}</code>
+          <button class="btn btn--ghost btn--sm" data-act="copy">Copy</button></div>
+        <p class="relay-hint">The device appears in the list once it connects (Refresh).</p>`;
     } catch (e) {
       box.innerHTML = errorHtml(e);
+    }
+  }
+
+  // ── QR pairing confirm (/relay/claim/<id>) ────────────────────────────
+  const claimGone = '<div class="relay-empty relay-empty--error">This pairing link expired or was already used. Run the pair command again for a new QR.</div>';
+
+  async function showClaim(id, my) {
+    view().innerHTML = header('Add device', ['/relay#/', 'Devices']) + '<div id="claim-box"><div class="relay-empty">Loading…</div></div>';
+    try {
+      const { name } = await call(`/relay/api/claims/${enc(id)}`);
+      if (my !== seq) return;
+      $('claim-box').innerHTML = `
+        <div class="relay-card">
+          <div class="relay-card__label">Connect this machine to your account?</div>
+          <div class="relay-code">${esc(name)}</div>
+          <p class="relay-hint">Only confirm if you just ran the pair command on that machine yourself.</p>
+          <div class="relay-head__actions">
+            <button class="btn btn--ghost" data-act="deny" data-id="${esc(id)}">Not mine</button>
+            <button class="btn btn--primary" data-act="approve" data-id="${esc(id)}">Confirm</button>
+          </div>
+        </div>`;
+    } catch (e) {
+      if (my === seq) $('claim-box').innerHTML = e.status === 404 ? claimGone : errorHtml(e);
+    }
+  }
+
+  async function claimAction(id, approve) {
+    const box = $('claim-box');
+    box.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await call(`/relay/api/claims/${enc(id)}/${approve ? 'approve' : 'deny'}`, 'POST');
+      box.innerHTML = approve
+        ? `<div class="relay-card"><div class="relay-card__label">Added</div>
+             <p class="relay-hint">The machine finishes pairing and comes online in a few seconds.</p>
+             <a class="btn btn--primary" href="/relay#/">Go to devices</a></div>`
+        : '<div class="relay-empty">Declined. The pair command on that machine stops.</div>';
+    } catch (e) {
+      box.innerHTML = e.status === 404 ? claimGone : errorHtml(e);
     }
   }
 
@@ -343,7 +399,10 @@
     const a = b.dataset.act;
     if (a === 'refresh') route();
     else if (a === 'add') addDevice();
+    else if (a === 'code') getCode();
     else if (a === 'copy') copyCommand(b);
+    else if (a === 'approve') claimAction(b.dataset.id, true);
+    else if (a === 'deny') claimAction(b.dataset.id, false);
     else if (a === 'revoke') revoke(b.dataset.id, b.dataset.name);
     else if (a === 'perm') act('/permission', { optionId: b.dataset.option });
     else if (a === 'cancel') act('/cancel');

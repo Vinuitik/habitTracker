@@ -288,4 +288,76 @@ class RelayDeviceTest {
         mockMvc.perform(as(alice, get("/relay/api/devices/" + dev.deviceId() + "/v1/projects")))
                 .andExpect(status().isGatewayTimeout());
     }
+
+    // --- QR pairing (claims) ---
+
+    JsonNode startClaim() throws Exception {
+        String body = mockMvc.perform(post("/relay/pair/start").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"desk\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.expiresInSeconds").value(600))
+                .andReturn().getResponse().getContentAsString();
+        return json.readTree(body);
+    }
+
+    MockHttpServletRequestBuilder pollReq(String id, String secret) throws Exception {
+        return post("/relay/pair/poll").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("claimId", id, "pollSecret", secret)));
+    }
+
+    @Test
+    void qrClaimApprovedByPhoneHandsTheTokenToTheRunnerOnce() throws Exception {
+        UserPrincipal alice = auth.register("alice@example.com");
+        JsonNode c = startClaim();
+        String id = c.get("claimId").asText(), secret = c.get("pollSecret").asText();
+        assertTrue(id.matches("[A-Z2-9]{20}"), id);
+
+        mockMvc.perform(pollReq(id, secret)).andExpect(status().isAccepted());
+        mockMvc.perform(pollReq(id, "wrong")).andExpect(status().isNotFound());
+
+        // The QR link itself renders the relay shell for a verified user.
+        mockMvc.perform(as(alice, get("/relay/claim/" + id))).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/js/relay/relay.js")));
+        mockMvc.perform(as(alice, get("/relay/api/claims/" + id))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("desk"));
+        String deviceId = json.readTree(mockMvc.perform(as(alice, post("/relay/api/claims/" + id + "/approve")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get("deviceId").asText();
+        // Already approved: a second approval (e.g. another user racing) gets nothing.
+        mockMvc.perform(as(auth.register("bob@example.com"), post("/relay/api/claims/" + id + "/approve")))
+                .andExpect(status().isNotFound());
+
+        String body = mockMvc.perform(pollReq(id, secret)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.deviceId").value(deviceId))
+                .andReturn().getResponse().getContentAsString();
+        String token = json.readTree(body).get("token").asText();
+        Device d = mongoTemplate.findById(deviceId, Device.class);
+        assertEquals(alice.getId(), d.getUserId());
+        assertEquals("desk", d.getName());
+        assertEquals(DeviceService.hash(token), d.getTokenHash());
+        mockMvc.perform(pollReq(id, secret)).andExpect(status().isNotFound());
+
+        runner(token, true, null);
+        await(() -> registry.isOnline(deviceId));
+    }
+
+    @Test
+    void qrClaimDeclinedStopsTheRunner() throws Exception {
+        UserPrincipal alice = auth.register("alice@example.com");
+        JsonNode c = startClaim();
+        String id = c.get("claimId").asText();
+        mockMvc.perform(as(alice, post("/relay/api/claims/" + id + "/deny"))).andExpect(status().isNoContent());
+        mockMvc.perform(pollReq(id, c.get("pollSecret").asText())).andExpect(status().isNotFound());
+        mockMvc.perform(as(alice, post("/relay/api/claims/" + id + "/approve"))).andExpect(status().isNotFound());
+        assertEquals(0, mongoTemplate.count(new org.springframework.data.mongodb.core.query.Query(), Device.class));
+    }
+
+    @Test
+    void qrClaimConfirmNeedsLoginAndFreshTotp() throws Exception {
+        String id = startClaim().get("claimId").asText();
+        mockMvc.perform(post("/relay/api/claims/" + id + "/approve").with(csrf())).andExpect(status().isUnauthorized());
+        UserPrincipal alice = auth.register("alice@example.com");
+        mockMvc.perform(post("/relay/api/claims/" + id + "/approve").with(auth.session(alice)).with(csrf()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/relay/claim/" + id).with(auth.session(alice))).andExpect(status().is3xxRedirection());
+        mockMvc.perform(get("/relay/claim/" + id)).andExpect(status().is3xxRedirection());
+    }
 }

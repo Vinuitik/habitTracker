@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -25,9 +25,16 @@ check(): locked? → LOCKED · TotpService.matchingStep() (±1 step, constant-ti
 To change limits: TwoFactorService.MAX_FAILURES / LOCK_SECONDS; drift: TotpService.WINDOW.
 
 ## Hub (contract: Relay repo shared/HUB.md)
-### Pairing
+### QR pairing (recommended, phone first)
+runner `POST /relay/pair/start {name}` (permitAll, CSRF-ignored, not 2FA) → ClaimController.start() → ClaimService.start() (sweeps expired; ≥ MAX_PENDING (100) → 429) → claimId (20 chars, 100 bits) + pollSecret (32 bytes; only sha256 kept) → `{claimId, pollSecret, expiresInSeconds:600}`
+runner shows QR of `/relay/claim/<claimId>` → phone opens it → GET /relay/claim/{id} (gated: login → 2FA → back here) → RelayController.relay() → relay.html → relay.js route() (pathname) → showClaim()
+→ GET /relay/api/claims/{id} → `{name}` → "Add <name>?" → Confirm → POST …/approve → ClaimService.approve() → DeviceService.create(currentUser, name) → `{deviceId}` · "Not mine" → POST …/deny → 204
+runner `POST /relay/pair/poll {claimId, pollSecret}` → ClaimService.poll() (constant-time secret check) → 202 pending · 200 `{deviceId, token}` once (claim removed) · 404 declined/expired/unknown/wrong secret
+To change TTL / pending cap / id length: ClaimService.TTL_SECONDS, MAX_PENDING, ID_LENGTH.
+
+### Code pairing (desktop alternative)
 POST /relay/api/devices/pairing-code (gated) → DeviceController.pairingCode() → DeviceService.newPairingCode() → own `new PairingCodeService()` instance (8 chars, single use, 10 min, bound to user) → `{code, expiresInSeconds:600}`
-POST /relay/pair `{code, name?}` (permitAll, CSRF-ignored, not 2FA) → DeviceService.pair() → redeem (remove() = single use) → 32 SecureRandom bytes, base64url → save Device{userId, name, tokenHash=sha256 hex, createdAt} → `200 {deviceId, token}`; missing code 400; bad/used/expired 404
+POST /relay/pair `{code, name?}` (permitAll, CSRF-ignored, not 2FA) → DeviceService.pair() → redeem (remove() = single use) → DeviceService.create() → 32 SecureRandom bytes, base64url → save Device{userId, name, tokenHash=sha256 hex, createdAt} → `200 {deviceId, token}`; missing code 400; bad/used/expired 404
 To change code TTL/format: sync/PairingCodeService (shared class, separate instance) + DeviceService.CODE_TTL_SECONDS.
 
 ### Uplink
@@ -50,7 +57,7 @@ To change messages / redirect: relay.js call().
 
 ### Devices `#/`
 showDevices() → GET /relay/api/devices → rows (dot = `online`, "last seen" = Dom.timeAgo(lastSeenAt)) → row → `#/d/<id>`
-"Add device" → addDevice() → POST /relay/api/devices/pairing-code → code + `runnerd pair --hub <location.origin> --code <CODE>` → Copy (navigator.clipboard; no clipboard API (plain http) → selects the text)
+"Add device" → addDevice() → two cards: **Recommended · with your phone** = `/opt/relay/bin/relay-runner pair` (+ `--hub <origin>` unless origin == DEFAULT_HUB) and what to do with the QR; **Desktop alternative** → "Get a code" → getCode() → POST /relay/api/devices/pairing-code → code + same command with `--code <CODE>` → Copy (navigator.clipboard; no clipboard API (plain http) → selects the text)
 "Revoke" → confirm() → DELETE /relay/api/devices/{id} → re-render. New device shows after Refresh (no auto-poll on this view).
 
 ### Sessions `#/d/<id>`
@@ -85,6 +92,8 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 - **Pending proxy requests are in-memory**: lost on restart (the browser sees a dropped connection); a socket closing fails its pending calls with 503.
 - **Pings exist for Cloudflare:** the tunnel kills a WebSocket after ~100s idle; 30s pings keep it alive, and the 95s silence check catches half-open runners.
 - **Pairing codes are in-memory** (separate PairingCodeService instance from vault sync, so a sync code can never pair a runner). Restart → generate a new code.
+- **QR claims are in-memory** (ClaimService map): a restart drops pending claims → runner's poll gets 404 → run pair again. Single JVM only. `/relay/pair/start` is unauthenticated, hence the 100-pending cap (429) instead of unbounded growth.
+- **claimId is a bearer link:** whoever opens it while logged in can approve it, binding the device to THEIR account — that's why it's 100 bits and lives 10 min; the runner's name is shown so you can spot a QR you didn't start. The token itself only ever goes to the poller holding pollSecret.
 - **Device token:** only sha256 hex stored (a fast hash is fine for a 256-bit random token). Lost hub.json on the runner = re-pair. Mongo dumps contain only hashes.
 - **Frame size:** container text-frame limit is 8 MiB + 64 KiB (UplinkConfig.setServletContext), body limit 4 MiB (UplinkRegistry.MAX_BODY_BYTES): headroom for JSON escaping of a 4 MiB body. A bigger frame makes Tomcat close the socket (1009).
 - **Indexes:** spring.data.mongodb.auto-index-creation is off, so DeviceService.ensureIndexes() creates tokenHash (unique) + userId indexes at startup.
@@ -124,7 +133,10 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | Relay page shell | templates/relay.html, RelayController.relay() |
 | Relay UI routes (hash) | relay.js route() |
 | Hub status → message / 2FA redirect | relay.js call() |
-| Pair command text | relay.js addDevice() |
+| Pair command text | relay.js addDevice(), getCode(), PAIR_CMD, DEFAULT_HUB |
+| QR claim TTL / cap / id length | ClaimService.TTL_SECONDS, MAX_PENDING, ID_LENGTH |
+| QR confirm page | relay.js showClaim(), claimAction(); route RelayController `/relay/claim/{id}` |
+| QR runner endpoints (permitAll, CSRF-ignored, 2FA-excluded) | SecurityConfig, WebConfig (`/relay/pair/start`, `/relay/pair/poll`) |
 | New-session provider | relay.js PROVIDER |
 | Poll rates | relay.js POLL_ACTIVE_MS, POLL_IDLE_MS, schedule() |
 | State labels / badge colours | relay.js STATES |

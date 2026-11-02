@@ -15,9 +15,10 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // /relay/pair (pairing code is the credential) and /relay/uplink (device token) are not browser sessions.
+        // /relay/pair (pairing code), /relay/pair/start|poll (QR claim secret) and /relay/uplink (device token)
+        // are runner calls, not browser sessions.
         registry.addInterceptor(twoFactorInterceptor).addPathPatterns("/relay", "/relay/**")
-                .excludePathPatterns("/relay/pair", "/relay/uplink");
+                .excludePathPatterns("/relay/pair", "/relay/pair/start", "/relay/pair/poll", "/relay/uplink");
     }
 
     @Override

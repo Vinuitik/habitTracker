@@ -7,7 +7,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class RelayController {
 
-    @GetMapping("/relay")
+    // /relay/claim/{id}: the link inside the runner's pairing QR; relay.js shows the confirm view for it.
+    @GetMapping({"/relay", "/relay/claim/{id}"})
     public String relay() {
         return "relay";
     }

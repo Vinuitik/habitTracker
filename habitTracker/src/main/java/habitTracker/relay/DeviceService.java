@@ -52,18 +52,21 @@ public class DeviceService {
 
     /** Redeems a pairing code (single use) and creates the device; empty if the code is bad, used or expired. */
     public Optional<Paired> pair(String code, String name) {
-        return codes.redeem(code.trim().toUpperCase()).map(userId -> {
-            byte[] raw = new byte[TOKEN_BYTES];
-            RANDOM.nextBytes(raw);
-            String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
-            Device d = devices.save(Device.builder()
-                    .userId(userId)
-                    .name(cleanName(name))
-                    .tokenHash(hash(token))
-                    .createdAt(Instant.now())
-                    .build());
-            return new Paired(d.getId(), token);
-        });
+        return codes.redeem(code.trim().toUpperCase()).map(userId -> create(userId, name));
+    }
+
+    /** New device for userId with a fresh token; shared by the code flow above and ClaimService (QR flow). */
+    Paired create(String userId, String name) {
+        byte[] raw = new byte[TOKEN_BYTES];
+        RANDOM.nextBytes(raw);
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+        Device d = devices.save(Device.builder()
+                .userId(userId)
+                .name(cleanName(name))
+                .tokenHash(hash(token))
+                .createdAt(Instant.now())
+                .build());
+        return new Paired(d.getId(), token);
     }
 
     public Optional<Device> findByToken(String token) {
@@ -98,7 +101,7 @@ public class DeviceService {
         }
     }
 
-    private static String cleanName(String name) {
+    static String cleanName(String name) {
         String n = name == null ? "" : name.strip().replaceAll("\\p{Cntrl}", "");
         if (n.isEmpty()) return "device";
         return n.length() > MAX_NAME ? n.substring(0, MAX_NAME) : n;
