@@ -1,6 +1,6 @@
 # Project Flows
 
-Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `BoardSyncScheduler.java`, `ProjectBoardService.java`, `TrelloBoardGateway.java`, `HttpTrelloBoardGateway.java`, `StubTrelloBoardGateway.java` (test only), `ProjectRunnerController.java`, `ProjectRunnerService.java`, `ProjectMap.java`, `ProjectMapRepository.java`, `resources/prompts/project-map.md`. Direct Trello access: see `../integrations/trello/FLOWS.md`. Runner transport: see `../relay/FLOWS.md` (Runner client).
+Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `BoardSyncScheduler.java`, `ProjectBoardService.java`, `TrelloBoardGateway.java`, `HttpTrelloBoardGateway.java`, `StubTrelloBoardGateway.java` (test only), `ProjectRunnerController.java`, `ProjectRunnerService.java`, `ProjectMap.java`, `ProjectMapRepository.java`, `resources/prompts/project-map.md`, `PlannerController.java`, `PlannerService.java`, `PlannerPrompts.java`, `PlannerConversation.java`, `PlannerConversationRepository.java`, `resources/prompts/planner-clarify.md`, `resources/prompts/planner-draft.md`. Direct Trello access: see `../integrations/trello/FLOWS.md`. Runner transport: see `../relay/FLOWS.md` (Runner client).
 
 A Project (name, description, userId, trelloBoardId, createdAt, imported; optional runner link: runnerDeviceId, runnerProjectId, folderName, mapJobId) is 1:1 with a Trello board. Collection `projects`.
 
@@ -17,7 +17,24 @@ Prompt: survey repo → split into 3-12 subsystems → ONE subagent per subsyste
 `GET /api/projects/{id}/map` → `ProjectRunnerService.mapSummary()` → `{commitSha, builtAt, subsystems:[{name, paths}]}` (index + notes not returned) or 404 `{error:"no map yet"}`
 - Project delete also deletes its `project_maps` doc (`ProjectService.delete()`).
 - Errors (ProjectRunnerController): runner_not_found 409 · runner_offline 503 · runner_timeout 504 (all with `message:"Connect a runner"`) · runner 4xx passthrough / 5xx → 502 `{error:"runner_error", runnerStatus, detail}` · bad input 400.
-- Full map read (index + notes) for agents [NOT IMPLEMENTED]; staleness check vs current commit [NOT IMPLEMENTED].
+- Full map (index + notes) is read only by the planner prompt (below); staleness check vs current commit [NOT IMPLEMENTED].
+
+## Planner chat (runner "plan" jobs → Trello)
+Collection `planner_conversations` {projectId, userId, phase CLARIFY|DRAFT, messages[{role user|ai, text, questions?}], questions, draft, currentJobId, resultJobId, error, createdAt, updatedAt, appliedAt, appliedDeadline, appliedPace}. Requires a linked folder (else 409 `project_not_linked`).
+`POST /api/projects/{id}/planner {message, conversationId?}` → `PlannerController.message()` → `PlannerService.message()` → `owned()` + linked → blank / >8000 chars → 400 → new conversation, or `ownedConversation()` (id+projectId+userId, else 404) + `ensureIdle()` (job still running → 409 `planner_busy`) → append user message, phase=CLARIFY → `startJob()` → `PlannerPrompts.build()` → `RunnerJobService.startJob(kind="plan", runnerProjectId, prompt, maxTurns)` → save (only after the runner accepted: a refused start saves nothing) → `{conversationId, jobId}`
+`POST …/planner/{cid}/lock` → `PlannerService.lock()` → idle check → phase=DRAFT → `startJob()` (same history, draft template) → `{conversationId, jobId}`
+`GET …/planner/{cid}?after=N` → `PlannerService.poll()` → only `currentJobId` is polled, and only while ≠ `resultJobId` → `RunnerJobService.pollJob()` → events mapped to `{seq,kind,text}` → `done` → `storeResult()`: `extractObject()` (object, or text: first `{` … last `}`) → CLARIFY: `{reply, questions≤3}` → ai message (+questions) / DRAFT: `parseDraft()` → draft + ai message → `applyOnce()` = conditional update (`currentJobId=job AND resultJobId≠job`) so it's stored once; unusable result → `error` / `failed|error|cancelled` → `error` / runner 404 for the job → `error` ("no longer exists") → `{state, events, nextSeq, messages[{role,text}], questions?, draft?, error?}`
+- state: job not stored → `running`; error → `failed`; DRAFT + draft → `drafted`; else `waiting_user`. To change: `PlannerService.state()`.
+- Draft validation: ≥1 list, ≤20 lists, ≤150 cards, list name + card title required (else unusable/400); importance 1..3 (numbers clamped, must/should/could words, default 2); dates cut to YYYY-MM-DD, invalid due → dropped, invalid schedule row → skipped. To change: `PlannerService.parseDraft()/importance()/date()`.
+Prompt = template + `{{TODAY}}`, `{{PROJECT_NAME}}`, `{{PROJECT_DESCRIPTION}}`, `{{MAP}}`, `{{BOARD}}`, `{{HISTORY}}` (one-pass substitution: user text can't inject placeholders)
+- MAP: `PlannerPrompts.mapSection()` = map index + each subsystem's name/paths/notes, cap `relay.plan.map-max-chars` (60000): over the cap, notes are dropped (name+paths kept) least-relevant first (keyword overlap of the user's messages with name/paths ×3, notes ×1; ties: bigger notes first), then hard truncation. No map → "explore the folder" note.
+- BOARD: `BoardSnapshotService.get(p, false)` (Trello failure → cached snapshot, else "(board not available)") → open lists + their open, not-done cards (+ due date), cap `relay.plan.board-max-chars` (20000).
+- HISTORY: User/Assistant turns incl. asked questions, oldest dropped first past `relay.plan.history-max-chars` (30000).
+- Templates instruct: map first, Read files only when needed, parallel haiku/sonnet subagents for multi-area research, output ONLY the JSON. To change: `resources/prompts/planner-clarify.md`, `planner-draft.md`; turn cap `relay.plan.max-turns` (80).
+`POST …/planner/{cid}/apply {draft?, deadline?, pace?}` → `PlannerService.apply()` → `owned()` (link not required) + idle → draft = body `draft` (validated by `parseDraft()`) else stored draft, none → 400 → bad deadline → 400 → per list: open board list with same name (ci, from the cached snapshot) reused, else `TrelloApiClient.createList(pos=bottom)` → per card: `TrelloApiClient.createCard {idList, name, desc + ```meta importance: N```, pos=bottom, due}` → due = card.due, else schedule date (by title, ci), else deadline, as `<date>T12:00:00.000Z` → save draft/appliedAt/deadline/pace → `BoardSnapshotService.get(p, true)` (failure only logged) → `{created: <cards>}`. The only Trello write of the planner.
+- `pace` is stored only [NOT IMPLEMENTED: no effect on dates]; the schedule comes from the draft job.
+- Errors: runner 409/503/504 `{error:runner_*, message:"Connect a runner"}` · runner 4xx passthrough / 5xx → 502 · Trello 412 `trello_not_connected|trello_token_invalid` · 429 `trello_rate_limited` · other Trello → 502 `trello_error`. To change: `PlannerController` handlers.
+- Project delete removes its conversations (`ProjectService.delete()`).
 
 ## CRUD + isolation
 `/api/projects` → `ProjectController` → `ProjectService` → `SecurityUtils.getCurrentUserId()` → `ProjectRepository.findByUserId` / `findByIdAndUserId`
@@ -99,6 +116,12 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 - **Map cost runs on the user's own Claude Code** (their plan/quota), N+1 agents per build; nothing is billed to the hub. Map jobs run with the runner's default model for the orchestrator; subagent models are chosen by the prompt.
 - **commitSha comes from the agent reading `.git`**: a detached HEAD, packed refs or worktree (`.git` is a file) may yield an empty or wrong SHA; it's informational only.
 - **runnerProjectId is the runner's local id:** re-pairing the runner or wiping its project registry invalidates it — relink.
+- **Planner jobs run on the user's own Claude Code** (their quota); one orchestrator + whatever subagents the prompt asks for. Prompt size ≈ map cap 60K + board 20K + history 30K chars (~30K tokens) per job, re-sent every turn because each message is a fresh job (no runner-side session).
+- **Planner conversation state is poll-driven:** a job's outcome is stored only when someone polls it. A conversation whose job is never polled stays `running` and blocks follow-ups/lock/apply (409 `planner_busy`) until polled; a runner that forgot the job (restart) yields 404 → `failed`. Starting a new job never cancels an old one (only possible while idle anyway).
+- **Apply is not idempotent / not transactional:** cards are created one by one (2+ Trello calls per new list); a Trello failure mid-way leaves the cards created so far, and re-applying duplicates them. Nothing records which cards were created. List reuse trusts the cached snapshot (≤60s old or stale), so a list created in Trello since then may be duplicated.
+- **Due time is fixed at 12:00 UTC** of the scheduled date to avoid off-by-one-day in most timezones; Trello shows it in the viewer's timezone.
+- **Importance lives in a ```meta block** in the card description, the format the Trello MCP (`backup/trello_mcp/meta.py`) reads; editing the description by hand can break it.
+- **Relevance ranking is naive keyword overlap** (words ≥4 chars); synonyms or a vague message may drop the notes the agent actually needs, which it then has to recover by reading files.
 
 ## Change Index
 | What | Where |
@@ -135,3 +158,11 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 | Map storage shape / collection | `ProjectMap` (`project_maps`), `ProjectMapRepository` |
 | Map summary fields | `ProjectRunnerService.mapSummary()` |
 | Runner error → HTTP mapping | `ProjectRunnerController` `@ExceptionHandler`s |
+| Planner endpoints / error mapping | `PlannerController` |
+| Planner phases, busy rule, state derivation | `PlannerService.message()/lock()/ensureIdle()/state()` |
+| Planner result storing (once) / parsing | `PlannerService.storeResult()/applyOnce()/extractObject()/parseDraft()` |
+| Planner prompt text | `resources/prompts/planner-clarify.md`, `planner-draft.md` |
+| Planner prompt size caps / turn cap | `relay.plan.map-max-chars`, `relay.plan.board-max-chars`, `relay.plan.history-max-chars`, `relay.plan.max-turns` |
+| Which map notes are dropped first | `PlannerPrompts.mapSection()/relevance()` |
+| Draft → Trello (list reuse, due fallback, meta block) | `PlannerService.apply()/withMeta()` |
+| Conversation shape / collection | `PlannerConversation` (`planner_conversations`) |
