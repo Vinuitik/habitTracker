@@ -2,6 +2,7 @@
 // State lives here (S). Every write is optimistic: mutate local state + DOM now, call the API,
 // merge the server response on success, restore the touched fields and toast on failure.
 // The page script owns fetching/routing and passes handlers {onRefresh, onPlan, onCard, onAuth, projectId}.
+// The header's [data-repo] slot is filled by RepoLink (repo link + map status), mounted by the page script.
 window.Board = (() => {
   const { esc, safeUrl, timeAgo } = Dom;
   const EP = ENV.ENDPOINTS;
@@ -115,7 +116,8 @@ window.Board = (() => {
       <div class="board__banner" data-banner hidden>
         <span>This board no longer exists in Trello</span>
         <button class="btn btn--danger btn--sm" data-act="unlink">Unlink</button>
-      </div>`);
+      </div>
+      <div class="repo-bar" data-repo></div>`);
     setMissing(!!data.boardMissing);
     renderColumns();
     el.querySelector('.board__scroller').scrollLeft = prevScroll;
