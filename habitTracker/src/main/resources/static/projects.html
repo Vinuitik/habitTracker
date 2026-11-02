@@ -26,9 +26,11 @@
   <link rel="stylesheet" href="/styles/molecules/card-tile.css">
   <link rel="stylesheet" href="/styles/molecules/composer.css">
   <link rel="stylesheet" href="/styles/molecules/list-column.css">
+  <link rel="stylesheet" href="/styles/molecules/folder-picker.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/organisms/board.css">
   <link rel="stylesheet" href="/styles/organisms/merge-view.css">
+  <link rel="stylesheet" href="/styles/organisms/repo-bar.css">
   <link rel="stylesheet" href="/styles/molecules/seg-tabs.css">
   <link rel="stylesheet" href="/styles/organisms/planner.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
@@ -110,6 +112,17 @@
         <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
       </div>
       <div class="modal-box__fields" id="card-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Link folder: runner → folder picker (FolderPicker) -->
+  <div class="modal-overlay" id="folder-modal">
+    <div class="modal-box modal-box--picker" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title">
+      <div class="modal-box__header">
+        <span class="modal-box__title" id="folder-modal-title">Link a folder</span>
+        <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="folder-picker" id="folder-picker"></div>
     </div>
   </div>
 
@@ -202,17 +215,20 @@
   <script src="/js/atoms/toast.js"></script>
   <script src="/js/atoms/dom.js"></script>
   <script src="/js/atoms/api.js"></script>
+  <script src="/js/atoms/relay-api.js"></script>
   <script src="/js/atoms/icons.js"></script>
   <script src="/js/atoms/menu.js"></script>
   <script src="/js/atoms/dnd.js"></script>
   <script src="/js/molecules/connect-panel.js"></script>
   <script src="/js/molecules/card-tile.js"></script>
   <script src="/js/molecules/composer.js"></script>
+  <script src="/js/molecules/folder-picker.js"></script>
   <script src="/js/organisms/board.js"></script>
   <script src="/js/organisms/merge-view.js"></script>
   <script src="/js/organisms/card-modal.js"></script>
   <script src="/js/organisms/planner-mock.js"></script>
   <script src="/js/organisms/planner.js"></script>
+  <script src="/js/organisms/repo-link.js"></script>
   <script src="/js/pages/projects.js"></script>
 </body>
 </html>

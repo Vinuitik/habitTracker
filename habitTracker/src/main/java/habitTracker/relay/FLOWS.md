@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -62,7 +62,14 @@ UplinkRegistry.pingAll() every 30s → WS ping; pong → UplinkHandler.handlePon
 afterConnectionClosed → unregister() (only if still the current socket) → its pending requests fail → 503
 
 ### Proxy
-ANY /relay/api/devices/{id}/v1/** → RelayProxyController.proxy() → DeviceService.owned(user, id) else 404 → body > 4 MiB → 413 → UplinkRegistry.request() (`req` frame; CompletableFuture in `pending` by uuid) → no socket: 503 `{"error":"device offline"}` → wait `relay.proxy.timeout-ms` (30000) → 504 → `res` frame (UplinkRegistry.onFrame) → relay status, contentType, body (body > 4 MiB → 502)
+ANY /relay/api/devices/{id}/v1/** → RelayProxyController.proxy() → DeviceService.owned(user, id) else 404 → body > 4 MiB → 413 → RunnerClient.exchange() → UplinkRegistry.request() (`req` frame; CompletableFuture in `pending` by uuid) → no socket: 503 `{"error":"device offline"}` → wait `relay.proxy.timeout-ms` (30000) → 504 → `res` frame (UplinkRegistry.onFrame) → relay status, contentType, body (body > 4 MiB → 502)
+
+### Runner client (server-initiated calls)
+Hub feature (e.g. Project/ProjectRunnerService) → RunnerJobService.startJob/pollJob/cancelJob/send(userId, deviceId, …) → RunnerClient.call(userId, deviceId, method, path, body) → DeviceService.owned() else RunnerUnavailableException(DEVICE_NOT_FOUND) → RunnerClient.exchange() → UplinkRegistry.request() → no socket / socket closed → RunnerUnavailableException(OFFLINE) → wait `relay.proxy.timeout-ms` → RunnerUnavailableException(TIMEOUT) (+ UplinkRegistry.cancel) → `res` frame → UplinkRegistry.Response
+- RunnerJobService: non-2xx → RunnerCallException(status, raw body); 2xx → parsed JSON (blank → `{}`).
+- Job endpoints (runner contract): `POST /v1/jobs {kind: map|plan|kpi, projectId?, prompt, model?, maxTurns?}` → `{jobId}` · `GET /v1/jobs/{id}?after=<seq>` → `{jobId, kind, state, events[], nextSeq, result?, error?, usage?}` · `DELETE /v1/jobs/{id}`. Job id must match `[A-Za-z0-9_-]{1,128}` (RunnerJobService.checkId) so it can't address another runner path.
+- UI mapping: RunnerUnavailableException.code() = `runner_not_found` / `runner_offline` / `runner_timeout`; callers answer with `message: "Connect a runner"` (see Project/ProjectRunnerController.unavailable()).
+To change: timeout `relay.proxy.timeout-ms`; error codes RunnerUnavailableException.code().
 
 ### Devices
 GET /relay/api/devices → `[{id, name, online, lastSeenAt}]` (current user only; online = live socket in UplinkRegistry)
@@ -137,6 +144,8 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 - **Indexes:** spring.data.mongodb.auto-index-creation is off, so DeviceService.ensureIndexes() creates tokenHash (unique) + userId indexes at startup.
 - **Origin:** /relay/uplink keeps Spring's default same-origin check; requests with no Origin header (runnerd) pass.
 - **Blocking proxy:** each in-flight call holds a Tomcat worker thread up to 30s (default pool 200). Fine for one user; switch to DeferredResult if that changes.
+- **RunnerClient is the same blocking request/response:** no streaming, no retries. Long work must be a runner job (start → poll), never one call. Job state lives only on the runner: a runner restart loses running jobs (poll then returns the runner's 404 → surfaced as a 404 `runner_error`). A hub restart loses nothing job-wise (the hub stores only the jobId).
+- **Ownership is per call:** RunnerClient.call() re-reads the device by (id, userId) every time, so a deleted/revoked device fails immediately with `runner_not_found`, even for a project still linked to it.
 
 - **UI is polling, no live push:** an open chat costs one proxied GET every 2s while busy/waiting (each a full transcript, up to the 4 MiB body limit, through Cloudflare → hub → WebSocket → runner) and every 10s idle; nothing while the tab is hidden or the session finished. Replies appear with up to 2s lag; a long transcript polled at 2s is the main bandwidth cost. Each poll also holds a Tomcat thread for its duration (Blocking proxy, above).
 - **UI state is in memory only:** the hash URL (`#/d/<id>/s/<sid>`) is the only thing that survives a refresh. An unsent draft is lost on refresh and on the 401 → /2fa/verify redirect; scroll position is lost too. Device names are cached per page load only.
@@ -161,6 +170,9 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | Body / frame limits | UplinkRegistry.MAX_BODY_BYTES, MAX_FRAME_BYTES; UplinkConfig.setServletContext() |
 | Proxy timeout | `relay.proxy.timeout-ms` (default 30000) |
 | Proxy path mapping / error bodies | RelayProxyController.proxy(), error() |
+| Server-initiated runner call (ownership + offline/timeout) | RunnerClient.call(), exchange() |
+| Runner job start/poll/cancel, job id check | RunnerJobService.startJob(), pollJob(), cancelJob(), checkId() |
+| "Connect a runner" error codes | RunnerUnavailableException.code() |
 | Close codes | UplinkRegistry.REPLACED (4000), REVOKED (4001) |
 | Verification lifetime | `RELAY_2FA_TTL_HOURS` / `relay.2fa.ttl-hours` |
 | Failure limit / lock time | TwoFactorService.MAX_FAILURES, LOCK_SECONDS |

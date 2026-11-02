@@ -41,6 +41,13 @@ window.ENV = {
     SYNC_DISCONNECT: '/api/sync/disconnect',
     SYNC_STATUS:     '/api/sync/status',
     SYNC_PAIR_GENERATE: '/api/sync/generate-pairing-code',
+    PROJECT_LINK:    (id) => `/api/projects/${id}/link`,
+    PROJECT_MAP:     (id) => `/api/projects/${id}/map`,
+    PROJECT_MAP_JOB: (id, jobId, after) => `/api/projects/${id}/map/job/${encodeURIComponent(jobId)}?after=${after}`,
+    RELAY_DEVICES:   '/relay/api/devices',
+    // path omitted/'' = filesystem roots, '~' = Documents (else home) on the runner
+    RELAY_BROWSE:    (dev, path) => `/relay/api/devices/${encodeURIComponent(dev)}/v1/browse`
+      + (path ? `?path=${encodeURIComponent(path)}` : ''),
   },
   ROUTES: {
     HOME:            '/today',
@@ -59,6 +66,8 @@ window.ENV = {
     INSTALL:         '/install',
     PROJECTS:        '/projects',
     RELAY:           '/relay',
+    RELAY_INSTALL:   '/relay#/install',   // install-a-runner guide (not /install = PWA install page)
+    TWOFA_VERIFY:    '/2fa/verify',       // + ?next=<url>
   },
   EXTERNAL: {
     TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',
@@ -69,6 +78,7 @@ window.ENV = {
     UNDO_TOAST_MS: 6000,
     BOARD_POLL_MS: 60000,     // open-board poll for changes made directly in Trello
     PLANNER_POLL_MS: 1200,    // planner conversation poll while the AI is working
+    MAP_POLL_MS: 2000,        // repo-map job progress poll
   },
   BOARD: {
     POS_STEP: 65536,          // Trello pos spacing for append / empty list
@@ -81,6 +91,10 @@ window.ENV = {
   PLANNER: {
     DEFAULT_PACE: 2,          // cards/day pre-filled in the planner footer
     MOBILE_QUERY: '(max-width: 639px)',  // stacked tabs layout; keep in sync with styles/organisms/planner.css
+  },
+  REPO: {
+    MAP_LOG_MAX: 200,         // progress panel keeps the last N job events
+    PICKER_START: '~',        // folder picker opens in Documents (else home)
   },
   FEATURES: {
     ANIMATIONS: true,

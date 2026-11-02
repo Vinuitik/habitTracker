@@ -27,4 +27,10 @@ public class Project {
     private LocalDateTime createdAt;
     // true = board adopted from the user's Trello; deleting the project only unlinks it.
     private boolean imported;
+    // Relay runner link (all null = not linked): the user's device, the runner's registered-folder id, its display name.
+    private String runnerDeviceId;
+    private String runnerProjectId;
+    private String folderName;
+    // Last map job started for this project; polls for any other job id are 404.
+    private String mapJobId;
 }

@@ -27,6 +27,7 @@ public class ProjectService {
     private final BoardSnapshotService snapshots;
     private final BoardSnapshotRepository snapshotRepository;
     private final ProjectDeleteTokenService deleteTokens;
+    private final ProjectMapRepository mapRepository;
 
     public static class NotFoundException extends RuntimeException {
         public NotFoundException() { super("Project not found"); }
@@ -130,6 +131,7 @@ public class ProjectService {
             }
         }
         snapshots.delete(p.getId());
+        mapRepository.deleteByProjectId(p.getId());
         repository.deleteById(p.getId());
     }
 

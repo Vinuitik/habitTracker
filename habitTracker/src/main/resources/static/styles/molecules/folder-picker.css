@@ -1,0 +1,152 @@
+/* Folder picker modal (js/molecules/folder-picker.js): runner list → breadcrumb + folder list → select. */
+.modal-box--picker {
+  max-width: 560px;
+  max-height: calc(100dvh - 2 * var(--space-4));
+  gap: var(--space-4);
+}
+
+.folder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.folder-picker__hint,
+.folder-picker__path {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.folder-picker__path code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-primary);
+}
+
+.folder-picker__bar {
+  display: flex;
+  align-items: center;
+}
+
+.folder-picker__list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(50dvh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  transition: opacity var(--transition-fast);
+}
+
+.folder-picker__list[aria-busy="true"] { opacity: 0.5; }
+
+.folder-picker__empty {
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-text-secondary);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.folder-picker__empty--error { color: var(--color-danger); }
+
+.folder-picker__cta {
+  display: flex;
+  width: fit-content;
+  margin: var(--space-4) auto 0;
+}
+
+/* One runner or folder: a full-width button row (native focus + Enter). */
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.folder-row:last-child { border-bottom: none; }
+.folder-row:hover,
+.folder-row:focus-visible { background: var(--color-bg-card-hover); }
+.folder-row:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.folder-row:disabled { opacity: 0.5; cursor: default; background: none; }
+.folder-row .icon { color: var(--color-text-secondary); }
+.folder-row--up { color: var(--color-text-secondary); }
+
+.folder-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.folder-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-row__meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.folder-row__dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-muted);
+}
+
+.folder-row__dot--on {
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-dim);
+}
+
+/* Breadcrumb: every segment but the last is a button. */
+.folder-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.folder-crumbs__item {
+  padding: 2px var(--space-1);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.folder-crumbs__item:hover { background: var(--color-accent-dim); }
+.folder-crumbs__item--current { color: var(--color-text-primary); cursor: default; }
+.folder-crumbs__sep { color: var(--color-text-muted); }
+
+@media (max-width: 768px) {
+  .modal-box--picker { max-width: none; }
+  .folder-picker__list { max-height: 55dvh; }
+}
