@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>HabitTracker — Relay</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/atoms/input.css">
+  <link rel="stylesheet" href="/styles/atoms/badge.css">
+  <link rel="stylesheet" href="/styles/atoms/toast.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
+  <link rel="stylesheet" href="/styles/pages/relay.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/today" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav"></nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <!-- Rendered by js/relay/relay.js (hash router: #/ devices, #/d/<id> sessions, #/d/<id>/s/<sid> chat) -->
+  <main class="relay-page" id="relay-page">
+    <div id="relay-view"></div>
+  </main>
+
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/registerSW.js"></script>
+  <script src="/js/atoms/toast.js"></script>
+  <script src="/js/atoms/dom.js"></script>
+  <script src="/js/atoms/api.js"></script>
+  <script src="/js/relay/relay.js"></script>
+</body>
+</html>

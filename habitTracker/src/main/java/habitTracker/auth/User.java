@@ -20,4 +20,11 @@ public class User {
     private String passwordHash;
     private String googleId;
     private String name;
+
+    // Second factor for Relay (habitTracker.relay.TwoFactorService). The secret is AES-GCM ciphertext,
+    // never plaintext: it can't be hashed because the server recomputes codes from it.
+    private String totpSecret;
+    private boolean totpEnabled;
+    // Last accepted 30s step; a code is rejected unless its step is newer (no replay).
+    private Long totpLastStep;
 }

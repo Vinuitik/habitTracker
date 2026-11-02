@@ -3,6 +3,7 @@ package habitTracker.KPI;
 import habitTracker.integrations.trello.TrelloCredentialRepository;
 
 import habitTracker.integrations.trello.TrelloCredential;
+import habitTracker.sync.VaultEncryptionService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,20 +59,22 @@ public class TrelloCardCountProvider implements ProxyProvider {
     private static final Logger log = LoggerFactory.getLogger(TrelloCardCountProvider.class);
 
     private final TrelloCredentialRepository credentialRepository;
+    private final VaultEncryptionService vault;
     private final RestTemplate restTemplate;
     private final String apiBaseUrl;
 
     @Autowired
-    public TrelloCardCountProvider(TrelloCredentialRepository credentialRepository,
+    public TrelloCardCountProvider(TrelloCredentialRepository credentialRepository, VaultEncryptionService vault,
                                     @Value("${trello.api.base-url:https://api.trello.com}") String apiBaseUrl) {
-        this(credentialRepository, new RestTemplate(), apiBaseUrl);
+        this(credentialRepository, vault, new RestTemplate(), apiBaseUrl);
     }
 
     // Package-private test constructor: injects a mockable RestTemplate and lets tests point
     // apiBaseUrl at a local stub server instead of the real Trello host.
-    TrelloCardCountProvider(TrelloCredentialRepository credentialRepository, RestTemplate restTemplate,
-                             String apiBaseUrl) {
+    TrelloCardCountProvider(TrelloCredentialRepository credentialRepository, VaultEncryptionService vault,
+                             RestTemplate restTemplate, String apiBaseUrl) {
         this.credentialRepository = credentialRepository;
+        this.vault = vault;
         this.restTemplate = restTemplate;
         this.apiBaseUrl = apiBaseUrl;
     }
@@ -90,7 +93,19 @@ public class TrelloCardCountProvider implements ProxyProvider {
         }
 
         Optional<TrelloCredential> credential = credentialRepository.findByUserId(userId);
-        if (credential.isEmpty() || isBlank(credential.get().getApiKey()) || isBlank(credential.get().getToken())) {
+        String apiKey = null;
+        String token = null;
+        if (credential.isPresent()) {
+            try {
+                apiKey = credential.get().plainApiKey(vault);
+                token = credential.get().plainToken(vault);
+            } catch (IllegalStateException e) {
+                log.warn("[Trello] credential for user {} could not be decrypted (server key changed?) — skipping KPI '{}'",
+                        userId, kpi.getName());
+                return Optional.empty();
+            }
+        }
+        if (isBlank(apiKey) || isBlank(token)) {
             log.warn("[Trello] no Trello credentials configured for user {} — skipping KPI '{}'", userId, kpi.getName());
             return Optional.empty();
         }
@@ -103,7 +118,7 @@ public class TrelloCardCountProvider implements ProxyProvider {
         }
 
         try {
-            return Optional.of((double) countCardsMovedIn(credential.get(), listId, date));
+            return Optional.of((double) countCardsMovedIn(apiKey, token, listId, date));
         } catch (RestClientException e) {
             log.warn("[Trello] request failed for user {} KPI '{}': {}", userId, kpi.getName(), e.getMessage());
             return Optional.empty();
@@ -113,7 +128,7 @@ public class TrelloCardCountProvider implements ProxyProvider {
         }
     }
 
-    private int countCardsMovedIn(TrelloCredential credential, String listId, LocalDate date) {
+    private int countCardsMovedIn(String apiKey, String token, String listId, LocalDate date) {
         Instant dayStart = date.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant dayEnd = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 
@@ -121,8 +136,8 @@ public class TrelloCardCountProvider implements ProxyProvider {
                 .queryParam("filter", "updateCard")
                 .queryParam("since", dayStart.toString())
                 .queryParam("before", dayEnd.toString())
-                .queryParam("key", credential.getApiKey())
-                .queryParam("token", credential.getToken())
+                .queryParam("key", apiKey)
+                .queryParam("token", token)
                 .buildAndExpand(listId)
                 .encode()
                 .toUri();

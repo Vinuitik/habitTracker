@@ -34,4 +34,41 @@ public class UserSyncSettings {
     // connect time), this is created lazily on the first CapabilityDeployService.deployCapability()
     // call, since most users will never have a capability deployed to them in this milestone.
     private String capabilityDeployFolderId;
+
+    // true => driveRefreshToken and encryptionKey hold VaultEncryptionService.encryptAtRest() ciphertext.
+    // null/false => legacy raw row: read as-is, sealed on the next write or by
+    // UserSyncSettingsSecretsMigration at startup. Read secrets ONLY via plain*() — the Lombok
+    // getters return what is stored (ciphertext once sealed).
+    private Boolean secretsEncrypted;
+
+    public String plainDriveRefreshToken(VaultEncryptionService vault) {
+        return reveal(vault, driveRefreshToken);
+    }
+
+    public String plainEncryptionKey(VaultEncryptionService vault) {
+        return reveal(vault, encryptionKey);
+    }
+
+    public void storeDriveRefreshToken(VaultEncryptionService vault, String plain) {
+        sealSecrets(vault);
+        driveRefreshToken = vault.encryptAtRest(plain);
+    }
+
+    public void storeEncryptionKey(VaultEncryptionService vault, String plain) {
+        sealSecrets(vault);
+        encryptionKey = vault.encryptAtRest(plain);
+    }
+
+    /** Encrypts legacy raw secret fields in place and sets the flag. No-op (false) if already sealed. */
+    public boolean sealSecrets(VaultEncryptionService vault) {
+        if (Boolean.TRUE.equals(secretsEncrypted)) return false;
+        driveRefreshToken = vault.encryptAtRest(driveRefreshToken);
+        encryptionKey = vault.encryptAtRest(encryptionKey);
+        secretsEncrypted = true;
+        return true;
+    }
+
+    private String reveal(VaultEncryptionService vault, String stored) {
+        return Boolean.TRUE.equals(secretsEncrypted) ? vault.decryptAtRest(stored) : stored;
+    }
 }

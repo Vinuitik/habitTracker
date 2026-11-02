@@ -1,6 +1,6 @@
 # Offline Drive-Sync Flows
 
-Files: `UserSyncSettings.java`, `UserSyncSettingsRepository.java`, `ConsumedSyncRequest.java`, `ConsumedSyncRequestRepository.java`, `VaultEncryptionService.java`, `DriveService.java`, `DriveOAuthService.java`, `MailboxConsumeService.java`, `SyncController.java`, `PairingCodeService.java`, `CapabilityDeployService.java`
+Files: `UserSyncSettings.java`, `UserSyncSettingsRepository.java`, `ConsumedSyncRequest.java`, `ConsumedSyncRequestRepository.java`, `VaultEncryptionService.java`, `DriveService.java`, `DriveOAuthService.java`, `MailboxConsumeService.java`, `SyncController.java`, `PairingCodeService.java`, `CapabilityDeployService.java`, `UserSyncSettingsSecretsMigration.java`
 
 ## Why this exists
 
@@ -106,6 +106,15 @@ sister-project reference this design was benchmarked against, which uses a human
 To rotate a user's key: clearing `UserSyncSettings.encryptionKey` and forcing a reconnect would
 orphan any already-queued Drive files encrypted under the old key — not implemented; would need
 a migration path if this becomes necessary.
+
+### Secrets at rest (`driveRefreshToken`, `encryptionKey`)
+Both fields are stored as base64 `VaultEncryptionService.encryptAtRest()` ciphertext under the server key
+(`serverKey(KPI_SECRETS_KEY, JWT_SECRET)`, same key as `CapabilitySecretService`); `secretsEncrypted=true` marks a sealed row.
+- Write: `DriveOAuthService.handleCallback()` → `UserSyncSettings.storeDriveRefreshToken()/storeEncryptionKey()` (seals any legacy raw fields first)
+- Read (decrypt only here): `plainDriveRefreshToken()` → `DriveService.getAccessToken*()` in `MailboxConsumeService.consumeForUser()`, `CapabilityDeployService.deployCapability()`, `SyncController.status()`; `plainEncryptionKey()` → mailbox decrypt/deploy encrypt, `SyncController.status()` (browser) and `SyncController.pair()` (companion). Unflagged rows are read raw.
+- Migration: `UserSyncSettingsSecretsMigration` (`ApplicationRunner`, every startup) → rows with `secretsEncrypted != true` → `sealSecrets()` → conditional `updateFirst` (flag still unset) → logs counts only. Idempotent.
+- `MailboxConsumeService.consumeOnStartup()` (`@PostConstruct`) runs BEFORE the migration; it works because unflagged rows are read raw.
+- To change: `UserSyncSettings.plain*()/store*()/sealSecrets()`, `VaultEncryptionService.encryptAtRest()/decryptAtRest()`.
 
 ## Device pairing (M5 — companion devices get their own mailbox access)
 
@@ -237,6 +246,15 @@ reachability probe `static/js/offline/connectivity.js` uses to distinguish "serv
   refresh tokens after ~7 days. `SyncController.status()` treats a failed refresh as
   `connected: false` with `error: "reconnect_required"` rather than throwing, so the UI can
   prompt a reconnect instead of every mailbox consume pass failing silently in the logs.
+- **Secrets at rest are tied to the server key**: `driveRefreshToken`/`encryptionKey` are encrypted under
+  `KPI_SECRETS_KEY` or, if unset, a key derived from `JWT_SECRET`. Rotating `JWT_SECRET`, or setting
+  `KPI_SECRETS_KEY` later, makes every sealed row unreadable (decrypt throws; `/status` reports
+  `reconnect_required`, mailbox consume fails per user). Recovery = Disconnect (deletes the row) then
+  Connect again; a plain reconnect keeps the undecryptable vault key. Paired companions must re-pair.
+  Mongo backups (`backup/`) contain ciphertext, so a restore needs the same key.
+- **Migration vs. whole-document saves**: an entity loaded raw before the migration and saved
+  afterwards (e.g. `CapabilityDeployService.ensureFolder()`) writes the row back raw+unflagged; it
+  stays readable and is re-sealed on the next startup.
 
 ## Change Index
 
@@ -257,4 +275,6 @@ reachability probe `static/js/offline/connectivity.js` uses to distinguish "serv
 | Companion script | `tools/companion/pair.py` (+ `README.md` for manual verification) |
 | Capability-deploy folder name | `CapabilityDeployService.CAPABILITY_DEPLOY_FOLDER_NAME` |
 | Capability version scheme (int, "strictly newer" rule) | `CapabilityDeployService.deployCapability()` (server) / `pair.evaluate_capability_version()` (companion) |
+| Secrets at-rest encryption (driveRefreshToken, encryptionKey) | `UserSyncSettings.plain*()/store*()/sealSecrets()`; key `VaultEncryptionService(kpi.secrets.key, jwt.secret)` ← `KPI_SECRETS_KEY` / `JWT_SECRET` |
+| Legacy raw-row migration | `UserSyncSettingsSecretsMigration.migrate()` (flag `secretsEncrypted`) |
 | Companion capability-deploy polling + local cache | `tools/companion/pair.py` `poll_capability_deploy()` / `CAPABILITIES_CACHE_FILE` |

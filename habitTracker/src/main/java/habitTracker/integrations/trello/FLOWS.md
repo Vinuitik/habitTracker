@@ -1,6 +1,6 @@
 # Trello Integration Flows
 
-Files: TrelloCredential.java, TrelloCredentialRepository.java, TrelloCredentialController.java, TrelloApiClient.java, TrelloGatewayException.java, TrelloNotConnectedException.java, TrelloAuthException.java
+Files: TrelloCredential.java, TrelloCredentialRepository.java, TrelloCredentialController.java, TrelloApiClient.java, TrelloGatewayException.java, TrelloNotConnectedException.java, TrelloAuthException.java, TrelloCredentialSecretsMigration.java
 
 Per-user Trello access (the user's own apiKey+token). Consumers: `Project/` (boards, mirror), `KPI/TrelloCardCountProvider` (card-count KPI).
 
@@ -8,6 +8,8 @@ Per-user Trello access (the user's own apiKey+token). Consumers: `Project/` (boa
 `GET /api/integrations/trello/credentials` → `TrelloCredentialController.getStatus()` → `{configured}` (never returns secrets)
 `PUT /api/integrations/trello/credentials {apiKey, token}` → `saveCredentials()` → upsert `trello_credentials` (unique `userId`)
 - To change: `TrelloCredentialController`. Collection/REST path unchanged by the package move from `habitTracker.KPI`.
+- At rest: `saveCredentials()` → `TrelloCredential.storeApiKey()/storeToken()` → base64 `VaultEncryptionService.encryptAtRest()` ciphertext, `secretsEncrypted=true`. Decrypted only via `plainApiKey()/plainToken()` in `TrelloApiClient.call()`, `KPI/TrelloCardCountProvider.fetchValue()` and the `getStatus()` blank check. Undecryptable → `TrelloNotConnectedException` / KPI skipped / `configured:false`.
+- Migration: `TrelloCredentialSecretsMigration` (`ApplicationRunner`, every startup) → rows with `secretsEncrypted != true` → `sealSecrets()` → conditional `updateFirst` → logs counts only. Idempotent; unflagged rows are read raw until then.
 
 ## Direct API calls
 `TrelloApiClient.<method>(userId, ...)` → `TrelloCredentialRepository.findByUserId` → `RestTemplate` → `${trello.api.base-url}` (default https://api.trello.com; env `TRELLO_API_BASE_URL`)
@@ -21,7 +23,8 @@ Per-user Trello access (the user's own apiKey+token). Consumers: `Project/` (boa
 - To change fields fetched: `TrelloApiClient.BOARD_QS`. Timeouts: connect 5s / read 15s (`CONNECT_MS`/`READ_MS`).
 
 ## Technology Notes
-- apiKey+token are stored **plaintext** in Mongo (`trello_credentials`); anyone with DB access can use the user's Trello account. `CapabilitySecret` (KPI sandbox) is the encrypted alternative if this should change.
+- apiKey+token are stored AES-256-GCM encrypted under the server key (`KPI_SECRETS_KEY`, else derived from `JWT_SECRET`). Rotating `JWT_SECRET`, or setting `KPI_SECRETS_KEY` later, makes every stored credential unreadable: users must re-enter key+token. DB access alone no longer exposes them, but anyone with DB access AND the javaapp env can decrypt. Mongo backups hold ciphertext, so a restore needs the same key.
+- `backup/trello_mcp` does NOT use `trello_credentials`; it has its own `TRELLO_API_KEY`/`TRELLO_TOKEN` env.
 - Key/token go in the URL query (Trello's scheme): they can appear in proxy/access logs of anything between javaapp and api.trello.com; Spring exceptions may include the URI, so `TrelloApiClient` never puts `e.getMessage()` in its own messages.
 - Rate limit ~100 req/10s per token (300/10s per key). No retries, no backoff; 429 becomes `TrelloGatewayException` (status 429, `retryAfter` from the Retry-After header); `ProjectController` returns 429 `trello_rate_limited` for it, other failures 502. Write calls are not idempotent-safe to retry (createCard would duplicate), hence no retries.
 - `getBoard` with `cards=all` returns closed cards and closed lists too (filtered/flagged downstream). Very large boards => big payloads; the 15s read timeout is the only bound.
@@ -40,4 +43,6 @@ Per-user Trello access (the user's own apiKey+token). Consumers: `Project/` (boa
 | Failure logging / root-cause text | `TrelloApiClient.call()`, `rootCause()` |
 | Retry-After capture | `TrelloApiClient.call()`, `TrelloGatewayException.getRetryAfter()` |
 | Credential storage / REST | `TrelloCredential*`, `TrelloCredentialController` |
+| At-rest encryption of apiKey/token | `TrelloCredential.plain*()/store*()/sealSecrets()`; key `VaultEncryptionService(kpi.secrets.key, jwt.secret)` ← `KPI_SECRETS_KEY` / `JWT_SECRET` |
+| Legacy raw-row migration | `TrelloCredentialSecretsMigration.migrate()` (flag `secretsEncrypted`) |
 | Error to HTTP mapping | `ProjectController` handlers |

@@ -1,6 +1,7 @@
 package habitTracker.integrations.trello;
 
 import habitTracker.auth.SecurityUtils;
+import habitTracker.sync.VaultEncryptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +19,7 @@ import java.util.Map;
 public class TrelloCredentialController {
 
     private final TrelloCredentialRepository credentialRepository;
+    private final VaultEncryptionService vault;
 
     // Never returns apiKey/token — just whether a connection already exists, so the UI can show
     // "Connected" without re-displaying (or re-requiring) the secret on every edit.
@@ -28,7 +30,7 @@ public class TrelloCredentialController {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
         }
         boolean configured = credentialRepository.findByUserId(userId)
-                .map(c -> !isBlank(c.getApiKey()) && !isBlank(c.getToken()))
+                .map(this::isUsable)
                 .orElse(false);
         return ResponseEntity.ok(Map.of("configured", configured));
     }
@@ -47,12 +49,21 @@ public class TrelloCredentialController {
 
         TrelloCredential credential = credentialRepository.findByUserId(userId)
                 .orElseGet(() -> TrelloCredential.builder().userId(userId).build());
-        credential.setApiKey(apiKey);
-        credential.setToken(token);
+        credential.storeApiKey(vault, apiKey);
+        credential.storeToken(vault, token);
         credential.setUpdatedAt(LocalDateTime.now());
         credentialRepository.save(credential);
 
         return ResponseEntity.ok(Map.of("configured", true));
+    }
+
+    // An undecryptable credential (server key changed) counts as not configured, so the UI asks again.
+    private boolean isUsable(TrelloCredential c) {
+        try {
+            return !isBlank(c.plainApiKey(vault)) && !isBlank(c.plainToken(vault));
+        } catch (IllegalStateException e) {
+            return false;
+        }
     }
 
     private boolean isBlank(String s) {

@@ -43,7 +43,7 @@ class TrelloCardCountProviderTest {
     private static final LocalDate TARGET_DATE = LocalDate.of(2026, 8, 30);
 
     private TrelloCardCountProvider provider() {
-        return new TrelloCardCountProvider(credentialRepository, restTemplate, "https://api.trello.test");
+        return new TrelloCardCountProvider(credentialRepository, new habitTracker.sync.VaultEncryptionService(), restTemplate, "https://api.trello.test");
     }
 
     private KPI kpi(Map<String, String> proxyConfig) {

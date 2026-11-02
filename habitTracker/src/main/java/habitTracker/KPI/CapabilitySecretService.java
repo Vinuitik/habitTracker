@@ -5,8 +5,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -38,17 +36,7 @@ public class CapabilitySecretService {
                                    @Value("${jwt.secret}") String jwtSecret) {
         this.repository = repository;
         this.encryption = encryption;
-        this.key = configuredKey == null || configuredKey.isBlank() ? deriveKey(jwtSecret) : configuredKey.trim();
-    }
-
-    private static String deriveKey(String jwtSecret) {
-        try {
-            byte[] h = MessageDigest.getInstance("SHA-256")
-                    .digest(("kpi-capability-secrets|" + jwtSecret).getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(h);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+        this.key = VaultEncryptionService.serverKey(configuredKey, jwtSecret);
     }
 
     /** Names only, sorted. Never values. */
