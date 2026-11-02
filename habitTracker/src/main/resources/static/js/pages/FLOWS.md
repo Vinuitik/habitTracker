@@ -1,6 +1,6 @@
 # Projects page (frontend) FLOWS
 
-Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/merge-view.js, styles/organisms/merge-view.css, js/organisms/card-modal.js, js/organisms/plan-drawer.js, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
+Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/merge-view.js, styles/organisms/merge-view.css, js/organisms/card-modal.js, js/organisms/plan-drawer.js, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/molecules/folder-picker.js, js/organisms/repo-link.js, js/atoms/relay-api.js, styles/molecules/folder-picker.css, styles/organisms/repo-bar.css, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
 
 ## Routing
 `hashchange` → `route()` → fade out 180ms (`ENV.TIMING.VIEW_FADE_MS`) → `showIndex()` (`#/`) or `showBoard(id)` (`#/b/<id>`) → fade in.
@@ -61,6 +61,18 @@ Mobile: action buttons sit in one row directly under the title (`.card-detail__a
 - `boardMissing` in the response → `Board.setMissing()` shows the header banner "This board no longer exists in Trello" + Unlink → `h.onUnlink` → `unlinkMissing()` → `startDelete()` (normal two-step; navigates to `#/` afterwards).
 To change: poll interval `ENV.TIMING.BOARD_POLL_MS`; busy rules `Board.isBusy()`; diff fields `cardSig()`.
 
+## Repo link + repo map (board header row)
+`showBoard()` → `Board.render()` (header has an empty `[data-repo]` slot) → `RepoLink.mount(slot, id)` → GET `PROJECT(id)` → `project.link` (`{deviceId, path}`) decides the row.
+- Not linked: "Link folder" → `FolderPicker.open(id, onLinked)` (modal `#folder-modal`):
+  1. Runner: GET `RELAY_DEVICES` → rows (online first; offline disabled with "last seen"). None → empty state + "Install a runner" → `ROUTES.RELAY_INSTALL` (`/relay#/install`).
+  2. Browse: GET `RELAY_BROWSE(dev, path)` starting at `ENV.REPO.PICKER_START` (`~` = Documents/home); `''` = filesystem roots ("Computer" crumb). Breadcrumb from `BrowseResult.path` (Linux `/` or Windows `C:\` paths), `..` row = `parent`, folder rows are buttons. Keys: ↑/↓ move, Enter/→ open, ←/Backspace up, Esc close.
+  3. "Select this folder" (disabled in the roots view) → POST `PROJECT_LINK {deviceId, path}` → updated project → modal closes → row re-renders + map status loads.
+- Linked: "Linked to <folder>" (full path in tooltip) + Unlink (Menu inline confirm) → DELETE `PROJECT_LINK` (also drops any job state for that project).
+- Map status: GET `PROJECT_MAP` → `{commitSha, builtAt, subsystems[]}` = "Mapped · sha7 · age · N subsystems"; 404 = "Not mapped".
+- "Map repo"/"Remap" (note: uses your Claude tokens) → POST `PROJECT_MAP` → `{jobId}` → `tick()` every `ENV.TIMING.MAP_POLL_MS` (2s): GET `PROJECT_MAP_JOB(id, jobId, after)` → append `events[]` (`{kind: step|text|error, text}`), `after = nextSeq` → `state|status` `done` → panel closes, toast, status refetched; `failed` → panel stays with `error` (or the last error event) + Close. 404 on the job or 5 consecutive poll errors = failed.
+- Hub errors via `RelayApi.call()`: 401 → `/2fa/verify?next=<current url>`; 503 → "Runner offline"; 504 → "Runner didn't answer".
+To change: picker steps `FolderPicker.showDevices()/browse()/renderBrowse()`; header row `RepoLink.render()/renderProgress()`; poll `RepoLink.tick()`; error mapping `RelayApi.call()`.
+
 ## Trello not connected (HTTP 412)
 Any index/board/import/create call → `Api.isTrelloAuth(err)` → `showConnect()` → `ConnectPanel.render()` → PUT `TRELLO_CREDENTIALS {apiKey, token}` → `route()` (retry).
 `trello_token_invalid` changes only the panel copy.
@@ -93,6 +105,10 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 | Poll gating / apply | projects.js `pollBoard()`, `Board.isBusy()/stamp()/apply()` |
 | Open-modal remote refresh / dirty check | `CardModal.onRemote()/isDirty()` |
 | Missing-board banner + Unlink | `Board.setMissing()`, `.board__banner` in styles/organisms/board.css, projects.js `unlinkMissing()` |
+| Repo link / map URLs, picker start dir, poll ms, log cap | js/env.js (`PROJECT_LINK/MAP/MAP_JOB`, `RELAY_DEVICES/BROWSE`, `ROUTES.RELAY_INSTALL/TWOFA_VERIFY`, `REPO`, `TIMING.MAP_POLL_MS`) |
+| Folder picker steps / keyboard | `FolderPicker` (js/molecules/folder-picker.js), styles/molecules/folder-picker.css |
+| Repo row / map progress panel | `RepoLink.render()/renderProgress()/tick()`, styles/organisms/repo-bar.css |
+| Hub 401/503/504 handling | `RelayApi.call()` (js/atoms/relay-api.js) |
 | Mobile snap columns | styles/molecules/list-column.css, organisms/board.css (≤768px) |
 
 ## Technology Notes
@@ -111,3 +127,6 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 - Merge view is a separate lightweight renderer (read-only cards, no composer/modal); it holds its own copy of both boards and the 60s poll is stopped while it is open. The rollback of a failed cross-board move re-inserts only that list and its cards, so concurrent moves don't clobber each other. Labels are board-scoped in Trello: cards moved across keep their labels — verified 2026-10-27: Trello copies the labels onto the target board (same name/color, new board-scoped id).
 - A list drag needs the pointer on the header (not the kebab/name input); a dragged tmp list (still being created) is rejected with a toast.
 - Hover quick-complete is hidden on touch devices (`@media (hover: hover)`); use the modal there.
+- Repo link: the link fields are read from `project.link = {deviceId, path}` (GET `/api/projects/{id}`); if the backend names them differently, only `RepoLink.linkOf()` changes.
+- Map job state lives in memory per page load (`RepoLink` `jobs` map, keyed by project): it survives board re-renders and navigating between boards, but a page reload loses the jobId, so a running job's progress is no longer shown (the job itself keeps running server-side; the status updates once it lands). Hidden tabs skip job polls.
+- Folder browsing is unscoped on the runner (any directory, dotfolders hidden) — that's the runner's `/v1/browse` contract; every call needs a verified 2FA session (`/relay/api/**`).

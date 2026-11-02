@@ -136,6 +136,7 @@
       onUnlink: () => unlinkMissing(id),
       onCard: (card) => CardModal.open(card),
     });
+    RepoLink.mount(view().querySelector('[data-repo]'), id);
     startPoll(id, my);
     PlanDrawer.setOnChange(() => { if (location.hash === `#/b/${encodeURIComponent(id)}`) showBoard(id, seq, true); });
   }
@@ -384,6 +385,7 @@
     initTopbar(ENV.ROUTES.PROJECTS);
     CardModal.init();
     PlanDrawer.init();
+    FolderPicker.init();
     view().addEventListener('click', onViewClick);
     view().addEventListener('keydown', onViewKey);
     window.addEventListener('hashchange', route);

@@ -1,0 +1,95 @@
+/* Board header repo row (js/organisms/repo-link.js): folder link, repo-map status, map job progress. */
+.repo-bar {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.repo-bar:empty { display: none; }
+
+.repo-bar__linked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.repo-bar__linked strong { color: var(--color-text-primary); font-weight: 600; }
+
+.repo-bar__meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.repo-bar__meta--error { color: var(--color-danger); }
+
+.repo-bar__note {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.repo-bar__sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--space-1);
+  background: var(--color-border-hover);
+}
+
+/* Live progress of a map job */
+.map-progress {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.map-progress[hidden] { display: none; }
+
+.map-progress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 30px;
+}
+
+.map-progress__title { font-weight: 600; }
+.map-progress__title--error { color: var(--color-danger); }
+
+.map-progress__log {
+  list-style: none;
+  max-height: 160px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.map-progress__ev { overflow-wrap: anywhere; white-space: pre-wrap; }
+.map-progress__ev--step { color: var(--color-text-primary); }
+.map-progress__ev--step::before { content: '› '; color: var(--color-accent); }
+.map-progress__ev--text { color: var(--color-text-secondary); }
+.map-progress__ev--error { color: var(--color-danger); }
+
+.map-progress__error {
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
+@media (max-width: 768px) {
+  .repo-bar__sep { display: none; }
+  .map-progress__log { max-height: 120px; }
+}
