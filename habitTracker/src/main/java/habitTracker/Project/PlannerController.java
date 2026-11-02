@@ -65,6 +65,11 @@ public class PlannerController {
         return ResponseEntity.status(409).body(Map.of("error", "project_not_linked"));
     }
 
+    @ExceptionHandler(PlannerService.AlreadyAppliedException.class)
+    ResponseEntity<Map<String, String>> alreadyApplied() {
+        return ResponseEntity.status(409).body(Map.of("error", "planner_already_applied"));
+    }
+
     @ExceptionHandler(PlannerService.BusyException.class)
     ResponseEntity<Map<String, String>> busy() {
         return ResponseEntity.status(409).body(Map.of("error", "planner_busy"));

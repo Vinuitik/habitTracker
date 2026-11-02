@@ -68,6 +68,10 @@ public class PlannerService {
         public BusyException() { super("a planner job is still running"); }
     }
 
+    public static class AlreadyAppliedException extends RuntimeException {
+        public AlreadyAppliedException() { super("this plan was already added to the board"); }
+    }
+
     public record Started(String conversationId, String jobId) {}
 
     @PostConstruct
@@ -323,6 +327,7 @@ public class PlannerService {
         Project p = owned(projectId);
         PlannerConversation c = ownedConversation(p, conversationId);
         ensureIdle(c);
+        if (c.getAppliedAt() != null) throw new AlreadyAppliedException();  // a second apply would duplicate every card
         if (p.getTrelloBoardId() == null) throw new IllegalArgumentException("project has no Trello board");
         PlannerConversation.Draft draft = draftNode != null && !draftNode.isNull() ? parseDraft(draftNode) : c.getDraft();
         if (draft == null) throw new IllegalArgumentException("no draft to apply");

@@ -1,60 +1,26 @@
-"""Internal HTTP API (port 8092) so the Java app can call Trello functions directly.
+"""Internal HTTP API (port 8092): Trello board create/delete on mongo-backup's global Trello account.
+
+NOTE: javaapp no longer calls this (board lifecycle moved to the per-user TrelloApiClient; planning moved to
+Relay runners). Kept only because removal was out of scope; it has no remaining caller.
 
 Same process as the FastMCP server (started from mcp_server.py in a thread). Not in the Caddyfile and
 no published port: reachable only as mongo-backup:8092 on the docker network. No auth — network
 isolation is the only gate. Reuses the MCP tool functions directly — no logic is duplicated here.
 """
-import asyncio
-from typing import Literal
-
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-import claude_cli
-from trello_mcp.api import _get
-from trello_mcp.config import DEFAULT_PACE, TRELLO_BASE, ToolError, _auth
-from trello_mcp.tools_planning import apply_schedule
+from trello_mcp.config import TRELLO_BASE, _auth
 
 PORT = 8092
-_plan_lock = asyncio.Lock()  # single-flight: one `claude -p` at a time
-_capability_lock = asyncio.Lock()  # single-flight: one capability generation at a time
 
 
 class BoardIn(BaseModel):
     name: str
 
 
-class PlanIn(BaseModel):
-    boardId: str
-    description: str
-
-
-class CapabilityIn(BaseModel):
-    mode: Literal["propose", "generate"]
-    kpiName: str
-    description: str
-    proposal: str | None = None
-    declaredCapabilities: dict | None = None
-    previousCode: str | None = None
-    previousError: str | None = None
-
-
-class ApplyIn(BaseModel):
-    boardId: str
-    deadline: str | None = None
-    pace: float = DEFAULT_PACE
-
-
 app = FastAPI(title="HabitTracker internal API")
-
-
-async def _board_name(board_id: str) -> str:
-    async with httpx.AsyncClient() as client:
-        try:
-            return (await _get(client, f"/boards/{board_id}", fields="name"))["name"]
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(404 if e.response.status_code in (400, 404) else 502, "board lookup failed")
 
 
 @app.post("/internal/boards")
@@ -80,43 +46,6 @@ async def delete_board(board_id: str) -> dict:
     if r.status_code != 200:
         raise HTTPException(502, f"Trello delete board failed: {r.status_code}")
     return {"deleted": board_id}
-
-
-@app.post("/internal/agent/plan")
-async def agent_plan(body: PlanIn) -> dict:
-    if _plan_lock.locked():
-        raise HTTPException(409, "a plan request is already running")
-    async with _plan_lock:
-        name = await _board_name(body.boardId)
-        try:
-            return await claude_cli.run_plan(name, body.description)
-        except claude_cli.CliError as e:
-            raise HTTPException(e.status, str(e))
-
-
-@app.post("/internal/agent/capability")
-async def agent_capability(body: CapabilityIn) -> dict:
-    # propose -> {proposal, platform, declaredCapabilities}; generate -> {sourceCode}. No MCP tools.
-    if body.mode == "generate" and not (body.proposal or "").strip():
-        raise HTTPException(422, "generate requires an approved proposal")
-    if _capability_lock.locked():
-        raise HTTPException(409, "a capability request is already running")
-    async with _capability_lock:
-        try:
-            return await claude_cli.run_capability(
-                body.mode, body.kpiName, body.description, body.proposal,
-                body.declaredCapabilities, body.previousCode, body.previousError)
-        except claude_cli.CliError as e:
-            raise HTTPException(e.status, str(e))
-
-
-@app.post("/internal/agent/apply")
-async def agent_apply(body: ApplyIn) -> dict:
-    name = await _board_name(body.boardId)
-    try:
-        return await apply_schedule(board=name, deadline=body.deadline, pace=body.pace)
-    except ToolError as e:
-        raise HTTPException(422, str(e))
 
 
 def start_in_thread() -> None:

@@ -78,17 +78,6 @@ public class ProjectController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/{id}/plan")
-    public Map<String, Object> plan(@PathVariable String id, @RequestBody Map<String, Object> body) {
-        Object d = body.get("description");
-        return service.plan(id, d == null ? null : d.toString());
-    }
-
-    @PostMapping("/{id}/apply")
-    public Map<String, Object> apply(@PathVariable String id, @RequestBody(required = false) Map<String, Object> body) {
-        return service.apply(id, body);
-    }
-
     // ---- write-through board editing (Trello first, then snapshot patch) ----
 
     @PostMapping("/{id}/lists")

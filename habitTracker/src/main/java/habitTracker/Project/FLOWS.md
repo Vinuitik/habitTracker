@@ -1,6 +1,6 @@
 # Project Flows
 
-Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `BoardSyncScheduler.java`, `ProjectBoardService.java`, `TrelloBoardGateway.java`, `HttpTrelloBoardGateway.java`, `StubTrelloBoardGateway.java` (test only), `ProjectRunnerController.java`, `ProjectRunnerService.java`, `ProjectMap.java`, `ProjectMapRepository.java`, `resources/prompts/project-map.md`, `PlannerController.java`, `PlannerService.java`, `PlannerPrompts.java`, `PlannerConversation.java`, `PlannerConversationRepository.java`, `resources/prompts/planner-clarify.md`, `resources/prompts/planner-draft.md`. Direct Trello access: see `../integrations/trello/FLOWS.md`. Runner transport: see `../relay/FLOWS.md` (Runner client).
+Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `BoardSyncScheduler.java`, `ProjectBoardService.java`, `ProjectRunnerController.java`, `ProjectRunnerService.java`, `ProjectMap.java`, `ProjectMapRepository.java`, `resources/prompts/project-map.md`, `PlannerController.java`, `PlannerService.java`, `PlannerPrompts.java`, `PlannerConversation.java`, `PlannerConversationRepository.java`, `resources/prompts/planner-clarify.md`, `resources/prompts/planner-draft.md`. Direct Trello access: see `../integrations/trello/FLOWS.md`. Runner transport: see `../relay/FLOWS.md` (Runner client).
 
 A Project (name, description, userId, trelloBoardId, createdAt, imported; optional runner link: runnerDeviceId, runnerProjectId, folderName, mapJobId) is 1:1 with a Trello board. Collection `projects`.
 
@@ -31,7 +31,7 @@ Prompt = template + `{{TODAY}}`, `{{PROJECT_NAME}}`, `{{PROJECT_DESCRIPTION}}`, 
 - BOARD: `BoardSnapshotService.get(p, false)` (Trello failure → cached snapshot, else "(board not available)") → open lists + their open, not-done cards (+ due date), cap `relay.plan.board-max-chars` (20000).
 - HISTORY: User/Assistant turns incl. asked questions, oldest dropped first past `relay.plan.history-max-chars` (30000).
 - Templates instruct: map first, Read files only when needed, parallel haiku/sonnet subagents for multi-area research, output ONLY the JSON. To change: `resources/prompts/planner-clarify.md`, `planner-draft.md`; turn cap `relay.plan.max-turns` (80).
-`POST …/planner/{cid}/apply {draft?, deadline?, pace?}` → `PlannerService.apply()` → `owned()` (link not required) + idle → draft = body `draft` (validated by `parseDraft()`) else stored draft, none → 400 → bad deadline → 400 → per list: open board list with same name (ci, from the cached snapshot) reused, else `TrelloApiClient.createList(pos=bottom)` → per card: `TrelloApiClient.createCard {idList, name, desc + ```meta importance: N```, pos=bottom, due}` → due = card.due, else schedule date (by title, ci), else deadline, as `<date>T12:00:00.000Z` → save draft/appliedAt/deadline/pace → `BoardSnapshotService.get(p, true)` (failure only logged) → `{created: <cards>}`. The only Trello write of the planner.
+`POST …/planner/{cid}/apply {draft?, deadline?, pace?}` → `PlannerService.apply()` → `owned()` (link not required) + idle → draft = body `draft` (validated by `parseDraft()`) else stored draft, none → 400 → bad deadline → 400 → per list: open board list with same name (ci, from the cached snapshot) reused, else `TrelloApiClient.createList(pos=bottom)` → per card: `TrelloApiClient.createCard {idList, name, desc + ```meta importance: N```, pos=bottom, due}` → due = card.due, else schedule date (by title, ci), else deadline, as `<date>T12:00:00.000Z` → save draft/appliedAt/deadline/pace (`appliedAt` set → any later apply on this conversation → 409 `{error:"planner_already_applied"}`, checked before any Trello write; UI shows "Already added to the board") → `BoardSnapshotService.get(p, true)` (failure only logged) → `{created: <cards>}`. The only Trello write of the planner.
 - `pace` is stored only [NOT IMPLEMENTED: no effect on dates]; the schedule comes from the draft job.
 - Errors: runner 409/503/504 `{error:runner_*, message:"Connect a runner"}` · runner 4xx passthrough / 5xx → 502 · Trello 412 `trello_not_connected|trello_token_invalid` · 429 `trello_rate_limited` · other Trello → 502 `trello_error`. To change: `PlannerController` handlers.
 - Project delete removes its conversations (`ProjectService.delete()`).
@@ -78,16 +78,6 @@ Prompt = template + `{{TODAY}}`, `{{PROJECT_NAME}}`, `{{PROJECT_DESCRIPTION}}`, 
 - Missing/wrong/expired/reused/cross-project token → 403. Imported projects are only unlinked (the user's Trello board survives). Otherwise the board is deleted before the Mongo row so a Trello failure leaves the project retryable.
 To change TTL: `ProjectDeleteTokenService.DEFAULT_TTL_MS`.
 
-## Trello bridge (mongo-backup internal API)
-`HttpTrelloBoardGateway` → `http://mongo-backup:8092` (no auth). Used ONLY for plan/apply now (board create/delete/read moved to the direct per-user `TrelloApiClient`; the agent still uses mongo-backup's global Trello account, so it only works on boards that account can reach).
-To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
-
-## Plan / apply (agent)
-`POST /api/projects/{id}/plan {description}` → `ProjectController.plan()` → `ProjectService.plan()` (`owned()`, 404 if not owner; blank description or no board → 400) → `TrelloBoardGateway.plan()` → `POST /internal/agent/plan {boardId, description}` → `{cards, proposal}` returned as-is.
-`POST /api/projects/{id}/apply {deadline?, pace?}` → `ProjectService.apply()` → `POST /internal/agent/apply` (only `deadline`/`pace` forwarded) → result as-is.
-- Errors: upstream 409 (plan already running) → 409; any other upstream failure/timeout/unreachable → 502 (`TrelloGatewayException`). To change: `ProjectController.upstream()`.
-- Timeouts: connect 5s; read 30s (apply), 6 min for plan. To change: `HttpTrelloBoardGateway` `READ_MS` / `PLAN_READ_MS`.
-
 ## Technology Notes
 - Sync cadence: 15-min background job + the frontend's 60s poll while a board is open (which only hits Trello once the 60s TTL lapses). Worst-case latency for a Trello-side edit: ~15 min unattended, ~1-2 min with the board open.
 - `dateLastActivity` probe semantics: Trello bumps it on any board activity (card/list/label/member edits, comments), so it can differ without a visible change (extra full fetch, harmless); equal means no activity and the snapshot is kept. It is a string compare, not a clock compare. A snapshot with no stored marker (pre-Stage 3) is always refetched once.
@@ -101,12 +91,9 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 - Delete tokens are in-memory (`ConcurrentHashMap`): lost on restart, single-node only, expired entries are only purged when redeemed (small leak of unredeemed tokens until restart).
 - A failed redeem still consumes the token (remove-first); the user must request a new one.
 - Cross-user ids return 404 (not 403) deliberately, to avoid leaking existence.
-- Stub gateway is `@Profile("stub")`, activated only by `src/test/resources/application.properties`. Prod uses `HttpTrelloBoardGateway` (`@Profile("!stub")`).
-- **No auth on the internal API** (deliberate): the only gate is that port 8092 is neither in the Caddyfile nor published. Anything else on the docker network (any container) can create/delete Trello boards and run the agent. Adding a published port or a Caddy route for it would expose that to the internet.
-- No retries anywhere. Plan holds a servlet thread for up to ~5-6 min (fine at ~20 users; many concurrent plans would exhaust Tomcat threads). A javaapp-side timeout does not cancel the upstream run, so a retry may hit 409.
 - Snapshot cache: 60s TTL, Mongo-backed (survives restart, shared across nodes), no invalidation besides `?refresh=true`; concurrent refreshes just upsert last-write-wins. Trello rate limit is ~100 req/10s per token (300/10s per key); each refresh is 1 request, import is 1 per board. No backoff: a 429 surfaces as 502 (or stale snapshot).
 - Trello creds are per user (`trello_credentials`), apiKey+token stored **plaintext** in Mongo (not encrypted at rest, unlike `CapabilitySecret`). Token and key travel as query params to Trello (Trello's API design); never logged here.
-- mongo-backup down → only plan/apply fail (502). Trello down → create/import/delete 502; board view falls back to stale snapshot. Delete token is consumed before the Trello call, so a failed delete needs a new token.
+- javaapp no longer depends on mongo-backup (old server-side plan/apply removed; planning runs on Relay runners). Trello down → create/import/delete 502; board view falls back to stale snapshot. Delete token is consumed before the Trello call, so a failed delete needs a new token.
 - Delete order: board first, Mongo row second, so an upstream failure leaves a retryable project; a board deleted upstream but a crash before `deleteById` leaves a project pointing at a missing board.
 - Moving a list is two non-atomic steps for us (Trello move, then snapshot refetch of both boards). If the refetch fails the board view self-heals on the next refresh. Moving a list to a board the token can't write to yields a Trello 4xx surfaced as 502. Labels are board-scoped in Trello; moved cards keep their labels — verified 2026-10-27: Trello copies the labels onto the target board (same name/color, new board-scoped id).
 - No unique constraint on project name per user.
@@ -138,11 +125,7 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 | 429 mapping | `ProjectController.upstream()` |
 | Ownership guard | `ProjectService.owned()`, `ProjectRepository.findByIdAndUserId` |
 | Delete token TTL / format | `ProjectDeleteTokenService` |
-| Trello bridge URL | `trello.internal.base-url` in `application.properties` |
-| Upstream paths / timeouts (agent) | `HttpTrelloBoardGateway` |
-| plan/apply endpoints | `ProjectController.plan()/apply()`, `ProjectService.plan()/apply()` |
-| Upstream error mapping (409/502) | `ProjectController.upstream()`, `HttpTrelloBoardGateway.call()` |
-| Test stub gateway | `StubTrelloBoardGateway`, `spring.profiles.active=stub` in test `application.properties` |
+| Upstream error mapping (409/502) | `ProjectController.upstream()` |
 | Error status mapping | `@ExceptionHandler`s in `ProjectController` |
 | Create/link behavior | `ProjectService.create()` |
 | Import / board picker | `ProjectService.importBoards()/trelloBoards()`, `ProjectController` |
@@ -165,4 +148,5 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 | Planner prompt size caps / turn cap | `relay.plan.map-max-chars`, `relay.plan.board-max-chars`, `relay.plan.history-max-chars`, `relay.plan.max-turns` |
 | Which map notes are dropped first | `PlannerPrompts.mapSection()/relevance()` |
 | Draft → Trello (list reuse, due fallback, meta block) | `PlannerService.apply()/withMeta()` |
+| Double-apply guard (409 `planner_already_applied`) | `PlannerService.apply()` (`appliedAt` check), `PlannerController.alreadyApplied()`, `planner.js applyDraft()` |
 | Conversation shape / collection | `PlannerConversation` (`planner_conversations`) |

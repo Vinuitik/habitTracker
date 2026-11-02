@@ -16,7 +16,7 @@ Cloudflare edge → cloudflared (tunnel) → Caddy:80 → javaapp:8089
 | Caddy → javaapp | `caddy/Caddyfile` | Reverse proxy to `javaapp:8089`; auto-TLS from Let's Encrypt |
 | Caddy → mongo-backup (MCP) | `caddy/Caddyfile` `handle_path /mcp/*` | Strips `/mcp` prefix; proxies to `mongo-backup:8091` |
 | javaapp | Spring Boot | Listens on `8089`; no public port exposed |
-| mongo-backup internal API | FastAPI/uvicorn | `8092`, docker network only (not in Caddyfile), **no auth**; javaapp → `mongo-backup:8092` — see `backup/FLOWS_mcp.md` |
+| mongo-backup internal API | FastAPI/uvicorn | `8092`, docker network only (not in Caddyfile), **no auth**; no remaining caller (javaapp stopped using it) — see `backup/FLOWS_mcp.md` |
 | mongo-backup MCP | FastMCP SSE | Listens on `8091`; no public port exposed — see `backup/FLOWS_mcp.md` |
 
 To change the public domain: `cloudflared/config.yml` + `caddy/Caddyfile` (both reference the hostname).
@@ -30,7 +30,7 @@ To change TLS: Caddy handles it automatically — no cert files needed unless sw
 |---|---|---|---|
 | `mongodbHabit` | `mongo:7` | none (internal only) | 512m |
 | `javaapp` | `eclipse-temurin:21-jre-alpine` | none | 384m / JVM max 256m |
-| `mongo-backup` | `python:3.10-slim-bookworm` + Node/Claude CLI | none | 768m (Claude CLI subprocess) |
+| `mongo-backup` | `python:3.10-slim-bookworm` | none | 256m (backup + MCP server, Python only) |
 | `caddy` | `caddy:2` | 80, 443 | 64m |
 | `cloudflared` | `cloudflare/cloudflared` | none | 64m |
 
@@ -87,7 +87,6 @@ git push origin master
 | Cloudflare tunnel token | `cloudflared` auth | `.env` → `cloudflared` |
 | `SANDBOX_EGRESS_SECRET` | HMAC key (>=32 chars) for per-run egress tokens; unset = networked capabilities fail closed. NOT auto-deployed: auto-deploy only rebuilds `javaapp`, so set it in `.env` and run `docker compose up -d --build sandbox egress-proxy` by hand (see `egress-proxy/FLOWS.md`) | `.env` → `sandbox` + `egress-proxy` |
 | `KPI_SECRETS_KEY` | Optional base64 AES key for users' capability secrets (blank = derived from `JWT_SECRET`) | `.env` → `javaapp` |
-| `CLAUDE_HOME` | Host dir with Claude CLI login, mounted rw at `/root/.claude` in mongo-backup (default `~/.claude`) | `.env` → compose volume |
 | `habitbackup.json` | Google Drive backup | File mounted into `mongo-backup` container |
 
 ---

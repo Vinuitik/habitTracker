@@ -43,7 +43,6 @@ class ProjectIntegrationTest {
     @Autowired MongoTemplate mongoTemplate;
     @Autowired JwtUtil jwtUtil;
     @Autowired ObjectMapper json;
-    @SpyBean TrelloBoardGateway gateway;
     @MockBean TrelloApiClient trello;
     @SpyBean ProjectDeleteTokenService tokens;
 
@@ -56,7 +55,7 @@ class ProjectIntegrationTest {
         auth = new AuthTestHelper(mongoTemplate, jwtUtil);
         mongoTemplate.dropCollection(Project.class);
         mongoTemplate.dropCollection(User.class);
-        reset(gateway, trello);
+        reset(trello);
         mongoTemplate.dropCollection(BoardSnapshot.class);
         when(trello.createBoard(any(), any())).thenAnswer(i -> "tb-" + java.util.UUID.randomUUID());
         alice = auth.register("alice@test.com");

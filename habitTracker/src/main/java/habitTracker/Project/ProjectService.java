@@ -22,7 +22,6 @@ import java.util.stream.Collectors;
 public class ProjectService {
 
     private final ProjectRepository repository;
-    private final TrelloBoardGateway boardGateway;
     private final TrelloApiClient trello;
     private final BoardSnapshotService snapshots;
     private final BoardSnapshotRepository snapshotRepository;
@@ -135,16 +134,6 @@ public class ProjectService {
         mapRepository.deleteByProjectId(p.getId());
         plannerConversations.deleteByProjectId(p.getId());
         repository.deleteById(p.getId());
-    }
-
-    public Map<String, Object> plan(String id, String description) {
-        Project p = owned(id);
-        if (description == null || description.isBlank()) throw new IllegalArgumentException("description is required");
-        return boardGateway.plan(boardOf(p), description);
-    }
-
-    public Map<String, Object> apply(String id, Map<String, Object> body) {
-        return boardGateway.apply(boardOf(owned(id)), body);
     }
 
     private String boardOf(Project p) {

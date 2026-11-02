@@ -112,10 +112,7 @@ services:
       TRELLO_TOKEN: ${TRELLO_TOKEN:-}
       TRELLO_CRON_BOARD_ID: ${TRELLO_CRON_BOARD_ID:-}
       TRELLO_CRON_BOARD_NAME: ${TRELLO_CRON_BOARD_NAME:-}
-    volumes:
-      # Claude CLI subscription login. Read-write: the CLI refreshes tokens in place.
-      - ${CLAUDE_HOME:-~/.claude}:/root/.claude
-    mem_limit: 768m
+    mem_limit: 256m
     restart: unless-stopped
 
   caddy:

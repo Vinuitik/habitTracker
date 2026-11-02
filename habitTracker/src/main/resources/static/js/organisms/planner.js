@@ -451,7 +451,8 @@ window.Planner = (() => {
       s.applying = false;
       if (isOffline(e)) s.offline = true;
       renderAll();
-      $('planner-status').textContent = isOffline(e) ? 'No runner connected.' : e.message;
+      $('planner-status').textContent = isOffline(e) ? 'No runner connected.'
+        : e.code === 'planner_already_applied' ? 'Already added to the board' : e.message;
       $('planner-status').classList.add('planner__status--error');
     }
   }

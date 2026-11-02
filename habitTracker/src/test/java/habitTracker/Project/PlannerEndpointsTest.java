@@ -225,6 +225,12 @@ class PlannerEndpointsTest {
         mockMvc.perform(post(url).with(auth.session(alice)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"draft\":{\"lists\":[{\"name\":\"New\",\"cards\":[{\"title\":\"T\",\"desc\":\"d\"}]}],\"schedule\":[]}}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1));
+        assertNotNull(mongoTemplate.findById(c.getId(), PlannerConversation.class).getAppliedAt());
+        // second apply → 409, no further Trello writes
+        mockMvc.perform(post(url).with(auth.session(alice)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"draft\":{\"lists\":[{\"name\":\"New\",\"cards\":[{\"title\":\"T\",\"desc\":\"d\"}]}],\"schedule\":[]}}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error").value("planner_already_applied"));
+        verify(trello, times(1)).createCard(any(), any());
         verify(runner, never()).startJob(any(), any(), any());
     }
 

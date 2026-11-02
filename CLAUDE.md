@@ -69,7 +69,7 @@ cloudflared/config.yml Tunnel ingress rules (habittrackerdima.me)
 |---------|-----------|--------------|
 | mongodbHabit | 512m | wiredTigerCacheSizeGB 0.25 |
 | javaapp | 384m | -Xmx256m -Xms64m |
-| mongo-backup | 768m | — (Node + Claude CLI subprocess) |
+| mongo-backup | 256m | — (backup.py + Trello MCP server, Python only) |
 | sandbox | 64m | — (ephemeral script containers: 128m / 0.25 cpu each, max 4 concurrent, outside this limit) |
 | egress-proxy | 48m | — (stdlib proxy, max 64 concurrent connections) |
 | caddy | 64m | — |
