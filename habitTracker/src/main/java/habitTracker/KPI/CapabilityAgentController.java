@@ -69,7 +69,9 @@ public class CapabilityAgentController {
 
     @ExceptionHandler(CapabilityGeneratorException.class)
     ResponseEntity<?> generator(CapabilityGeneratorException e) {
-        return ResponseEntity.status(e.isBusy() ? HttpStatus.CONFLICT : HttpStatus.BAD_GATEWAY)
+        HttpStatus status = e.isBusy() ? HttpStatus.CONFLICT
+                : e.isNoRunner() ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
+        return ResponseEntity.status(status)
                 .body(Map.of("error", e.getMessage()));
     }
 }

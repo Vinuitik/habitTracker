@@ -110,7 +110,7 @@ class CapabilityEgressIntegrationTest {
     }
 
     private String proposeGithub(UserPrincipal u, String kpiName) throws Exception {
-        when(generator.propose(anyString(), anyString()))
+        when(generator.propose(anyString(), anyString(), anyString()))
                 .thenReturn(new CapabilityGenerator.Proposal("Count my open PRs", "SERVER", GITHUB));
         return call(u, "POST", "/api/kpis/" + kpiName + "/capability/propose", "{\"description\":\"open PRs\"}", 200)
                 .get("id").asText();
@@ -194,7 +194,7 @@ class CapabilityEgressIntegrationTest {
         assertTrue(res.get("failureReason").asText().contains("secret GITHUB_TOKEN not set"), res.toString());
         assertEquals(0, res.get("attempts").asInt());
         verifyNoInteractions(sandboxClient);
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any());
+        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -205,7 +205,7 @@ class CapabilityEgressIntegrationTest {
 
         setSecret(alice, "GITHUB_TOKEN", "ghp_alice_value", 200);
         setSecret(alice, "UNRELATED_SECRET", "must-not-be-sent", 200);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(3)");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(3)");
         when(sandboxClient.run(any())).thenReturn(ok("3"));
 
         JsonNode res = call(alice, "POST", "/api/kpis/PRs/capability/" + id + "/regenerate", null, 200);
@@ -239,9 +239,9 @@ class CapabilityEgressIntegrationTest {
     void capabilityWithNoDeclaredAccess_getsNoHostsAndNoSecrets_evenIfUserHasSecrets() throws Exception {
         kpi(alice, "Widgets");
         setSecret(alice, "GITHUB_TOKEN", "ghp_alice_value", 200);
-        when(generator.propose(anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
+        when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
                 "Count", "SERVER", Map.of("network", List.of(), "secrets", List.of())));
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
         when(sandboxClient.run(any())).thenReturn(ok("1"));
         String id = call(alice, "POST", "/api/kpis/Widgets/capability/propose", "{\"description\":\"x\"}", 200).get("id").asText();
 

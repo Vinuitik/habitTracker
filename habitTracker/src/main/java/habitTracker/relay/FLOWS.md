@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -68,6 +68,7 @@ ANY /relay/api/devices/{id}/v1/** → RelayProxyController.proxy() → DeviceSer
 Hub feature (e.g. Project/ProjectRunnerService) → RunnerJobService.startJob/pollJob/cancelJob/send(userId, deviceId, …) → RunnerClient.call(userId, deviceId, method, path, body) → DeviceService.owned() else RunnerUnavailableException(DEVICE_NOT_FOUND) → RunnerClient.exchange() → UplinkRegistry.request() → no socket / socket closed → RunnerUnavailableException(OFFLINE) → wait `relay.proxy.timeout-ms` → RunnerUnavailableException(TIMEOUT) (+ UplinkRegistry.cancel) → `res` frame → UplinkRegistry.Response
 - RunnerJobService: non-2xx → RunnerCallException(status, raw body); 2xx → parsed JSON (blank → `{}`).
 - Job endpoints (runner contract): `POST /v1/jobs {kind: map|plan|kpi, projectId?, prompt, model?, maxTurns?}` → `{jobId}` · `GET /v1/jobs/{id}?after=<seq>` → `{jobId, kind, state, events[], nextSeq, result?, error?, usage?}` · `DELETE /v1/jobs/{id}`. Job id must match `[A-Za-z0-9_-]{1,128}` (RunnerJobService.checkId) so it can't address another runner path.
+- No deviceId chosen by the user (e.g. KPI/RunnerCapabilityGenerator) → OnlineRunnerSelector.pick(userId): DeviceService.list() → UplinkRegistry.isOnline() → most recent markUsed() (in-memory) → then lastSeenAt → empty = "Connect a runner".
 - UI mapping: RunnerUnavailableException.code() = `runner_not_found` / `runner_offline` / `runner_timeout`; callers answer with `message: "Connect a runner"` (see Project/ProjectRunnerController.unavailable()).
 To change: timeout `relay.proxy.timeout-ms`; error codes RunnerUnavailableException.code().
 
@@ -172,6 +173,7 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | Proxy path mapping / error bodies | RelayProxyController.proxy(), error() |
 | Server-initiated runner call (ownership + offline/timeout) | RunnerClient.call(), exchange() |
 | Runner job start/poll/cancel, job id check | RunnerJobService.startJob(), pollJob(), cancelJob(), checkId() |
+| Which online runner gets a server-chosen job | OnlineRunnerSelector.pick(), markUsed() |
 | "Connect a runner" error codes | RunnerUnavailableException.code() |
 | Close codes | UplinkRegistry.REPLACED (4000), REVOKED (4001) |
 | Verification lifetime | `RELAY_2FA_TTL_HOURS` / `relay.2fa.ttl-hours` |
