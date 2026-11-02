@@ -96,17 +96,19 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
                 throw fromCall(e);
             }
             after = snap.path("nextSeq").asLong(after);
+            forwardEvents(snap);
             String state = snap.path("state").asText("");
+            if (!"running".equals(state) && !"queued".equals(state)) CapabilityProgress.usage(snap.get("usage"));
             if ("done".equals(state)) return snap.get("result");
             if (!"running".equals(state) && !"queued".equals(state) && !state.isEmpty()) {
                 String err = snap.path("error").asText("");
-                throw new CapabilityGeneratorException("Generation " + state + " on your runner"
-                        + (err.isBlank() ? "" : ": " + truncate(err)), false, null);
+                throw new CapabilityGeneratorException("The AI on your runner stopped (" + state + ")"
+                        + (err.isBlank() ? "" : ": " + truncate(err)) + ". Check the runner, then try again", false, null);
             }
             if (System.currentTimeMillis() >= deadline) {
                 cancelQuietly(userId, deviceId, jobId);
                 throw new CapabilityGeneratorException("Generation timed out on your runner after "
-                        + jobTimeoutMs / 1000 + "s", false, null);
+                        + jobTimeoutMs / 1000 + "s. Try again, or describe a simpler capture", false, null);
             }
             try {
                 sleeper.sleep(pollMs);
@@ -114,6 +116,19 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
                 Thread.currentThread().interrupt();
                 cancelQuietly(userId, deviceId, jobId);
                 throw new CapabilityGeneratorException("Generation interrupted", false, e);
+            }
+        }
+    }
+
+    /** Runner step/text events → the bound progress sink (no-op without one). Text only, capped. */
+    private static void forwardEvents(JsonNode snap) {
+        JsonNode events = snap.get("events");
+        if (events == null || !events.isArray()) return;
+        for (JsonNode ev : events) {
+            String kind = ev.path("kind").asText("");
+            String text = ev.path("text").asText("").strip();
+            if (("step".equals(kind) || "text".equals(kind)) && !text.isEmpty()) {
+                CapabilityProgress.runnerEvent(kind, text.length() > 200 ? text.substring(0, 200) + "..." : text);
             }
         }
     }
@@ -128,9 +143,12 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
 
     private static CapabilityGeneratorException fromCall(RunnerCallException e) {
         boolean busy = e.getStatus() == 409 || e.getStatus() == 429;
+        // The body is runner JSON: logged, never shown to the user.
+        if (!busy) log.warn("runner call failed: {} {}", e.getStatus(), truncate(e.getBody()));
         return new CapabilityGeneratorException(busy
                 ? "Your runner is busy with another job, try again in a minute"
-                : "Runner returned " + e.getStatus() + ": " + truncate(e.getBody()), busy, e);
+                : "Your runner refused the job (HTTP " + e.getStatus() + "). Check the runner app is up to date, then try again",
+                busy, e);
     }
 
     private static String truncate(String s) {

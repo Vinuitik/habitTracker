@@ -116,6 +116,57 @@ class CapabilityAgentIntegrationTest {
         return call(auth.session(u), "POST", "/api/kpis/" + kpiName + "/capability/" + id + "/" + action, null, expected);
     }
 
+    private JsonNode waitJob(UserPrincipal u, String kpiName, String jobId) throws Exception {
+        for (int i = 0; i < 300; i++) {
+            JsonNode s = call(auth.session(u), "GET", "/api/kpis/" + kpiName + "/capability/jobs/" + jobId + "?after=0", null, 200);
+            if (!"running".equals(s.get("state").asText())) return s;
+            Thread.sleep(20);
+        }
+        throw new AssertionError("job did not finish");
+    }
+
+    // ── async jobs (UI path) ─────────────────────────────────────────────────
+
+    @Test
+    void asyncJobs_proposeThenApprove_streamStepsAndReturnParsedCapability() throws Exception {
+        kpi(alice, "Widgets");
+        when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
+                "Count the things", "SERVER", NO_ACCESS, "Widgets made per day", "Computed locally"));
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(5)");
+        when(sandboxClient.run(any())).thenReturn(ok("5\n"));
+
+        String jobId = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
+                "{\"action\":\"propose\",\"description\":\"count my widgets\"}", 202).get("jobId").asText();
+        JsonNode done = waitJob(alice, "Widgets", jobId);
+        assertEquals("done", done.get("state").asText());
+        assertEquals("PROPOSED", done.at("/result/status").asText());
+        assertEquals("Widgets made per day", done.at("/result/measures").asText());
+        assertEquals("Drafting a plan on your runner", done.at("/events/0/text").asText());
+        assertEquals("step", done.at("/events/0/kind").asText());
+        // another user cannot see the job
+        call(auth.session(bob), "GET", "/api/kpis/Widgets/capability/jobs/" + jobId + "?after=0", null, 404);
+
+        String capId = done.at("/result/id").asText();
+        String approveJob = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
+                "{\"action\":\"approve\",\"id\":\"" + capId + "\"}", 202).get("jobId").asText();
+        JsonNode approved = waitJob(alice, "Widgets", approveJob);
+        assertEquals("ACTIVE", approved.at("/result/status").asText());
+        assertEquals(2, approved.get("events").size()); // writing + testing
+        call(auth.session(alice), "GET", "/api/kpis/Widgets/capability/jobs/active", null, 204);
+    }
+
+    @Test
+    void asyncJobs_noRunner_failsWithSentence() throws Exception {
+        kpi(alice, "Widgets");
+        when(generator.propose(anyString(), anyString(), anyString())).thenThrow(CapabilityGeneratorException.noRunner(null));
+        String jobId = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
+                "{\"action\":\"propose\",\"description\":\"x\"}", 202).get("jobId").asText();
+        JsonNode s = waitJob(alice, "Widgets", jobId);
+        assertEquals("failed", s.get("state").asText());
+        assertEquals("runner_offline", s.get("code").asText());
+        assertEquals("Connect a runner to generate this capability", s.get("error").asText());
+    }
+
     // ── happy path ───────────────────────────────────────────────────────────
 
     @Test

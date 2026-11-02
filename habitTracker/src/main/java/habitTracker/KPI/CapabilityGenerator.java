@@ -11,7 +11,13 @@ import java.util.Map;
  */
 public interface CapabilityGenerator {
 
-    record Proposal(String proposal, String platform, Map<String, List<String>> declaredCapabilities) {}
+    /** measures / dataSource: optional one-sentence plain-language summaries for the UI (null when omitted). */
+    record Proposal(String proposal, String platform, Map<String, List<String>> declaredCapabilities,
+                    String measures, String dataSource) {
+        public Proposal(String proposal, String platform, Map<String, List<String>> declaredCapabilities) {
+            this(proposal, platform, declaredCapabilities, null, null);
+        }
+    }
 
     /** True when userId has a runner online right now (cheap, no LLM call). */
     boolean runnerAvailable(String userId);

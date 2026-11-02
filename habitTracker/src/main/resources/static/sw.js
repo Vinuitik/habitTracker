@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v10';
+const VERSION = 'v11';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -93,9 +93,13 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Live state that must never be served stale: KPI capability status + Automate job polls.
+const API_NO_CACHE = /^\/api\/kpis\/[^/]+\/capability(\/|$)/;
+
 function isApiGet(request) {
   if (request.method !== 'GET') return false;
   const url = new URL(request.url);
+  if (API_NO_CACHE.test(url.pathname)) return false;
   return API_PREFIXES.some((p) => url.pathname === p || url.pathname.startsWith(p + '/'));
 }
 

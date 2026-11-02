@@ -228,7 +228,7 @@ window.Planner = (() => {
       parts.push(jobsAt(i + 1));
     });
     if (showQ && lastAi < 0) parts.push(`<div class="planner-msg planner-msg--ai">${qHtml}</div>`);
-    if (S.error && S.state !== 'running') parts.push(`<div class="planner-steps"><div class="planner-step planner-step--error"><span class="planner-step__mark">✕</span><span class="planner-step__text">${esc(S.error)}</span></div></div>`);
+    if (S.error && S.state !== 'running') parts.push(StepList.error(S.error));
     t.innerHTML = parts.join('');
     if (nearBottom) t.scrollTop = t.scrollHeight;
   }
@@ -236,29 +236,12 @@ window.Planner = (() => {
   function jobHtml(job) {
     if (!job.events.length && !(job === S.jobs[S.jobs.length - 1] && S.state === 'running')) return '';
     const live = job === S.jobs[S.jobs.length - 1] && S.state === 'running';
-    const steps = job.events;
-    const lastStep = steps.map((e) => e.kind).lastIndexOf('step');
-    const rows = steps.map((ev, i) => {
-      if (ev.kind === 'error') return row('error', '✕', ev.text);
-      if (ev.kind === 'text') return row('text', '·', ev.text);
-      const running = live && i === lastStep;
-      return row(running ? 'running' : 'done', running ? '●' : '✓', ev.text, running ? ev.t : null);
-    });
-    if (live && lastStep < 0) rows.push(row('running', '●', job.kind === 'lock' ? 'Starting the draft' : 'Waiting for the runner', Date.now()));
-    return `<div class="planner-steps" aria-label="AI working steps">${rows.join('')}</div>`;
+    return StepList.html(job.events, live, job.kind === 'lock' ? 'Starting the draft' : 'Waiting for the runner');
   }
-
-  function row(kind, mark, text, since) {
-    const time = since ? `<span class="planner-step__time" data-since="${since}">${elapsed(since)}</span>` : '';
-    return `<div class="planner-step planner-step--${kind}"><span class="planner-step__mark" aria-hidden="true">${mark}</span><span class="planner-step__text">${esc(text)}</span>${time}</div>`;
-  }
-  const elapsed = (since) => `${Math.max(0, Math.round((Date.now() - since) / 1000))}s`;
 
   function startTick() {
     if (tickTimer) return;
-    tickTimer = setInterval(() => {
-      el().querySelectorAll('[data-since]').forEach((n) => { n.textContent = elapsed(+n.dataset.since); });
-    }, 1000);
+    tickTimer = setInterval(() => StepList.tick(el()), 1000);
   }
   function stopTick() { clearInterval(tickTimer); tickTimer = null; }
 

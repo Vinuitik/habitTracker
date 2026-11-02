@@ -1,6 +1,6 @@
 # Projects page (frontend) FLOWS
 
-Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/merge-view.js, styles/organisms/merge-view.css, js/organisms/card-modal.js, js/organisms/planner.js, js/organisms/planner-mock.js, styles/organisms/planner.css, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/molecules/folder-picker.js, js/organisms/repo-link.js, js/atoms/relay-api.js, styles/molecules/folder-picker.css, styles/organisms/repo-bar.css, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
+Files: projects.html, js/pages/projects.js, js/organisms/board.js, js/organisms/merge-view.js, styles/organisms/merge-view.css, js/organisms/card-modal.js, js/organisms/planner.js, js/organisms/planner-mock.js, styles/organisms/planner.css, js/molecules/card-tile.js, js/molecules/composer.js, js/molecules/connect-panel.js, js/molecules/folder-picker.js, js/molecules/step-list.js, styles/molecules/step-list.css, js/organisms/repo-link.js, js/atoms/relay-api.js, styles/molecules/folder-picker.css, styles/organisms/repo-bar.css, js/atoms/dnd.js, js/atoms/api.js, js/atoms/dom.js, js/atoms/menu.js, js/atoms/icons.js, js/env.js, styles/pages/projects.css
 
 ## Routing
 `hashchange` → `route()` → fade out 180ms (`ENV.TIMING.VIEW_FADE_MS`) → `showIndex()` (`#/`) or `showBoard(id)` (`#/b/<id>`) → fade in.
@@ -48,7 +48,7 @@ To change: `MergeView.moveList()/onDrop()`, `startMerge()`, `pickBoard()`.
 `Planner.open(id)` → #planner (full-screen dialog, focus trapped, body gets `.planner-open`).
 Brief → `startJob('chat')` → POST `PLANNER_START {message, conversationId?}` → `{conversationId, jobId}` → `poll()` every `ENV.TIMING.PLANNER_POLL_MS` → GET `PLANNER_POLL(id, conv, after=nextSeq)` → `ingest()` → `renderAll()`; polling stops when `state` ≠ running.
 - `waiting_user` + `questions` → one textarea per question (`renderComposer()`, rebuilt only when questions change so typed text survives), answers sent as one message; "Lock decisions & draft" → POST `PLANNER_LOCK` → running again.
-- Work steps: events of the current job render as rows under the triggering message (`jobHtml()`): last step while running = ● + elapsed seconds (1s ticker, no looping animation), earlier = ✓; `text` = ·, `error` = ✕.
+- Work steps: events of the current job render as rows under the triggering message (`jobHtml()` → `StepList.html()`): last step while running = ● + elapsed seconds (1s ticker `StepList.tick()`, no looping animation), earlier = ✓; `text` = ·, `error` = ✕. `StepList` (js/molecules/step-list.js + styles/molecules/step-list.css, classes `.step-list` / `.step-row--*`) is shared with the KPI Automate dialog (js/kpi-list.js, see `KPI/FLOWS.md`).
 - Draft: adopted from every poll while running (read-only), final on `drafted` (`adoptDraft()` gives each card a key `k`; schedule entries link by title → `k`). Edits (rename / delete / importance pips) mutate `S.draft` and the linked schedule entries; week strip re-renders (`renderWeek()`: one column per day first→last date or deadline, cap 62 days, blocks sized by importance).
 - "Add to board" (only Trello write) → POST `PLANNER_APPLY {draft, deadline?, pace?}` → `{created}` → toast → `discard()` → onChange.
 - Close / Esc → `requestClose()`: conversation or draft present → in-dialog confirm (Keep editing / Discard); else discard. Route change → `Planner.hide()` keeps state (reopening the same project resumes; another project discards it).
@@ -102,6 +102,7 @@ Copy differs for `project.imported` (unlink vs delete Trello board): `startDelet
 | Label/due styling | CardTile.tagClass / dueInfo, styles/atoms/badge.css |
 | Card detail layout | CardModal.open, `.modal-box--wide` in styles/molecules/modal.css |
 | Planner layout / week strip | styles/organisms/planner.css |
+| AI work-step rows (planner + KPI Automate) | `StepList` (js/molecules/step-list.js), styles/molecules/step-list.css |
 | Planner flow / API adapter / mock toggle | `Planner` (js/organisms/planner.js), `ENV.FEATURES.PLANNER_MOCK`, `ENV.ENDPOINTS.PLANNER_*` |
 | Write endpoints | js/env.js (`PROJECT_LISTS/LIST/CARDS/CARD/CARD_COMPLETE/CARD_REOPEN`) |
 | Optimistic write / rollback | Board.mutate, Board.fail |

@@ -18,6 +18,11 @@ window.ENV = {
     KPI_PROXY:       (name) => `/api/kpis/${encodeURIComponent(name)}/proxy`,
     KPI_SECRETS:     '/api/kpi-secrets',
     KPI_SECRET:      (name) => `/api/kpi-secrets/${encodeURIComponent(name)}`,
+    KPI_CAP:         (name) => `/api/kpis/${encodeURIComponent(name)}/capability`,
+    KPI_CAP_REJECT:  (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/reject`,
+    KPI_CAP_JOBS:    (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs`,
+    KPI_CAP_ACTIVE:  (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/active`,
+    KPI_CAP_JOB:     (name, id, after) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/${encodeURIComponent(id)}?after=${after}`,
     PROJECTS:        '/api/projects',
     PROJECT:         (id) => `/api/projects/${id}`,
     PROJECTS_IMPORT: '/api/projects/import',
@@ -79,6 +84,7 @@ window.ENV = {
     BOARD_POLL_MS: 60000,     // open-board poll for changes made directly in Trello
     PLANNER_POLL_MS: 1200,    // planner conversation poll while the AI is working
     MAP_POLL_MS: 2000,        // repo-map job progress poll
+    KPI_CAP_POLL_MS: 1500,    // KPI Automate job poll while the runner/sandbox works
   },
   BOARD: {
     POS_STEP: 65536,          // Trello pos spacing for append / empty list
