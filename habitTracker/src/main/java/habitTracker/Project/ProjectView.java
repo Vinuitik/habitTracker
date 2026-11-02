@@ -15,6 +15,9 @@ public class ProjectView {
     private String trelloBoardId;
     private LocalDateTime createdAt;
     private boolean imported;
+    private String runnerDeviceId;
+    private String runnerProjectId;
+    private String folderName;
     private Integer cardCount;
     private Integer doneCount;
     private Instant syncedAt;
@@ -28,6 +31,9 @@ public class ProjectView {
         v.trelloBoardId = p.getTrelloBoardId();
         v.createdAt = p.getCreatedAt();
         v.imported = p.isImported();
+        v.runnerDeviceId = p.getRunnerDeviceId();
+        v.runnerProjectId = p.getRunnerProjectId();
+        v.folderName = p.getFolderName();
         if (s != null) {
             var open = s.getCards().stream().filter(c -> !c.isClosed()).toList();
             v.cardCount = open.size();

@@ -1,8 +1,23 @@
 # Project Flows
 
-Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `BoardSyncScheduler.java`, `ProjectBoardService.java`, `TrelloBoardGateway.java`, `HttpTrelloBoardGateway.java`, `StubTrelloBoardGateway.java` (test only). Direct Trello access: see `../integrations/trello/FLOWS.md`
+Files: `Project.java`, `ProjectRepository.java`, `ProjectService.java`, `ProjectController.java`, `ProjectDeleteTokenService.java`, `ProjectView.java`, `BoardSnapshot.java`, `BoardSnapshotRepository.java`, `BoardSnapshotService.java`, `BoardSyncScheduler.java`, `ProjectBoardService.java`, `TrelloBoardGateway.java`, `HttpTrelloBoardGateway.java`, `StubTrelloBoardGateway.java` (test only), `ProjectRunnerController.java`, `ProjectRunnerService.java`, `ProjectMap.java`, `ProjectMapRepository.java`, `resources/prompts/project-map.md`. Direct Trello access: see `../integrations/trello/FLOWS.md`. Runner transport: see `../relay/FLOWS.md` (Runner client).
 
-A Project (name, description, userId, trelloBoardId, createdAt, imported) is 1:1 with a Trello board. Collection `projects`.
+A Project (name, description, userId, trelloBoardId, createdAt, imported; optional runner link: runnerDeviceId, runnerProjectId, folderName, mapJobId) is 1:1 with a Trello board. Collection `projects`.
+
+## Runner link (local folder on the user's Relay runner)
+`POST /api/projects/{id}/link {deviceId, path}` → `ProjectRunnerController.link()` → `ProjectRunnerService.link()` → `owned()` (404) → blank deviceId/path → 400 → `register()` → `RunnerJobService.send(POST /v1/projects {path})` → 201 `{id, name}`; runner 400/409 → `GET /v1/projects` (array or `{projects:[]}`) → entry whose `path` equals (trailing slash ignored) → reuse; none → original runner error → save `runnerDeviceId`, `runnerProjectId`, `folderName` (runner `name`, else last path segment), clear `mapJobId` → Project JSON
+`DELETE /api/projects/{id}/link` → `ProjectRunnerService.unlink()` → null the 4 fields → Project JSON. The runner keeps the folder registered; the stored map is kept.
+- Device ownership is enforced inside `RunnerClient.call()` (another user's / deleted device → 409 `runner_not_found`).
+To change: path match `ProjectRunnerService.samePath()`, display name `lastSegment()`.
+
+## Repo map (built by Claude Code on the runner)
+`POST /api/projects/{id}/map` → `ProjectRunnerService.startMap()` → `owned()` → not linked → 409 `project_not_linked` → `RunnerJobService.startJob(kind="map", projectId=runnerProjectId, prompt=prompts/project-map.md, maxTurns)` → save `Project.mapJobId` → 202 `{jobId}`
+Prompt: survey repo → split into 3-12 subsystems → ONE subagent per subsystem in parallel (haiku/sonnet), each returns FLOWS-style notes (Files: line, arrow chains, Change Index, `[NOT IMPLEMENTED]`) → synthesize index + cross-subsystem links → commitSha from `.git/HEAD` + refs/packed-refs (no Bash) → final message = only `{commitSha, index, subsystems:[{name, paths, notes}]}`. To change: `src/main/resources/prompts/project-map.md`; turn cap `relay.map.max-turns` (200).
+`GET /api/projects/{id}/map/job/{jobId}?after=N` → `ProjectRunnerService.pollMap()` → `owned()` + linked → jobId ≠ `Project.mapJobId` → 404 → `RunnerJobService.pollJob()` → runner snapshot passed through as-is → if `state=done`: stored map already has this jobId → `mapStored:true` (no rewrite); else `parse(result)` (object, or text: first `{` … last `}`, so code fences/prose are tolerated; needs ≥1 subsystem with a name, ≤100) → upsert `project_maps` (same `_id` per project) with `builtAt=now` → `mapStored:true`; unusable result → `mapStored:false, mapError` (nothing stored, WARN log)
+`GET /api/projects/{id}/map` → `ProjectRunnerService.mapSummary()` → `{commitSha, builtAt, subsystems:[{name, paths}]}` (index + notes not returned) or 404 `{error:"no map yet"}`
+- Project delete also deletes its `project_maps` doc (`ProjectService.delete()`).
+- Errors (ProjectRunnerController): runner_not_found 409 · runner_offline 503 · runner_timeout 504 (all with `message:"Connect a runner"`) · runner 4xx passthrough / 5xx → 502 `{error:"runner_error", runnerStatus, detail}` · bad input 400.
+- Full map read (index + notes) for agents [NOT IMPLEMENTED]; staleness check vs current commit [NOT IMPLEMENTED].
 
 ## CRUD + isolation
 `/api/projects` → `ProjectController` → `ProjectService` → `SecurityUtils.getCurrentUserId()` → `ProjectRepository.findByUserId` / `findByIdAndUserId`
@@ -78,6 +93,12 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 - Delete order: board first, Mongo row second, so an upstream failure leaves a retryable project; a board deleted upstream but a crash before `deleteById` leaves a project pointing at a missing board.
 - Moving a list is two non-atomic steps for us (Trello move, then snapshot refetch of both boards). If the refetch fails the board view self-heals on the next refresh. Moving a list to a board the token can't write to yields a Trello 4xx surfaced as 502. Labels are board-scoped in Trello; moved cards keep their labels — verified 2026-10-27: Trello copies the labels onto the target board (same name/color, new board-scoped id).
 - No unique constraint on project name per user.
+- **Repo map is only as good as the agent's final message:** the hub parses free text; a truncated or malformed JSON (long notes, bad escaping) yields `mapError` and nothing stored — re-run the map. The whole poll response must fit the 4 MiB uplink body limit, so a huge repo's map can fail with 502 (`response too large`).
+- **Store-once is per jobId, not locked:** two concurrent polls of a just-finished job can both parse and upsert; same content, last write wins (`projectId` unique index prevents duplicates). Index is created in `ProjectRunnerService.init()` (auto-index-creation is off).
+- **Only the latest map job is pollable** (`Project.mapJobId`); starting a new one orphans the old jobId (it keeps running on the runner; not cancelled). Relinking also clears it.
+- **Map cost runs on the user's own Claude Code** (their plan/quota), N+1 agents per build; nothing is billed to the hub. Map jobs run with the runner's default model for the orchestrator; subagent models are chosen by the prompt.
+- **commitSha comes from the agent reading `.git`**: a detached HEAD, packed refs or worktree (`.git` is a file) may yield an empty or wrong SHA; it's informational only.
+- **runnerProjectId is the runner's local id:** re-pairing the runner or wiping its project registry invalidates it — relink.
 
 ## Change Index
 | What | Where |
@@ -106,3 +127,11 @@ To change URL: `trello.internal.base-url` (env `TRELLO_INTERNAL_BASE_URL`).
 | Snapshot shape / collection | `BoardSnapshot` (`trello_board_snapshots`) |
 | List counts | `ProjectView.of()` |
 | 412 Trello error mapping | `ProjectController.notConnected()/badTrelloToken()` |
+| Runner link fields | `Project.runnerDeviceId/runnerProjectId/folderName/mapJobId`, `ProjectView.of()` |
+| Link / unlink, reuse of an existing runner registration | `ProjectRunnerService.link()/register()/unlink()` |
+| Map prompt | `src/main/resources/prompts/project-map.md` |
+| Map job turn cap | `relay.map.max-turns` (default 200) |
+| Map result parsing / limits | `ProjectRunnerService.parse()`, `MAX_SUBSYSTEMS` |
+| Map storage shape / collection | `ProjectMap` (`project_maps`), `ProjectMapRepository` |
+| Map summary fields | `ProjectRunnerService.mapSummary()` |
+| Runner error → HTTP mapping | `ProjectRunnerController` `@ExceptionHandler`s |
