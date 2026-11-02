@@ -56,8 +56,18 @@ Every call: relay.js call() → Api.raw() (sends cookie `XSRF-TOKEN` as `X-XSRF-
 To change messages / redirect: relay.js call().
 
 ### Devices `#/`
-showDevices() → GET /relay/api/devices → rows (dot = `online`, "last seen" = Dom.timeAgo(lastSeenAt)) → row → `#/d/<id>`
-"Add device" → addDevice() → two cards: **Recommended · with your phone** = `/opt/relay/bin/relay-runner pair` (+ `--hub <origin>` unless origin == DEFAULT_HUB) and what to do with the QR; **Desktop alternative** → "Get a code" → getCode() → POST /relay/api/devices/pairing-code → code + same command with `--code <CODE>` → Copy (navigator.clipboard; no clipboard API (plain http) → selects the text)
+showDevices() → GET /relay/api/devices → rows (dot = `online`, "last seen" = Dom.timeAgo(lastSeenAt)) → row → `#/d/<id>`; empty list → "Install your first runner" CTA → `#/install`
+"Add device" → addDevice() → two cards: **Recommended · with your phone** = pairCmd() for this browser's OS (OS from navigator.userAgent: `Windows` → `& "$env:LOCALAPPDATA\Relay\bin\relay-runner.exe" pair`, else `/opt/relay/bin/relay-runner pair`; + `--hub <origin>` unless origin == DEFAULT_HUB), what to do with the QR, link "New machine? Install guide" → `#/install`; **Desktop alternative** → "Get a code" → getCode() → POST /relay/api/devices/pairing-code → code + same command with `--code <CODE>` (OS from `#code-box[data-os]`)
+Copy buttons: any `.relay-cmd` → copyCommand() copies its `<code>` (navigator.clipboard; no clipboard API (plain http) → selects the text)
+
+### Install guide `#/install`
+Entry: empty device list CTA · Add-device card link · static/install.html "Install a runner" (`/relay#/install`)
+showInstall() → OS tabs (guideOs, preselected = OS; `data-act="os"` re-renders) → GUIDE[os] text → steps: open shell → INSTALL_CMD[os] (copy) → scan the QR the script prints (phone → `/relay/claim/<id>` → QR pairing above; Ctrl-C skips) → online under Devices
+→ "Already installed" card: Linux `sudo -u <your user> /opt/relay/bin/relay-runner pair` / Windows PAIR_CMD.windows (+ `--hub`), code fallback (codeBox(guideOs) → getCode(), Linux adds the `sudo -u` prefix inside the guide)
+→ Troubleshooting `<details>`: QR expired / Ctrl-C → rerun pair · offline → Linux `systemctl status relay-runner@<user>` + `journalctl -u relay-runner@<user> -f`, Windows Task Scheduler "Relay keeper" · pair run as the wrong user · machine asleep
+Origin ≠ DEFAULT_HUB → extra hint: Ctrl-C the installer's QR, use the pair command (it carries `--hub`).
+Commands are a contract with the Relay repo's release scripts (install.sh / install.ps1, Linux service `relay-runner@<user>`, Windows task "Relay keeper"); the page only displays them.
+To change commands: relay.js INSTALL_CMD, PAIR_CMD, LINUX_AS_USER. Guide text per OS: relay.js GUIDE. OS guess: relay.js OS.
 "Revoke" → confirm() → DELETE /relay/api/devices/{id} → re-render. New device shows after Refresh (no auto-poll on this view).
 
 ### Sessions `#/d/<id>`
@@ -104,6 +114,8 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 - **UI state is in memory only:** the hash URL (`#/d/<id>/s/<sid>`) is the only thing that survives a refresh. An unsent draft is lost on refresh and on the 401 → /2fa/verify redirect; scroll position is lost too. Device names are cached per page load only.
 - **No JS tests:** HabitTracker has no JS test framework; relay.js keeps logic small (router, call(), md(), render()). The MockMvc test only proves the shell renders for a verified user.
 - **Service worker:** /relay is not in sw.js PAGE_ROUTES (precaching would follow the 2FA redirect), but a good online visit caches the shell like any navigation; /relay/api is never cached (not in API_PREFIXES). Offline you get the shell plus "Network error".
+- **Install commands are hardcoded** (relay.js INSTALL_CMD/PAIR_CMD): GitHub repo `Vinuitik/relay`, `releases/latest`, `/opt/relay/bin`, `%LOCALAPPDATA%\Relay\bin`. Renaming the repo, moving the install dir or dropping a release asset breaks the guide silently; `latest` means the guide always installs the newest runner, no pinning.
+- **OS guess is userAgent-only:** anything not matching `Windows` (macOS, ChromeOS, phones) defaults to the Linux tab; macOS has no runner build [NOT IMPLEMENTED].
 - **Clipboard:** navigator.clipboard needs a secure context (https / localhost); on plain http the Copy button only selects the command.
 
 ## Change Index
@@ -133,7 +145,12 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | Relay page shell | templates/relay.html, RelayController.relay() |
 | Relay UI routes (hash) | relay.js route() |
 | Hub status → message / 2FA redirect | relay.js call() |
-| Pair command text | relay.js addDevice(), getCode(), PAIR_CMD, DEFAULT_HUB |
+| Pair command text | relay.js addDevice(), getCode(), PAIR_CMD (per OS), pairCmd(), DEFAULT_HUB |
+| Installer commands (contract with Relay release scripts) | relay.js INSTALL_CMD |
+| Install guide text / troubleshooting per OS | relay.js GUIDE, showInstall() |
+| OS preselect (userAgent) | relay.js OS |
+| Install guide entry points | relay.js showDevices() (empty CTA), addDevice() (link); static/install.html (card) |
+| Install guide look | relay.css `.relay-steps`, `.relay-step`, `.relay-tabs`, `.relay-faq`, `.relay-empty__cta`, `.relay-link` |
 | QR claim TTL / cap / id length | ClaimService.TTL_SECONDS, MAX_PENDING, ID_LENGTH |
 | QR confirm page | relay.js showClaim(), claimAction(); route RelayController `/relay/claim/{id}` |
 | QR runner endpoints (permitAll, CSRF-ignored, 2FA-excluded) | SecurityConfig, WebConfig (`/relay/pair/start`, `/relay/pair/poll`) |

@@ -114,6 +114,63 @@
   line-height: 1.6;
 }
 .relay-empty--error { color: var(--color-danger); }
+/* Empty device list: CTA to the install guide. */
+.relay-empty__cta { display: flex; width: fit-content; margin: var(--space-4) auto var(--space-2); }
+
+.relay-link { color: var(--color-accent); font-size: var(--text-sm); }
+.relay-link:hover { color: var(--color-accent-hover); }
+.relay-hint code { font-family: var(--font-mono); font-size: 0.9em; }
+
+/* ── install guide (#/install) ── */
+.relay-intro { margin-bottom: var(--space-4); line-height: 1.6; }
+.relay-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.relay-steps {
+  list-style: none;
+  counter-reset: relay-step;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin: var(--space-6) 0;
+  padding: 0;
+}
+.relay-step {
+  counter-increment: relay-step;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-left: calc(28px + var(--space-3));
+}
+.relay-step::before {
+  content: counter(relay-step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-dim);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.relay-step__title { font-weight: 600; line-height: 28px; }
+.relay-step__action { align-self: flex-start; }
+.relay-section {
+  margin-bottom: var(--space-2);
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+.relay-faq {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+.relay-faq > summary { cursor: pointer; font-weight: 600; }
+.relay-faq > * + * { margin-top: var(--space-2); }
 
 .relay-new { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
 .relay-new select { flex: 1; min-width: 0; }
