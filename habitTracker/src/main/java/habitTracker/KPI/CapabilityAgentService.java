@@ -20,8 +20,10 @@ import java.util.Optional;
  * Failure keeps the version non-active with failureReason stored; regenerate feeds it back (cap MAX_ATTEMPTS).
  * Repair (M12) = a new version seeded with the old code + failure, same test gate.
  *
- * Every public user-facing method scopes by SecurityUtils.getCurrentUserId(); capabilities are only
- * ever loaded via (id, userId, kpiId), never by id alone.
+ * Every public user-facing method scopes by SecurityUtils.getCurrentUserId(); the *As(userId, ...) variants take
+ * the id captured on the request thread (CapabilityTaskService runs them on a worker thread with no security
+ * context). Capabilities are only ever loaded via (id, userId, kpiId), never by id alone.
+ * Stage changes are reported to CapabilityProgress (no-op unless a CapabilityTaskService task is bound).
  */
 @Service
 public class CapabilityAgentService {
@@ -59,7 +61,10 @@ public class CapabilityAgentService {
 
     /** Stages 1-2. Throws CapabilityRejectedException if the sandbox cannot grant what the agent asks for. */
     public CapabilityDTO propose(String kpiName, String description) {
-        String userId = currentUser();
+        return proposeAs(currentUser(), kpiName, description);
+    }
+
+    CapabilityDTO proposeAs(String userId, String kpiName, String description) {
         KPI kpi = requireKpi(userId, kpiName);
         if (description == null || description.isBlank()) {
             throw new IllegalArgumentException("Describe what should be captured");
@@ -72,6 +77,7 @@ public class CapabilityAgentService {
             throw new IllegalStateException("This KPI already has an active capability");
         }
 
+        CapabilityProgress.step("Drafting a plan on your runner");
         CapabilityGenerator.Proposal p = generator.propose(userId, kpi.getName(), description.trim());
         Map<String, List<String>> granted = checkGrantable(p.platform(), p.declaredCapabilities());
 
@@ -87,6 +93,7 @@ public class CapabilityAgentService {
                 .userId(userId).kpiId(kpi.getId())
                 .platform(CapabilityPlatform.SERVER).language("python")
                 .description(description.trim()).proposal(p.proposal())
+                .measures(p.measures()).dataSource(p.dataSource())
                 .declaredCapabilities(granted)
                 .status(CapabilityStatus.PROPOSED)
                 .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
@@ -97,7 +104,10 @@ public class CapabilityAgentService {
 
     /** Stages 3-4. Approval is the permission grant for exactly the stored declaredCapabilities. */
     public CapabilityDTO approve(String kpiName, String capabilityId) {
-        String userId = currentUser();
+        return approveAs(currentUser(), kpiName, capabilityId);
+    }
+
+    CapabilityDTO approveAs(String userId, String kpiName, String capabilityId) {
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
         if (cap.getStatus() != CapabilityStatus.PROPOSED) {
@@ -120,7 +130,10 @@ public class CapabilityAgentService {
 
     /** Retry after a failed test gate, feeding the stored failure back into the prompt. */
     public CapabilityDTO regenerate(String kpiName, String capabilityId) {
-        String userId = currentUser();
+        return regenerateAs(currentUser(), kpiName, capabilityId);
+    }
+
+    CapabilityDTO regenerateAs(String userId, String kpiName, String capabilityId) {
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
         if (cap.getStatus() != CapabilityStatus.TEST_FAILED) {
@@ -131,7 +144,10 @@ public class CapabilityAgentService {
 
     /** Manual "fix it": same pipeline as the automatic M12 repair trigger, single attempt. */
     public CapabilityDTO repair(String kpiName) {
-        String userId = currentUser();
+        return repairAs(currentUser(), kpiName);
+    }
+
+    CapabilityDTO repairAs(String userId, String kpiName) {
         KPI kpi = requireKpi(userId, kpiName);
         return CapabilityDTO.from(repairFor(userId, kpi, false));
     }
@@ -160,6 +176,7 @@ public class CapabilityAgentService {
                 target = repository.save(KPIProxyCapability.builder()
                         .userId(userId).kpiId(kpi.getId()).platform(latest.getPlatform()).language(latest.getLanguage())
                         .description(latest.getDescription()).proposal(latest.getProposal())
+                        .measures(latest.getMeasures()).dataSource(latest.getDataSource())
                         .declaredCapabilities(latest.getDeclaredCapabilities())
                         .sourceCode(latest.getSourceCode())
                         .failureReason(repairReason(latest))
@@ -221,6 +238,7 @@ public class CapabilityAgentService {
         }
 
         String code;
+        CapabilityProgress.step("Writing the script on your runner");
         try {
             code = generator.generate(cap.getUserId(), kpi.getName(), cap.getDescription(), cap.getProposal(),
                     cap.getDeclaredCapabilities(), cap.getSourceCode(), cap.getFailureReason());
@@ -239,6 +257,7 @@ public class CapabilityAgentService {
         } catch (MissingSecretException e) { // deleted between the pre-check and now
             return fail(cap, "Test gate failed: " + e.getMessage());
         }
+        CapabilityProgress.step("Testing the script in the sandbox for " + sampleDate);
         SandboxClient.Result result = sandboxClient.run(request);
         Double value = result.ok() ? SandboxCapabilityProvider.parseLastLine(result.stdout()) : null;
         if (value == null) {

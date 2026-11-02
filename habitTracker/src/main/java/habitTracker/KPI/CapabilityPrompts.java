@@ -93,7 +93,16 @@ public class CapabilityPrompts {
             }
             norm.put(key, list);
         }
-        return new CapabilityGenerator.Proposal(proposal.asText().strip(), platform, norm);
+        return new CapabilityGenerator.Proposal(proposal.asText().strip(), platform, norm,
+                optionalText(out, "measures"), optionalText(out, "dataSource"));
+    }
+
+    // Optional one-line summaries for the UI; absent / non-text / blank → null (the UI falls back).
+    private static String optionalText(JsonNode out, String field) {
+        JsonNode n = out.get(field);
+        if (n == null || !n.isTextual() || n.asText().isBlank()) return null;
+        String s = n.asText().strip();
+        return s.length() > 500 ? s.substring(0, 500) + "..." : s;
     }
 
     /** Agent's final message → python source. */
@@ -151,7 +160,7 @@ public class CapabilityPrompts {
     }
 
     private static CapabilityGeneratorException bad(String msg) {
-        return new CapabilityGeneratorException("Runner " + msg, false, null);
+        return new CapabilityGeneratorException("The AI's reply could not be used (" + msg + "). Try again", false, null);
     }
 
     private static String load(String name) {

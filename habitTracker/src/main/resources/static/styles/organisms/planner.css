@@ -146,36 +146,7 @@
   color: var(--color-text-primary);
 }
 
-/* AI work log: compact rows that tick off */
-.planner-steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  border-left: 2px solid var(--color-border-hover);
-}
-
-.planner-step {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-mono);
-  color: var(--color-text-muted);
-  animation: planner-row-in 200ms ease-out;
-}
-
-.planner-step__mark { flex-shrink: 0; width: 12px; }
-.planner-step__text { flex: 1; overflow-wrap: anywhere; }
-.planner-step__time { flex-shrink: 0; color: var(--color-text-muted); }
-
-.planner-step--running { color: var(--color-text-primary); }
-.planner-step--running .planner-step__mark { color: var(--color-accent); }
-.planner-step--done .planner-step__mark { color: var(--color-success); }
-.planner-step--text { color: var(--color-text-secondary); }
-.planner-step--error,
-.planner-step--error .planner-step__mark { color: var(--color-danger); }
+/* AI work log rows: styles/molecules/step-list.css */
 
 @keyframes planner-row-in {
   from { opacity: 0; transform: translateY(8px); }
@@ -485,6 +456,5 @@
 @media (prefers-reduced-motion: reduce) {
   .planner,
   .planner-msg,
-  .planner-step,
   .planner-card--new { animation: none; }
 }

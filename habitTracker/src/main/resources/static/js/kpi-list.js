@@ -157,7 +157,16 @@ function showMessage(message, type) {
 }
 
 // ── M8: "Automate" — describe -> proposal -> approve -> test gate (see KPI/FLOWS.md) ─────────────
-const AUTOMATE = { kpiName: null, needsRepair: false, busy: false, current: null, reloadOnClose: false };
+// LLM steps (propose / approve / regenerate / repair) run as async server jobs: POST ENV.ENDPOINTS.KPI_CAP_JOBS
+// → {jobId}, then poll KPI_CAP_JOB every ENV.TIMING.KPI_CAP_POLL_MS → {state, events, nextSeq, result?, error?,
+// usage?}. Steps render with the shared StepList molecule. Everything shown is plain text via textContent
+// (proposal / code / errors are LLM or script output) — never a JSON dump.
+const AUTOMATE = {
+    kpiName: null, needsRepair: false, current: null, reloadOnClose: false,
+    job: null,          // {id, state, events: [{seq,kind,text,t}], nextSeq, error, usage, startedAt}
+    pollTimer: null, tickTimer: null, gen: 0,
+};
+const E_KPI = ENV.ENDPOINTS;
 
 function automateEl(tag, className, text) {
     const el = document.createElement(tag);
@@ -173,74 +182,194 @@ function automateButton(label, cls, handler) {
     return b;
 }
 
+async function automateFetch(url, method, body) {
+    const res = await fetch(url, {
+        method: method || 'GET',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
+        body: body ? JSON.stringify(body) : undefined
+    });
+    const data = res.status === 204 ? null : await res.json().catch(() => null);
+    if (!res.ok) {
+        const err = new Error((data && data.error) || `The server answered ${res.status}. Try again in a minute.`);
+        err.status = res.status;
+        throw err;
+    }
+    return data;
+}
+
 async function openAutomateModal(kpiName, needsRepair) {
-    AUTOMATE.kpiName = kpiName;
-    AUTOMATE.needsRepair = !!needsRepair;
-    AUTOMATE.reloadOnClose = false;
+    automateStopPolling();
+    const gen = ++AUTOMATE.gen;
+    Object.assign(AUTOMATE, { kpiName, needsRepair: !!needsRepair, reloadOnClose: false, job: null, current: null });
     document.getElementById('automateModal').classList.add('open');
     renderAutomate(null);
     try {
-        const res = await fetch(`/api/kpis/${encodeURIComponent(kpiName)}/capability`, { credentials: 'include' });
-        renderAutomate(res.status === 200 ? await res.json() : null);
+        const [cap, active] = await Promise.all([
+            automateFetch(E_KPI.KPI_CAP(kpiName)),
+            automateFetch(E_KPI.KPI_CAP_ACTIVE(kpiName)).catch(() => null)
+        ]);
+        if (gen !== AUTOMATE.gen) return;
+        renderAutomate(cap);
+        if (active && active.jobId) automateWatch(active.jobId);   // a job started earlier is still running
     } catch (e) {
-        renderAutomate(null, 'Could not load automation status.');
+        if (gen === AUTOMATE.gen) renderAutomate(null, 'Could not load the automation status. Check your connection and reopen.');
     }
 }
 
 function closeAutomateModal() {
     document.getElementById('automateModal').classList.remove('open');
+    automateStopPolling();   // the server job keeps running; reopening resumes it via KPI_CAP_ACTIVE
+    AUTOMATE.gen++;
     if (AUTOMATE.reloadOnClose) window.location.reload();
 }
 
-async function automateCall(path, body) {
-    if (AUTOMATE.busy) return;
-    setAutomateBusy(true);
+// action: propose | approve | regenerate | repair
+async function automateStart(action, extra) {
+    if (automateRunning()) return;
+    const gen = AUTOMATE.gen;
+    AUTOMATE.job = { id: null, state: 'running', events: [], nextSeq: 0, error: null, usage: null, startedAt: Date.now() };
+    renderAutomate(AUTOMATE.current);
     try {
-        const res = await fetch(`/api/kpis/${encodeURIComponent(AUTOMATE.kpiName)}/capability${path}`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
-            body: body ? JSON.stringify(body) : undefined
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            renderAutomate(AUTOMATE.current, data.error || `Request failed (${res.status})`);
-        } else {
-            if (data.status === 'ACTIVE') AUTOMATE.reloadOnClose = true;
-            renderAutomate(data);
-        }
+        const data = await automateFetch(E_KPI.KPI_CAP_JOBS(AUTOMATE.kpiName), 'POST', { action, ...extra });
+        if (gen !== AUTOMATE.gen) return;
+        automateWatch(data.jobId);
     } catch (e) {
-        renderAutomate(AUTOMATE.current, 'Request failed. Please try again.');
-    } finally {
-        setAutomateBusy(false);
+        if (gen !== AUTOMATE.gen) return;
+        AUTOMATE.job = null;
+        if (e.status === 409) {   // already running (another tab): watch that one instead
+            const active = await automateFetch(E_KPI.KPI_CAP_ACTIVE(AUTOMATE.kpiName)).catch(() => null);
+            if (gen === AUTOMATE.gen && active && active.jobId) { automateWatch(active.jobId); return; }
+        }
+        renderAutomate(AUTOMATE.current, e.message);
     }
 }
 
-function setAutomateBusy(busy) {
-    AUTOMATE.busy = busy;
-    document.getElementById('automateBusy').hidden = !busy;
-    document.querySelectorAll('#automateBody button').forEach(b => { b.disabled = busy; });
+// Rejecting is instant, no job.
+async function automateReject(capId) {
+    try {
+        renderAutomate(await automateFetch(E_KPI.KPI_CAP_REJECT(AUTOMATE.kpiName, capId), 'POST'));
+    } catch (e) {
+        renderAutomate(AUTOMATE.current, e.message);
+    }
 }
 
-// Declared hosts + secrets of a proposal. Secret inputs are write-only: the server never returns a value,
+function automateRunning() {
+    return !!AUTOMATE.job && AUTOMATE.job.state === 'running';
+}
+
+function automateWatch(jobId) {
+    if (!AUTOMATE.job || AUTOMATE.job.id !== jobId) {
+        AUTOMATE.job = { id: jobId, state: 'running', events: [], nextSeq: 0, error: null, usage: null, startedAt: Date.now() };
+    }
+    AUTOMATE.job.id = jobId;
+    renderAutomate(AUTOMATE.current);
+    automatePoll(AUTOMATE.gen);
+}
+
+async function automatePoll(gen) {
+    const job = AUTOMATE.job;
+    if (!job || gen !== AUTOMATE.gen) return;
+    try {
+        const snap = await automateFetch(E_KPI.KPI_CAP_JOB(AUTOMATE.kpiName, job.id, job.nextSeq));
+        if (gen !== AUTOMATE.gen || AUTOMATE.job !== job) return;
+        (snap.events || []).forEach(ev => job.events.push({ seq: ev.seq, kind: ev.kind, text: ev.text, t: Date.now() }));
+        job.nextSeq = snap.nextSeq != null ? snap.nextSeq : job.nextSeq;
+        job.state = snap.state;
+        job.usage = snap.usage || job.usage;
+        if (snap.state === 'done') {
+            const cap = snap.result;
+            if (cap && cap.status === 'ACTIVE') AUTOMATE.reloadOnClose = true;
+            renderAutomate(cap);
+            return;
+        }
+        if (snap.state === 'failed') {
+            job.error = snap.error || 'Something went wrong. Try again.';
+            renderAutomate(AUTOMATE.current);
+            return;
+        }
+        renderAutomate(AUTOMATE.current);
+    } catch (e) {
+        if (gen !== AUTOMATE.gen || AUTOMATE.job !== job) return;
+        if (e.status === 404) {   // expired (server restart): the stored capability status is the truth
+            AUTOMATE.job = null;
+            openAutomateModal(AUTOMATE.kpiName, AUTOMATE.needsRepair);
+            return;
+        }
+        // transient network error: keep polling
+    }
+    AUTOMATE.pollTimer = setTimeout(() => automatePoll(gen), ENV.TIMING.KPI_CAP_POLL_MS);
+}
+
+function automateStopPolling() {
+    clearTimeout(AUTOMATE.pollTimer);
+    AUTOMATE.pollTimer = null;
+    clearInterval(AUTOMATE.tickTimer);
+    AUTOMATE.tickTimer = null;
+}
+
+// Steps of the current/last job + token usage. Error events of a failed job are left out: its single
+// sentence shows in #automateError instead.
+function renderAutomateJob(body) {
+    const job = AUTOMATE.job;
+    if (!job) return;
+    const live = job.state === 'running';
+    const events = job.state === 'failed' ? job.events.filter(ev => ev.kind !== 'error') : job.events;
+    const box = automateEl('div', 'automate__steps');
+    box.innerHTML = StepList.html(events, live, 'Waiting for your runner', job.startedAt);   // StepList escapes all text
+    body.append(box);
+    if (job.usage && job.usage.totalTokens) {
+        body.append(automateEl('div', 'automate__usage', `Used ${job.usage.totalTokens.toLocaleString()} tokens`));
+    }
+    if (live && !AUTOMATE.tickTimer) {
+        AUTOMATE.tickTimer = setInterval(() => StepList.tick(document.getElementById('automateBody')), 1000);
+    } else if (!live) {
+        clearInterval(AUTOMATE.tickTimer);
+        AUTOMATE.tickTimer = null;
+    }
+}
+
+// Plain-language summary of a capability: what / where from / how often / what it needs.
+function renderAutomateSummary(body, cap) {
+    const declared = cap.declaredCapabilities || {};
+    const hosts = declared.network || [];
+    const secrets = declared.secrets || [];
+    const facts = automateEl('dl', 'automate__facts');
+    const fact = (label, value) => facts.append(automateEl('dt', null, label), automateEl('dd', null, value));
+    fact('Measures', cap.measures || cap.description || 'See the plan below.');
+    fact('Data comes from', cap.dataSource
+        || (hosts.length ? `The internet: ${hosts.join(', ')}` : 'Computed inside the sandbox, without internet access.'));
+    fact('Updates', 'Once a day, overnight, recording the previous day’s value.');
+    fact('Needs from you', secrets.length
+        ? `${secrets.length === 1 ? 'One secret' : secrets.length + ' secrets'} (API key or token): ${secrets.join(', ')}. Set below.`
+        : 'Nothing. No passwords or API keys.');
+    body.append(facts);
+    if (cap.proposal) {
+        const plan = automateEl('details', 'automate__source');
+        plan.append(automateEl('summary', null, 'Full plan'), automateEl('div', 'automate__text', cap.proposal));
+        body.append(plan);
+    }
+}
+
+// Declared hosts + secret inputs. Secret inputs are write-only: the server never returns a value,
 // only which names are set. All text via textContent (names/hosts are LLM output).
 function renderAutomateAccess(body, cap) {
     const declared = cap.declaredCapabilities || {};
     const hosts = declared.network || [];
     const secrets = declared.secrets || [];
     const box = automateEl('div', 'automate__access');
-    box.append(automateEl('div', 'automate__text', `Platform: ${cap.platform || 'SERVER'}`));
     box.append(automateEl('div', 'form-group__hint', hosts.length
-        ? 'Network: this script may reach ONLY these hosts (any path on them). Approving grants exactly this.'
-        : 'Network: none.'));
+        ? 'Internet access: the script may reach ONLY these sites. Approving grants exactly this.'
+        : 'Internet access: none.'));
     if (hosts.length) {
         const chips = automateEl('div', 'automate__chips');
         hosts.forEach(h => chips.append(automateEl('span', 'automate__chip', h)));
         box.append(chips);
     }
-    box.append(automateEl('div', 'form-group__hint', secrets.length
-        ? 'Secrets: injected as environment variables with exactly these names, for this script only.'
-        : 'Secrets: none.'));
+    if (secrets.length) {
+        box.append(automateEl('div', 'form-group__hint',
+            'Secrets are given to this script only, as environment variables with these names.'));
+    }
     secrets.forEach(name => {
         const row = automateEl('div', 'automate__secret');
         const status = automateEl('span', 'automate__secret-state', 'checking...');
@@ -264,38 +393,76 @@ function renderAutomateAccess(body, cap) {
     body.append(box);
 }
 
+function renderAutomateCode(body, cap) {
+    if (!cap.sourceCode) return;
+    const d = automateEl('details', 'automate__source');
+    d.append(automateEl('summary', null, 'View the script (Python)'),
+        automateEl('pre', 'automate__code automate__code--source', cap.sourceCode));
+    body.append(d);
+}
+
 function setSecretState(el, isSet) {
     el.textContent = isSet ? 'set' : 'not set';
     el.className = 'automate__secret-state ' + (isSet ? 'automate__secret-state--set' : 'automate__secret-state--unset');
 }
 
 async function automateSecretNames() {
-    const res = await fetch(ENV.ENDPOINTS.KPI_SECRETS, { credentials: 'include' });
-    if (!res.ok) throw new Error('secrets list failed');
-    return (await res.json()).names || [];
+    const data = await automateFetch(E_KPI.KPI_SECRETS);
+    return (data && data.names) || [];
 }
 
 async function automateSecretCall(name, method, body, statusEl) {
+    const errEl = document.getElementById('automateError');
     try {
-        const res = await fetch(ENV.ENDPOINTS.KPI_SECRET(name), {
-            method,
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
-            body: body ? JSON.stringify(body) : undefined
-        });
-        if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            const errEl = document.getElementById('automateError');
-            errEl.textContent = data.error || `Could not save secret (${res.status})`;
-            errEl.hidden = false;
-            return false;
-        }
-        document.getElementById('automateError').hidden = true;
+        await automateFetch(E_KPI.KPI_SECRET(name), method, body);
+        errEl.hidden = true;
         setSecretState(statusEl, method === 'PUT');
         return true;
     } catch (e) {
+        errEl.textContent = e.status ? `Could not save the secret: ${e.message}` : 'Could not save the secret. Check your connection.';
+        errEl.hidden = false;
         statusEl.textContent = 'unknown';
         return false;
+    }
+}
+
+// failureReason (server text) → {headline, action, detail?}. detail = raw script/runner output, shown collapsed.
+function describeFailure(cap) {
+    const reason = (cap.failureReason || '').trim();
+    const left = cap.maxAttempts - cap.attempts;
+    const retry = left > 0
+        ? 'Press Regenerate and the AI will fix it using this error.'
+        : 'No attempts left. Start over with a different description.';
+    const gen = 'Code generation failed: ';
+    const gate = 'Test gate failed: ';
+    if (reason.startsWith(gen)) {
+        const why = reason.slice(gen.length);
+        return { headline: why.endsWith('.') ? why : why + '.', action: 'Then press Regenerate.' };
+    }
+    if (reason.startsWith(gate)) {
+        const why = reason.slice(gate.length);
+        if (/secret .* not set/i.test(why)) {
+            const names = (why.match(/secret (.*?) not set/i) || [])[1] || 'a secret';
+            return { headline: `The script needs ${names}, which is not set yet.`, action: 'Set it below, then press Regenerate.' };
+        }
+        if (why.startsWith('TIMEOUT')) return { headline: 'The script took longer than the time limit.', action: retry, detail: why };
+        if (why.startsWith('SIDECAR_ERROR')) {
+            return { headline: 'The sandbox that tests scripts is not reachable right now.', action: 'Try Regenerate again in a few minutes.', detail: why };
+        }
+        if (why.startsWith('script exited 0')) return { headline: 'The script ran but did not print a number on its last line.', action: retry, detail: why };
+        return { headline: 'The script crashed when tested.', action: retry, detail: why };
+    }
+    return { headline: reason || 'It stopped producing valid values.', action: retry };
+}
+
+function renderAutomateFailure(body, cap) {
+    const f = describeFailure(cap);
+    body.append(automateEl('div', 'automate__fail', f.headline), automateEl('div', 'form-group__hint',
+        `${f.action} Attempts used: ${cap.attempts} of ${cap.maxAttempts}.`));
+    if (f.detail) {
+        const d = automateEl('details', 'automate__source');
+        d.append(automateEl('summary', null, 'What the script printed'), automateEl('pre', 'automate__code', f.detail));
+        body.append(d);
     }
 }
 
@@ -303,9 +470,18 @@ function renderAutomate(cap, error) {
     AUTOMATE.current = cap;
     const body = document.getElementById('automateBody');
     body.replaceChildren();
+    const job = AUTOMATE.job;
+    const errText = error || (job && job.state === 'failed' ? job.error : '');
     const errEl = document.getElementById('automateError');
-    errEl.textContent = error || '';
-    errEl.hidden = !error;
+    errEl.textContent = errText || '';
+    errEl.hidden = !errText;
+
+    renderAutomateJob(body);
+    if (automateRunning()) {
+        body.append(automateEl('div', 'form-group__hint',
+            'Your runner is working on it. You can close this dialog; reopen it to check progress.'));
+        return;
+    }
 
     const status = cap ? cap.status : null;
     const fresh = !cap || status === 'REJECTED' || status === 'DISABLED';
@@ -319,61 +495,64 @@ function renderAutomate(cap, error) {
         ta.rows = 4;
         ta.maxLength = 2000;
         ta.placeholder = 'e.g. Count the lines of code in my project folder each day';
+        if (cap && cap.description && status === 'REJECTED') ta.value = cap.description;
         group.append(label, ta,
             automateEl('span', 'form-group__hint',
-                'The agent proposes a plan first. Nothing runs until you approve it. Scripts run in a sandbox: no network unless a host is declared in the proposal and you approve it.'));
+                'The AI proposes a plan first. Nothing runs until you approve it. Scripts run in a sandbox, with internet access only to sites you approve.'));
         const actions = automateEl('div', 'modal-box__actions');
         actions.append(automateButton('Propose', 'btn--primary', () => {
             const description = ta.value.trim();
             if (!description) { renderAutomate(cap, 'Describe what to capture first.'); return; }
-            automateCall('/propose', { description });
+            automateStart('propose', { description });
         }));
         body.append(group, actions);
         return;
     }
 
-    body.append(automateEl('div', 'automate__meta', `Version ${cap.version} · ${status.replace('_', ' ')}`));
+    const STATUS_TEXT = {
+        PROPOSED: 'Waiting for your approval', TEST_FAILED: 'Test did not pass', ACTIVE: 'Active',
+        PENDING_TEST: 'In progress', NEEDS_REPAIR: 'Needs a fix'
+    };
+    body.append(automateEl('div', 'automate__meta', `Version ${cap.version} · ${STATUS_TEXT[status] || status}`));
 
     if (status === 'PROPOSED') {
-        body.append(automateEl('div', 'form-group__label', 'Proposal'),
-            automateEl('div', 'automate__text', cap.proposal),
-            automateEl('div', 'form-group__label', 'Access requested'));
+        renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
         const actions = automateEl('div', 'modal-box__actions');
         actions.append(
-            automateButton('Approve', 'btn--primary', () => automateCall(`/${cap.id}/approve`)),
-            automateButton('Reject', 'btn--ghost', () => automateCall(`/${cap.id}/reject`)));
+            automateButton('Approve and build', 'btn--primary', () => automateStart('approve', { id: cap.id })),
+            automateButton('Reject', 'btn--ghost', () => automateReject(cap.id)));
         body.append(actions);
     } else if (status === 'TEST_FAILED') {
-        body.append(automateEl('div', 'form-group__label', 'Test gate failed'),
-            automateEl('pre', 'automate__code', cap.failureReason || 'Unknown failure'),
-            automateEl('div', 'form-group__hint', `Attempts used: ${cap.attempts} of ${cap.maxAttempts}`));
+        renderAutomateFailure(body, cap);
+        renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
+        renderAutomateCode(body, cap);
         const actions = automateEl('div', 'modal-box__actions');
         if (cap.attempts < cap.maxAttempts) {
-            actions.append(automateButton('Regenerate', 'btn--primary', () => automateCall(`/${cap.id}/regenerate`)));
+            actions.append(automateButton('Regenerate', 'btn--primary', () => automateStart('regenerate', { id: cap.id })));
         }
-        actions.append(automateButton('Start over', 'btn--ghost', () => automateCall(`/${cap.id}/reject`)));
+        actions.append(automateButton('Start over', 'btn--ghost', () => automateReject(cap.id)));
         body.append(actions);
     } else if (status === 'ACTIVE') {
-        body.append(automateEl('div', 'automate__ok', 'Active. A nightly job fills this KPI from the script.'),
-            automateEl('div', 'form-group__hint', cap.lastResult || ''));
-        if (cap.sourceCode) {
-            const d = automateEl('details', 'automate__source');
-            d.append(automateEl('summary', null, 'View script'), automateEl('pre', 'automate__code', cap.sourceCode));
-            body.append(d);
-        }
+        body.append(automateEl('div', 'automate__ok', 'Active. This KPI now fills itself every night.'));
+        renderAutomateSummary(body, cap);
+        if (cap.lastResult) body.append(automateEl('div', 'form-group__hint', `Last run: ${cap.lastResult}`));
+        renderAutomateCode(body, cap);
         if (AUTOMATE.needsRepair) {
             const actions = automateEl('div', 'modal-box__actions');
-            actions.append(automateButton('Fix it', 'btn--primary', () => automateCall('/repair')));
-            body.append(automateEl('div', 'form-group__hint', 'This KPI stopped producing valid values.'), actions);
+            actions.append(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
+            body.append(automateEl('div', 'form-group__hint', 'This KPI stopped producing valid values. Fix it lets the AI repair the script.'), actions);
         }
     } else {
-        // PENDING_TEST / NEEDS_REPAIR: in progress, or awaiting repair
-        body.append(automateEl('div', 'automate__text', 'Working on it. Reopen this dialog in a minute.'));
+        // PENDING_TEST / NEEDS_REPAIR with no job running here
+        body.append(automateEl('div', 'automate__text', status === 'NEEDS_REPAIR'
+            ? 'This script stopped producing valid values.'
+            : 'Work on this script is in progress or was interrupted. Reopen this dialog in a minute.'));
+        renderAutomateSummary(body, cap);
         if (AUTOMATE.needsRepair) {
             const actions = automateEl('div', 'modal-box__actions');
-            actions.append(automateButton('Fix it', 'btn--primary', () => automateCall('/repair')));
+            actions.append(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
             body.append(actions);
         }
     }

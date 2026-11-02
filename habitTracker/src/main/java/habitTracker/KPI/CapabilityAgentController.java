@@ -1,5 +1,6 @@
 package habitTracker.KPI;
 
+import habitTracker.auth.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,7 +11,9 @@ import java.util.Map;
 /**
  * M8 agent loop API. Every call resolves the KPI by (name, current user) and capabilities by
  * (id, user, kpi) inside CapabilityAgentService, so one user can never see or drive another's.
- * propose/approve/regenerate/repair block while the LLM + sandbox run (up to a few minutes).
+ * propose/approve/regenerate/repair block while the LLM + sandbox run (up to a few minutes); kept for API
+ * callers and tests. The UI uses the async /jobs endpoints (CapabilityTaskService): start → {jobId}, then
+ * poll ?after=nextSeq → {state, events, nextSeq, result?, error?, code?, usage?}.
  */
 @RestController
 @RequiredArgsConstructor
@@ -18,6 +21,7 @@ import java.util.Map;
 public class CapabilityAgentController {
 
     private final CapabilityAgentService service;
+    private final CapabilityTaskService tasks;
 
     @GetMapping
     public ResponseEntity<?> latest(@PathVariable String name) {
@@ -50,6 +54,41 @@ public class CapabilityAgentController {
     @PostMapping("/repair")
     public CapabilityDTO repair(@PathVariable String name) {
         return service.repair(name);
+    }
+
+    // ── async (UI) ──────────────────────────────────────────────────────────
+
+    /** body: {action: propose|approve|regenerate|repair, id?, description?} → 202 {jobId}. */
+    @PostMapping("/jobs")
+    public ResponseEntity<?> startJob(@PathVariable String name, @RequestBody Map<String, Object> body) {
+        String jobId = tasks.start(currentUser(), name, str(body.get("action")), str(body.get("id")),
+                str(body.get("description")));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("jobId", jobId));
+    }
+
+    /** The KPI's running job, if any → {jobId} or 204. Lets a reopened dialog resume watching. */
+    @GetMapping("/jobs/active")
+    public ResponseEntity<?> activeJob(@PathVariable String name) {
+        return tasks.active(currentUser(), name).<ResponseEntity<?>>map(id -> ResponseEntity.ok(Map.of("jobId", id)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/jobs/{jobId}")
+    public ResponseEntity<?> pollJob(@PathVariable String name, @PathVariable String jobId,
+                                     @RequestParam(defaultValue = "0") long after) {
+        return tasks.poll(currentUser(), name, jobId, after).<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "This job has expired. Reopen the dialog")));
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : o.toString();
+    }
+
+    private static String currentUser() {
+        String userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) throw new IllegalStateException("Not authenticated");
+        return userId;
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

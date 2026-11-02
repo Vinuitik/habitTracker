@@ -1,6 +1,6 @@
 # KPI Flows
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `SandboxCapabilityProvider.java`, `SandboxClient.java`, `HttpSandboxClient.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`, `CapabilityGrants.java`, `CapabilitySecret.java`, `CapabilitySecretRepository.java`, `CapabilitySecretService.java`, `CapabilitySecretController.java`, `MissingSecretException.java`
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `SandboxCapabilityProvider.java`, `SandboxClient.java`, `HttpSandboxClient.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`, `CapabilityGrants.java`, `CapabilitySecret.java`, `CapabilitySecretRepository.java`, `CapabilitySecretService.java`, `CapabilitySecretController.java`, `MissingSecretException.java`
 
 ## Storage model
 
@@ -75,7 +75,27 @@ A capability row can still be inserted by hand (`status` must be `ACTIVE`; `_cla
 
 ## Capability agent loop (M8, stages 1-4) + repair (M12)
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`); prompts `resources/prompts/kpi-capability-{propose,generate,previous-failure,sandbox-facts}.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`) + shared `static/js/molecules/step-list.js`; prompts `resources/prompts/kpi-capability-{propose,generate,previous-failure,sandbox-facts}.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
+
+Async UI wrapper (the UI never calls the blocking endpoints below):
+```
+UI action (Propose / Approve and build / Regenerate / Fix it)
+  → POST /api/kpis/{name}/capability/jobs {action: propose|approve|regenerate|repair, id?, description?}
+  → CapabilityAgentController.startJob() (userId captured on the request thread) → CapabilityTaskService.start()
+      bad action / missing id → 400; a job already running for (user, KPI) → 409 (UI then resumes it via /jobs/active)
+  → 202 {jobId}; worker pool (4 daemon threads) → CapabilityProgress.with(sink) → CapabilityAgentService.proposeAs/approveAs/regenerateAs/repairAs(userId, ...)
+      service stages → CapabilityProgress.step(): "Drafting a plan on your runner" / "Writing the script on your runner" / "Testing the script in the sandbox for <date>"
+      RunnerCapabilityGenerator.forwardEvents(): runner job events (kind step|text, ≤200 chars) → same list; job usage → CapabilityProgress.usage()
+  → GET .../capability/jobs/{jobId}?after=<nextSeq> every ENV.TIMING.KPI_CAP_POLL_MS (1.5s)
+      → {jobId, state: running|done|failed, events:[{seq,kind,text}] (seq > after), nextSeq, result?: CapabilityDTO,
+         error?: one sentence, code?: runner_offline|runner_busy|generator|rejected|invalid|conflict|internal,
+         usage?: {inputTokens, outputTokens, totalTokens} (summed over the task's runner jobs)}
+      TEST_FAILED result = state done + an "error" event "Did not pass"; unknown/expired/foreign job → 404
+  → GET .../capability/jobs/active → {jobId} | 204   (reopened dialog resumes watching)
+```
+To change stage texts: `CapabilityAgentService` `CapabilityProgress.step()` calls. Error → code mapping: `CapabilityTaskService.run()`. Token counting: `CapabilityTaskService.Task.addUsage()`. Pool size / retention: `CapabilityTaskService.WORKERS`, `KEEP_FINISHED_MS` (15 min).
+
+Blocking endpoints (`/propose`, `/{id}/approve`, `/{id}/regenerate`, `/repair`) are kept unchanged for API callers and the integration tests; the nightly repair (`AgentCapabilityRepairTrigger`) calls `repairFor()` directly and never binds a progress sink (all `CapabilityProgress` calls are no-ops there).
 
 Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → ACTIVE | TEST_FAILED`; `REJECTED` (user said no / superseded); `NEEDS_REPAIR` (old version while a repair version is built) → `DISABLED` once the new one is ACTIVE.
 
@@ -87,10 +107,12 @@ Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → ACTIVE | TES
                 then lastSeenAt) → none → CapabilityGeneratorException.noRunner() → 503 {"error":"Connect a runner to generate this capability"}
               → CapabilityPrompts.proposePrompt() → RunnerJobService.startJob(kind "kpi", no project, maxTurns 3)
               → pollJob() every kpi.capability.poll-ms (2s) until state done/failed, or kpi.capability.job-timeout-ms (300s) → cancelJob() + 502
-              → CapabilityPrompts.parseProposal(result) → {proposal, platform, declaredCapabilities}
+              → CapabilityPrompts.parseProposal(result) → {proposal, platform, declaredCapabilities, measures?, dataSource?}
+                (measures / dataSource = optional one-sentence summaries for the UI; stored on the version, copied on repair)
               → checkGrantable(): platform != SERVER, or any network host / secret declared → 422, NOTHING stored
               → older PROPOSED/TEST_FAILED rows → REJECTED; new KPIProxyCapability v(latest+1) status=PROPOSED
-              → UI shows proposal + "network: none, secrets: none"
+              → UI shows plain-language facts (Measures / Data comes from / Updates: nightly / Needs from you),
+                the full plan collapsed, internet hosts as chips, secret inputs
 3-4 APPROVE   POST .../capability/{id}/approve  (approval IS the permission grant)
               → status must be PROPOSED; checkGrantable() re-run on the stored spec
               → attempt(): PENDING_TEST → CapabilityGenerator.generate(owner, ...) (same runner job path;
@@ -127,6 +149,10 @@ Enforcement: the **gate** is `CapabilityAgentService.checkGrantable()` → `Capa
 ## Network egress and secrets
 
 ```
+UI Automate modal (kpi-list.js): while a job runs → StepList rows (● running + seconds, ✓ done) + "Used N tokens" when usage came back;
+  result → renderAutomateSummary() facts + renderAutomateCode() (<details>, monospace <pre>); TEST_FAILED → describeFailure() maps
+  failureReason prefixes ("Code generation failed:", "Test gate failed: secret X not set / TIMEOUT / SIDECAR_ERROR / exited 0 …")
+  to one sentence + what to do, raw script output only inside a collapsed "What the script printed". All text via textContent / Dom.esc.
 UI Automate modal: proposal shows declared hosts + secrets; per secret a write-only password input ("set"/"not set")
   → PUT/DELETE /api/kpi-secrets/{NAME} {value}  (CapabilitySecretController → CapabilitySecretService.set/delete)
       scoped by SecurityUtils.getCurrentUserId(); stored encrypted in `kpi_capability_secrets` (id = userId:NAME);
@@ -159,6 +185,9 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 - **Generated code is untrusted (M8).** It is LLM output steered by a free-text user description; it is only ever executed by the sandbox sidecar (never in `javaapp`, never on the host), `--network none` unless it declared (and the user approved) specific hosts, only its own declared secrets, capped CPU/mem/time. The UI renders it and all LLM text with `textContent` (no HTML injection). Approval gates *what is requested*; the sandbox, not the review, is the actual safety boundary.
 - **Generation = the KPI owner's own Claude Code via their paired Relay runner** (job kind `kpi`: no project, no tools, text only). The server spends no Claude credits. No runner online → propose is 503 "Connect a runner to generate this capability"; approve/regenerate/repair end TEST_FAILED with that reason (no attempt consumed). If the runner's Claude login expired, the job ends `failed` and its error is shown. Existing ACTIVE capabilities keep running without any runner (they never call the LLM).
 - **Runner choice:** `OnlineRunnerSelector` = devices with a live uplink in *this* JVM's `UplinkRegistry`; preference "most recently used for a job" is in-memory (lost on restart → falls back to `lastSeenAt`). A user with two online runners may get consecutive jobs on the same one. Busy runner (409/429 on start/poll) → 409 "Your runner is busy".
+- **Async jobs are in-memory, single-node** (`CapabilityTaskService.tasks`): a javaapp restart loses every job and its event log (the poll then 404s and the UI reloads the stored capability status); the capability version itself is in Mongo, but a restart mid-attempt leaves it `PENDING_TEST`. Max 4 jobs run at once across all users (more queue in the executor); one running job per (user, KPI). Finished jobs are kept 15 min, evicted lazily on the next start. Progress reaches the job via a `ThreadLocal` (`CapabilityProgress`) bound only on the worker thread, so nothing changes for blocking callers. The service worker (`static/sw.js`, `API_NO_CACHE`) never caches `/api/kpis/*/capability*` GETs, otherwise stale-while-revalidate would replay old poll snapshots.
+- **Token usage** is whatever the runner job reports in `usage` (`input_tokens`/`inputTokens` + `cache_creation_input_tokens` + `output_tokens`/`outputTokens`, or `total_tokens`); absent → no "Used N tokens" line. Cache reads are not counted.
+- **Error text:** runner HTTP error bodies (JSON) are logged, never shown (`RunnerCapabilityGenerator.fromCall()`); unparseable model replies say "The AI's reply could not be used (...). Try again" (`CapabilityPrompts.bad()`).
 - **Blocking poll.** propose/approve/regenerate/repair hold the request thread while polling the runner job (every 2s, up to 300s; each poll is itself a blocking uplink call bounded by `relay.proxy.timeout-ms`) + sandbox time (up to ~60s). On timeout the job is cancelled. A runner that disconnects mid-job → treated as no runner (job state lives only on the runner, see `relay/FLOWS.md`). Hub restart mid-generation loses the waiting request; the runner job finishes but its result is discarded. a reverse proxy (Caddy/Cloudflare ~100s edge timeout) in front may cut the browser connection while the server keeps working: reopening the dialog shows the resulting state (`GET .../capability`). `PENDING_TEST` is transient in-flight state; a javaapp crash mid-attempt leaves a stuck `PENDING_TEST` row (no sweeper; propose again supersedes it).
 - **LLM output is not trusted to be JSON.** `CapabilityPrompts.parseProposal()/parseSourceCode()` (a Java port of the old `claude_cli.parse_capability_result()`) extracts the first `{`..last `}` object, validates keys/types and the 64KB cap; anything else → 502 / "Code generation failed" (not counted as an attempt). Fenced code inside `sourceCode` is stripped.
 - **Test gate is weak by design.** One dry run with no real data (no network, so nothing external to read): it proves "runs, exits 0, prints a number", not "prints the right number". Stage 6 scrutiny (100% confirm-inbox at first) is the intended backstop and is not built.
@@ -185,6 +214,11 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Sidecar URL / HTTP timeout | `sandbox.url`, `sandbox.read-timeout-seconds` / `HttpSandboxClient` | default `http://sandbox:8090` |
 | Stdout -> value parsing | `SandboxCapabilityProvider.parseLastLine()` | last non-blank line, finite double |
 | Automate UI | `static/kpi-list.html` `#automateModal`, `static/js/kpi-list.js` `openAutomateModal()` / `renderAutomate()` | styles in `styles/pages/kpi.css` `.automate__*` |
+| Automate plain-language facts / failure sentences | `kpi-list.js` `renderAutomateSummary()`, `describeFailure()` | "Updates" text is fixed (nightly fill) |
+| Automate job polling | `kpi-list.js` `automateStart()` / `automatePoll()`, `ENV.TIMING.KPI_CAP_POLL_MS`, `ENV.ENDPOINTS.KPI_CAP_*` | |
+| Step rows (shared with planner) | `static/js/molecules/step-list.js`, `styles/molecules/step-list.css` | |
+| Async capability jobs | `CapabilityTaskService`, `CapabilityAgentController.startJob()/pollJob()/activeJob()` | `WORKERS`, `KEEP_FINISHED_MS` |
+| Progress events | `CapabilityProgress`, `RunnerCapabilityGenerator.forwardEvents()` | no-op without a bound sink |
 | Agent endpoints | `CapabilityAgentController` | `/api/kpis/{name}/capability/...` |
 | Pipeline (propose/approve/test gate/retry) | `CapabilityAgentService` | `propose()`, `approve()`, `attempt()`, `regenerate()` |
 | Attempt cap | `CapabilityAgentService.MAX_ATTEMPTS` | 3 |

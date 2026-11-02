@@ -11,6 +11,8 @@ public record CapabilityDTO(
         CapabilityStatus status,
         String description,
         String proposal,
+        String measures,
+        String dataSource,
         CapabilityPlatform platform,
         Map<String, List<String>> declaredCapabilities,
         String sourceCode,
@@ -21,7 +23,7 @@ public record CapabilityDTO(
 
     static CapabilityDTO from(KPIProxyCapability c) {
         return new CapabilityDTO(c.getId(), c.getKpiId(), c.getVersion() == null ? 1 : c.getVersion(),
-                c.getStatus(), c.getDescription(), c.getProposal(), c.getPlatform(), c.getDeclaredCapabilities(),
+                c.getStatus(), c.getDescription(), c.getProposal(), c.getMeasures(), c.getDataSource(), c.getPlatform(), c.getDeclaredCapabilities(),
                 c.getSourceCode(), c.getAttempts() == null ? 0 : c.getAttempts(),
                 CapabilityAgentService.MAX_ATTEMPTS, c.getFailureReason(), c.getLastResult());
     }

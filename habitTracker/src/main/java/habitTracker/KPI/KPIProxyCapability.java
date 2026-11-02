@@ -50,6 +50,9 @@ public class KPIProxyCapability {
     // M8 agent loop: what the user asked for, the approved written spec, and test-gate bookkeeping.
     private String description;
     private String proposal;
+    // Optional plain-language summaries from the proposal (what is counted / where it comes from); UI only.
+    private String measures;
+    private String dataSource;
     // Generation attempts that produced code for this version (cap: CapabilityAgentService.MAX_ATTEMPTS).
     @Builder.Default
     private Integer attempts = 0;
