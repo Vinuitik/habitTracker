@@ -13,6 +13,7 @@
   border: 1px solid var(--color-border);
   white-space: nowrap;
 }
+.badge[hidden] { display: none; }
 
 .badge--muted   { color: var(--color-text-secondary); }
 .badge--success { color: var(--color-success); background: var(--color-success-dim); border-color: transparent; }

@@ -293,3 +293,5 @@
   .relay-composer textarea, .relay-new select { font-size: 16px; }
   .relay-msg { max-width: 100%; }
 }
+.relay-perm[hidden] { display: none; }
+.relay-notice[hidden] { display: none; }

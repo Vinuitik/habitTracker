@@ -139,3 +139,4 @@
   .card-detail__actions { flex-wrap: nowrap; }
   .card-detail__actions .btn { flex: 1; }
 }
+.card-detail__desc-actions[hidden] { display: none; }

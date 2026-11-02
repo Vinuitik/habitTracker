@@ -52,6 +52,7 @@
   color: var(--color-danger);
   font-size: var(--text-sm);
 }
+.board__banner[hidden] { display: none; }
 
 .board__banner--info {
   border-color: var(--color-border-hover);

@@ -40,3 +40,4 @@
 @media (max-width: 768px) {
   .composer__trigger { min-height: 44px; }
 }
+.composer__form[hidden] { display: none; }
