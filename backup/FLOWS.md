@@ -74,6 +74,7 @@ half-write garbage into the DB.
 ---
 
 ## Technology Notes
+- **Memory:** backup encrypts the whole archive in memory (`fh.read()` → gzip → AES-GCM), peak ≈ 3× zipped dump. mem_limit 256m is safe while the DB is under ~50 MB (2026-11-02: 1.6 MB). Past that, raise mem_limit or stream the encryption in chunks.
 
 - **`BACKUP_PASSPHRASE` is the only key, and it is not stored on Drive. Lose it and every
   backup is permanently unreadable.** There is no recovery path — the GCM tag guarantees a
