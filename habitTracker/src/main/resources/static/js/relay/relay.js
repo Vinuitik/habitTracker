@@ -98,7 +98,9 @@
   async function showDevices(my) {
     view().innerHTML = header('Relay', null,
       '<button class="btn btn--ghost" data-act="refresh">Refresh</button><button class="btn btn--primary" data-act="add">Add device</button>')
-      + '<div id="pair-box"></div><div class="relay-list" id="device-list"><div class="relay-empty">Loading…</div></div>';
+      + '<div id="pair-box"></div><div class="relay-list" id="device-list"><div class="relay-empty">Loading…</div></div>'
+      + '<div id="trust-box"></div>';
+    showTrusted(my);
     try {
       const list = await call('/relay/api/devices');
       if (my !== seq) return;
@@ -109,6 +111,28 @@
             <span class="relay-hint">Already installed? Use Add device.</span></div>`;
     } catch (e) {
       if (my === seq) $('device-list').innerHTML = errorHtml(e);
+    }
+  }
+
+  // Footer: browsers that skip the 2FA code ("Trust this device", TrustedDeviceService). Hidden when none / feature off.
+  async function showTrusted(my) {
+    try {
+      const { days, count } = await call('/relay/api/trusted-devices');
+      if (my !== seq || !days || !count) return;
+      $('trust-box').innerHTML = `<div class="relay-foot">
+        <span class="relay-hint">${count} trusted ${count === 1 ? 'browser skips' : 'browsers skip'} the two-factor code (up to ${days} days).</span>
+        <button class="btn btn--ghost btn--sm" data-act="forget-trusted">Forget trusted devices</button></div>`;
+    } catch (_) { /* footer is optional */ }
+  }
+
+  async function forgetTrusted() {
+    if (!confirm('Forget all trusted devices? Every browser, this one included, will ask for a code next time.')) return;
+    try {
+      await call('/relay/api/trusted-devices', 'DELETE');
+      $('trust-box').innerHTML = '';
+      Toast.show('Trusted devices forgotten', 3000);
+    } catch (e) {
+      Toast.show(e.message, 4000);
     }
   }
 
@@ -526,6 +550,7 @@
     else if (a === 'approve') claimAction(b.dataset.id, true);
     else if (a === 'deny') claimAction(b.dataset.id, false);
     else if (a === 'revoke') revoke(b.dataset.id, b.dataset.name);
+    else if (a === 'forget-trusted') forgetTrusted();
     else if (a === 'perm') act('/permission', { optionId: b.dataset.option });
     else if (a === 'cancel') act('/cancel');
     else if (a === 'stop' && confirm('End this session? The agent process is stopped.')) act('/stop');

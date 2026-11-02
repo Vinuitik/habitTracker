@@ -37,18 +37,21 @@ public class TwoFactorService {
     private final UserRepository users;
     private final TotpService totp;
     private final VaultEncryptionService encryption;
+    private final TrustedDeviceService trusted;
     private final String key;
     private final long ttlSeconds;
     // In-memory, single node: a restart clears lockouts. Fine for one JVM; see relay/FLOWS.md.
     private final Map<String, Attempts> attempts = new ConcurrentHashMap<>();
 
     public TwoFactorService(UserRepository users, TotpService totp, VaultEncryptionService encryption,
+                            TrustedDeviceService trusted,
                             @Value("${kpi.secrets.key:}") String configuredKey,
                             @Value("${jwt.secret}") String jwtSecret,
                             @Value("${relay.2fa.ttl-hours:12}") long ttlHours) {
         this.users = users;
         this.totp = totp;
         this.encryption = encryption;
+        this.trusted = trusted;
         this.key = VaultEncryptionService.serverKey(configuredKey, jwtSecret);
         this.ttlSeconds = ttlHours * 3600;
     }
@@ -86,7 +89,9 @@ public class TwoFactorService {
         user.setTotpEnabled(true);
         users.save(user);
         session.removeAttribute(PENDING);
-        markVerified(session, user);
+        // New secret = new trust: browsers trusted under an earlier enrolment must type a code again.
+        trusted.forgetAll(user.getId(), null);
+        markVerified(session, user.getId());
         return Result.OK;
     }
 
@@ -98,7 +103,7 @@ public class TwoFactorService {
         Result r = check(user, secret, code);
         if (r == Result.OK) {
             users.save(user);
-            markVerified(session, user);
+            markVerified(session, user.getId());
         }
         return r;
     }
@@ -121,8 +126,9 @@ public class TwoFactorService {
         return Result.OK;
     }
 
-    private void markVerified(HttpSession session, User user) {
-        session.setAttribute(VERIFIED_USER, user.getId());
+    /** Also used by TwoFactorInterceptor when a trusted-device cookie stands in for the code. */
+    void markVerified(HttpSession session, String userId) {
+        session.setAttribute(VERIFIED_USER, userId);
         session.setAttribute(VERIFIED_UNTIL, Instant.now().getEpochSecond() + ttlSeconds);
     }
 }

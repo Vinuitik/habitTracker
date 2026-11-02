@@ -202,6 +202,79 @@ body {
 .auth-qr svg { display: block; width: 100%; height: 100%; }
 .auth-secret { font-family: ui-monospace, Menlo, Consolas, monospace; color: #c9ccd6; word-break: break-all; }
 
+/* Setup steps. Phone/touch first: "Add to authenticator app" button, QR hidden (can't scan your own screen). */
+.twofa-steps { list-style: none; display: flex; flex-direction: column; gap: 24px; }
+.twofa-step { display: flex; gap: 12px; align-items: flex-start; }
+.twofa-step__num {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(108,134,245,0.15);
+  color: #6c86f5;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.twofa-step__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.twofa-step__body .auth-hint { margin: 0; }
+.twofa-step__title { font-weight: 600; color: #e8eaf0; }
+.twofa-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  background: #6c86f5;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.twofa-add:hover { background: #5a72e0; }
+.twofa-qr { display: none; }
+.twofa-on-desktop { display: none; }
+.twofa-key__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.twofa-key__row .auth-secret { flex: 1 1 180px; font-size: 15px; letter-spacing: 0.04em; }
+.auth-copy {
+  height: 36px;
+  padding: 0 14px;
+  background: #161920;
+  color: #e8eaf0;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.auth-copy:hover { border-color: rgba(255,255,255,0.18); }
+.auth-copy[hidden] { display: none; }
+
+/* Desktop (mouse + wide screen): QR is the main path; the app link is hidden. */
+@media (pointer: fine) and (min-width: 481px) {
+  .twofa-add, .twofa-on-touch { display: none; }
+  .twofa-qr { display: block; }
+  .twofa-on-desktop { display: inline; }
+  .twofa-qr .auth-qr { margin: 0 auto 8px; }
+}
+
+/* "Trust this device" checkbox (label overrides the block form-label look). */
+.auth-card label.auth-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #c9ccd6;
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.auth-check input { width: 18px; height: 18px; accent-color: #6c86f5; flex: none; }
+
 /* Phones: card chrome dropped, clear of notch/home indicator, 16px inputs so iOS doesn't zoom */
 @media (max-width: 480px) {
   body {

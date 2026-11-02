@@ -13,25 +13,67 @@
   <a href="/today" class="auth-logo">HabitTracker</a>
 
   <h2>Set up two-factor</h2>
-  <p class="auth-hint">Relay controls your machines, so it needs a code from an authenticator app
-    (Google Authenticator, Aegis, 1Password…). Scan this once:</p>
-
-  <div class="auth-qr" th:utext="${qrSvg}"></div>
-  <p class="auth-hint">Can't scan? Enter this key: <span class="auth-secret" th:text="${secret}"></span></p>
+  <p class="auth-hint">Relay controls your machines, so it also asks for a code from an authenticator app.</p>
 
   <div class="auth-error" th:if="${error}" th:text="${error}"></div>
 
-  <form th:action="@{/2fa/setup}" method="post">
-    <input type="hidden" name="next" th:value="${next}">
-    <div>
-      <label for="code">6-digit code</label>
-      <input id="code" type="text" name="code" required autofocus inputmode="numeric"
-             autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]*">
-    </div>
-    <button type="submit">Turn on</button>
-  </form>
+  <ol class="twofa-steps">
+    <li class="twofa-step">
+      <span class="twofa-step__num">1</span>
+      <div class="twofa-step__body">
+        <p class="twofa-step__title">Add HabitTracker to an authenticator app</p>
+        <p class="auth-hint">Google Authenticator, Microsoft Authenticator, Aegis…</p>
+
+        <!-- Phone / touch: open the installed app pre-filled (QR is hidden: you can't scan your own screen). -->
+        <a class="twofa-add" th:href="${otpauthUri}">Add to authenticator app</a>
+
+        <!-- Desktop: scan with the phone. -->
+        <div class="twofa-qr">
+          <div class="auth-qr" th:utext="${qrSvg}"></div>
+          <p class="auth-hint">Scan with the authenticator app on your phone — not the camera app.</p>
+        </div>
+
+        <div class="twofa-key">
+          <p class="auth-hint">
+            <span class="twofa-on-touch">Button didn't open an app?</span>
+            <span class="twofa-on-desktop">Can't scan?</span>
+            Add an account by hand: name <strong th:text="'HabitTracker (' + ${account} + ')'">HabitTracker</strong>,
+            this key, type <strong>time-based</strong>.
+          </p>
+          <div class="twofa-key__row">
+            <code class="auth-secret" th:text="${secret}"></code>
+            <button type="button" class="auth-copy" th:attr="data-copy=${secretRaw}" hidden>Copy setup key</button>
+          </div>
+        </div>
+
+        <p class="auth-hint">Don't have an authenticator app? Install Google Authenticator or
+          Microsoft Authenticator from your phone's app store, then come back here.</p>
+      </div>
+    </li>
+    <li class="twofa-step">
+      <span class="twofa-step__num">2</span>
+      <div class="twofa-step__body">
+        <p class="twofa-step__title">Type the 6-digit code it shows</p>
+        <form th:action="@{/2fa/setup}" method="post">
+          <input type="hidden" name="next" th:value="${next}">
+          <div>
+            <label for="code">6-digit code</label>
+            <input id="code" type="text" name="code" required autofocus inputmode="numeric"
+                   autocomplete="one-time-code" maxlength="7" pattern="[0-9]{3} ?[0-9]{3}"
+                   title="The 6 digits from your authenticator app">
+          </div>
+          <label class="auth-check" th:if="${trustDays > 0}">
+            <input type="checkbox" name="trust" value="true">
+            <span th:text="'Trust this device for ' + ${trustDays} + (${trustDays == 1} ? ' day' : ' days')">Trust this device for 30 days</span>
+          </label>
+          <button type="submit">Turn on</button>
+        </form>
+      </div>
+    </li>
+  </ol>
 
   <a href="/today" class="auth-back">← Back to HabitTracker</a>
 </div>
+<script src="/js/twofa.js"></script>
 </body>
 </html>

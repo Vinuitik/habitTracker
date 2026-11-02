@@ -1,10 +1,11 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
 - verified (session `relay2fa.user` == current user id AND `relay2fa.until` > now) → handler
+- else valid `relay_trust` cookie for the current, still-enrolled user → TrustedDeviceService.accepts() → TwoFactorService.markVerified() → req.changeSessionId() → handler (see Trusted devices). Bad cookie → cleared, fall through
 - not enrolled → 302 /2fa/setup?next=<uri>; enrolled → 302 /2fa/verify?next=<uri>
 - /relay/api/** unverified → 401 `{"error":"two-factor verification required"}`; not logged in → 401 (SecurityConfig entry point for /relay/api/**; everything else still → /login)
 - NOT gated: /relay/pair, /relay/uplink (WebConfig excludePathPatterns; SecurityConfig permitAll) — runner credentials, no browser session
@@ -12,17 +13,34 @@ GET /relay/** → Spring Security (logged in? else /login) → TwoFactorIntercep
 To change which paths are gated: WebConfig.addInterceptors(). To change how long one check lasts: `RELAY_2FA_TTL_HOURS` (default 12).
 
 ## Enrol
-GET /2fa/setup → TwoFactorService.pendingSecret() (20 random bytes, stored in the session only) → TotpService.otpauthUri() → TotpService.qrSvg() → twofa-setup.html (QR + base32 key)
-POST /2fa/setup code → TwoFactorService.confirmSetup() → check() → User.totpSecret = base64(VaultEncryptionService.encrypt(serverKey, secret)), totpEnabled=true → markVerified() → req.changeSessionId() → 302 safeNext(next)
+GET /2fa/setup → TwoFactorService.pendingSecret() (20 random bytes, stored in the session only) → TotpService.otpauthUri() → TotpService.qrSvg() → TwoFactorController.renderSetup() → twofa-setup.html
+- page = 2 numbered steps: (1) add to an authenticator app, (2) type the code
+- phone/touch (default, mobile-first CSS): "Add to authenticator app" = `<a href="otpauth://…">` → opens the installed app pre-filled; QR hidden
+- desktop (`@media (pointer: fine) and (min-width: 481px)`): QR shown ("scan with the authenticator app, not the camera"), app link hidden
+- both: setup key grouped in 4s + manual-entry hint (name, key, time-based); "Copy setup key" button (static/js/twofa.js, hidden without JS; copies the key WITHOUT spaces)
+POST /2fa/setup code [trust] → TwoFactorService.confirmSetup() → check() → User.totpSecret = base64(VaultEncryptionService.encrypt(serverKey, secret)), totpEnabled=true → TrustedDeviceService.forgetAll(user) → markVerified() → [trust ticked → TrustedDeviceService.trust()] → req.changeSessionId() → 302 safeNext(next)
 - wrong code → same pending secret re-rendered (already-scanned QR stays valid)
 - already enrolled → NOT_SET_UP → redirect (setup never overwrites an existing secret)
+- re-enrolment (after a manual reset) deletes every trusted device of the user
+
+To change phone/desktop split: auth.css `@media (pointer: fine) and (min-width: 481px)`. Wording: twofa-setup.html.
 
 ## Verify
-POST /2fa/verify code → TwoFactorService.verify() → decrypt User.totpSecret → check() → save totpLastStep → markVerified() → changeSessionId() → 302 safeNext(next)
+POST /2fa/verify code [trust] → TwoFactorService.verify() → decrypt User.totpSecret → check() → save totpLastStep → markVerified() → [trust ticked → TrustedDeviceService.trust()] → changeSessionId() → 302 safeNext(next)
 
 check(): locked? → LOCKED · TotpService.matchingStep() (±1 step, constant-time) · step ≤ User.totpLastStep → replay → failure · 5 failures → locked 15 min
 
 To change limits: TwoFactorService.MAX_FAILURES / LOCK_SECONDS; drift: TotpService.WINDOW.
+
+## Trusted devices ("Trust this device for N days")
+Checkbox on twofa-setup.html + twofa-verify.html (hidden when `RELAY_2FA_TRUST_DAYS`=0) → param `trust=true`
+TrustedDeviceService.trust() → 32 random bytes (base64url token) → insert `relay_trusted_devices` {userId, tokenHash = sha256 hex, createdAt, expiresAt = now + N days, userAgent (≤200 chars)} → Set-Cookie `relay_trust=<rowId>.<token>`; HttpOnly; Secure; SameSite=Lax; Path=/relay; Max-Age N days
+Gate: TwoFactorInterceptor → TrustedDeviceService.accepts(userId) → findById(rowId) → MessageDigest.isEqual(sha256(token), tokenHash) + same userId + expiresAt > now → AND User.totpEnabled → markVerified() (same 12h session flag as a typed code)
+- unknown id / tampered token / other user / expired / feature off → cookie cleared (Max-Age=0), normal 2FA redirect
+Forget: relay.js showTrusted() (devices page footer, only when count > 0) → GET /relay/api/trusted-devices `{days, count}`; "Forget trusted devices" → DELETE /relay/api/trusted-devices → TrustedDeviceService.forgetAll(user) `{removed}` + clears this browser's cookie. Both behind the gate (a verified session).
+Indexes: TrustedDeviceService.ensureIndexes() at startup → tokenHash (unique), userId, expiresAt (TTL, expireAfterSeconds 0)
+
+To change duration / turn off: `RELAY_2FA_TRUST_DAYS` (default 30, 0 = off). Cookie name/path: TrustedDeviceService.COOKIE, COOKIE_PATH.
 
 ## Hub (contract: Relay repo shared/HUB.md)
 ### QR pairing (recommended, phone first)
@@ -88,7 +106,9 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 ## Not yet
 - Browser UI beyond devices / sessions / chat (see list above) [NOT IMPLEMENTED]
 - Rename device [NOT IMPLEMENTED]
-- Reset / disable 2FA (lost phone) [NOT IMPLEMENTED] — today: unset `totpEnabled`/`totpSecret`/`totpLastStep` on the user in Mongo.
+- Reset / disable 2FA (lost phone) [NOT IMPLEMENTED] — today: unset `totpEnabled`/`totpSecret`/`totpLastStep` on the user in Mongo. Trusted-device cookies stop working immediately (gate requires totpEnabled); the rows are deleted on re-enrolment.
+- Passkeys / WebAuthn [NOT IMPLEMENTED]
+- List / revoke a single trusted browser (only "forget all") [NOT IMPLEMENTED]
 
 ## Technology Notes
 - **Key:** `KPI_SECRETS_KEY` (base64, 32 bytes), shared with KPI capability secrets via VaultEncryptionService.serverKey(). Unset (true in prod today) → derived from `JWT_SECRET`, so rotating JWT_SECRET makes every stored TOTP secret undecryptable (users must re-enrol). Setting KPI_SECRETS_KEY later has the same effect on existing rows.
@@ -98,6 +118,14 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 - **Enrolment is trust-on-first-use:** whoever first holds a logged-in session for an account without 2FA can enrol their own authenticator. Enrol right after creating the account.
 - **TOTP:** HMAC-SHA1, 6 digits, 30s (authenticator-app defaults). Server clock must be NTP-synced; more than ~30s skew starts rejecting codes.
 - **QR:** zxing core renders to inline SVG server-side; no JS, no image endpoint.
+- **otpauth:// link (phone):** works only if an installed app registers the scheme (Google Authenticator, Microsoft Authenticator, Aegis do on Android; iOS opens whichever app claimed it last). No app installed → the tap does nothing / shows an OS error; the page's hint + copyable key cover that. Phone vs desktop is a CSS guess (`pointer: fine` + width ≥ 481px): a touch laptop gets the phone layout, a narrow desktop window too — the key + copy are shown in both, so nobody is stuck.
+- **Trust cookie theft = up to N (30) days of Relay access without a code.** It does NOT replace the HabitTracker login (Spring Security still needs a session/JWT for the same user), so it only removes the second factor for whoever already has both the cookie and a login. HttpOnly (no JS read), Secure (https only), SameSite=Lax, Path=/relay (not sent to the rest of the app).
+- **Secure flag:** on plain http (local dev without https) browsers drop the cookie, so "trust" silently does nothing there. localhost counts as secure in Chrome/Firefox.
+- **Token storage:** only sha256 hex (fast hash is fine for 256-bit random tokens); Mongo dumps on Drive can't be turned into cookies. Compare is MessageDigest.isEqual.
+- **Expiry & cleanup:** validity is checked on every read (expiresAt > now), so expiry is exact. The TTL index only garbage-collects: Mongo's TTL monitor runs every ~60s, so expired rows linger up to about a minute (longer under load). Index is created by ensureIndexes() because auto-index-creation is off; changing a TTL on an existing index needs collMod or a drop.
+- **Revocation:** "Forget trusted devices" deletes all rows of the user → every trusted browser asks for a code on its next unverified request. A browser that already has a verified session keeps it until RELAY_2FA_TTL_HOURS / session end (session flag ≠ cookie). Re-enrolment also deletes all rows; resetting `totpEnabled` disables them at once.
+- **Changing RELAY_2FA_TRUST_DAYS** affects new cookies only; existing rows keep their stored expiresAt (except 0, which ignores all of them immediately).
+- **Shared browser, two accounts:** a cookie for another user is cleared when that user hits /relay, so switching accounts on one browser drops the other account's trust.
 - **Uplink registry is in-memory, single node** (UplinkRegistry maps). A restart drops every uplink: devices show offline until each runner reconnects (backoff up to 60s). Two app instances would each see only their own sockets.
 - **Pending proxy requests are in-memory**: lost on restart (the browser sees a dropped connection); a socket closing fails its pending calls with 503.
 - **Pings exist for Cloudflare:** the tunnel kills a WebSocket after ~100s idle; 30s pings keep it alive, and the 95s silence check catches half-open runners.
@@ -141,7 +169,17 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | Stored fields | User.totpSecret, totpEnabled, totpLastStep |
 | Redirect safety | TwoFactorController.safeNext() |
 | Error messages | TwoFactorController.message() |
-| Page look | templates/twofa-*.html, static/css/auth.css (.auth-hint, .auth-qr, .auth-secret) |
+| Page look | templates/twofa-*.html, static/css/auth.css (.auth-hint, .auth-qr, .auth-secret, .twofa-*, .auth-copy, .auth-check) |
+| Phone vs desktop on setup page | auth.css `@media (pointer: fine) and (min-width: 481px)` (.twofa-add, .twofa-qr, .twofa-on-touch/-desktop) |
+| Authenticator link / key in model | TwoFactorController.renderSetup() (otpauthUri, secret, secretRaw, account) |
+| Copy setup key | static/js/twofa.js |
+| Trust duration / off switch | `RELAY_2FA_TRUST_DAYS` / `relay.2fa.trust-days` (default 30, 0 = off) |
+| Trust cookie name / path / flags | TrustedDeviceService.COOKIE, COOKIE_PATH, setCookie() |
+| Trust token size / UA truncation | TrustedDeviceService.TOKEN_BYTES, MAX_USER_AGENT |
+| Trusted-device rows / indexes | TrustedDevice (`relay_trusted_devices`), TrustedDeviceService.ensureIndexes() |
+| Cookie → verified session | TwoFactorInterceptor.preHandle(), TrustedDeviceService.accepts() |
+| Forget trusted devices (API / UI) | TwoFactorController.trustedDevices(), forgetTrustedDevices(); relay.js showTrusted(), forgetTrusted(); relay.css `.relay-foot` |
+| Re-enrol forgets trust | TwoFactorService.confirmSetup() |
 | Relay page shell | templates/relay.html, RelayController.relay() |
 | Relay UI routes (hash) | relay.js route() |
 | Hub status → message / 2FA redirect | relay.js call() |

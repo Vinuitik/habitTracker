@@ -22,8 +22,13 @@
     <div>
       <label for="code">6-digit code</label>
       <input id="code" type="text" name="code" required autofocus inputmode="numeric"
-             autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]*">
+             autocomplete="one-time-code" maxlength="7" pattern="[0-9]{3} ?[0-9]{3}"
+             title="The 6 digits from your authenticator app">
     </div>
+    <label class="auth-check" th:if="${trustDays > 0}">
+      <input type="checkbox" name="trust" value="true">
+      <span th:text="'Trust this device for ' + ${trustDays} + (${trustDays == 1} ? ' day' : ' days')">Trust this device for 30 days</span>
+    </label>
     <button type="submit">Continue</button>
   </form>
 
