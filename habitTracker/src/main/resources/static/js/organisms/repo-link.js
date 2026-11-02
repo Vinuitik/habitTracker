@@ -1,6 +1,6 @@
 // Board header repo row ([data-repo] slot in Board's header): folder link + repo-map status + map job progress.
 // RepoLink.mount(el, projectId) → GET PROJECT → not linked: "Link folder" (FolderPicker) ·
-// linked (project.link = {deviceId, path}): "Linked to <folder>" + Unlink (DELETE PROJECT_LINK) + map status
+// linked (project.runnerDeviceId + folderName): "Linked to <folder>" + Unlink (DELETE PROJECT_LINK) + map status
 // (GET PROJECT_MAP; 404 = not mapped) + "Map repo"/"Remap" → POST PROJECT_MAP {jobId} → poll PROJECT_MAP_JOB
 // every ENV.TIMING.MAP_POLL_MS with ?after=<nextSeq>, events appended to the progress panel.
 // Jobs live in `jobs` (per project) so a board re-render / navigating away and back keeps the progress.
@@ -10,7 +10,7 @@ window.RepoLink = (() => {
   let M = null;            // mounted: { el, projectId, project, err, map (undefined = loading, null = not mapped), mapErr }
   const jobs = new Map();  // projectId -> { projectId, jobId, after, events, state: running|done|failed, error, fails, timer }
 
-  const linkOf = (p) => (p && p.link && p.link.path ? p.link : null);
+  const linkOf = (p) => (p && p.runnerDeviceId ? { deviceId: p.runnerDeviceId, name: p.folderName || 'folder' } : null);
   const mounted = (m) => M === m && m.el.isConnected;
 
   async function mount(el, projectId) {
@@ -71,7 +71,7 @@ window.RepoLink = (() => {
     const job = jobs.get(m.projectId);
     const running = !!job && job.state === 'running';
     m.el.innerHTML = `
-      <span class="repo-bar__linked" title="${esc(link.path)}">${Icons.folder}<span>Linked to <strong>${esc(FolderPicker.folderName(link.path))}</strong></span></span>
+      <span class="repo-bar__linked" >${Icons.folder}<span>Linked to <strong>${esc(link.name)}</strong></span></span>
       <button type="button" class="btn btn--ghost btn--sm" data-repo-act="unlink">Unlink</button>
       <span class="repo-bar__sep" aria-hidden="true"></span>
       ${mapStatusHtml(m)}
