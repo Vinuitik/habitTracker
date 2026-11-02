@@ -95,7 +95,7 @@ class CapabilityAgentIntegrationTest {
     }
 
     private void generatorProposes(Map<String, List<String>> declared) {
-        when(generator.propose(anyString(), anyString()))
+        when(generator.propose(anyString(), anyString(), anyString()))
                 .thenReturn(new CapabilityGenerator.Proposal("Count the things", "SERVER", declared));
     }
 
@@ -122,13 +122,13 @@ class CapabilityAgentIntegrationTest {
     void fullFlow_proposeApproveGenerateTestGate_becomesActiveAndWiresKpi() throws Exception {
         KPI k = kpi(alice, "Widgets");
         generatorProposes(NO_ACCESS);
-        when(generator.generate(eq("Widgets"), anyString(), anyString(), any(), isNull(), isNull())).thenReturn("print(5)");
+        when(generator.generate(any(), eq("Widgets"), anyString(), anyString(), any(), isNull(), isNull())).thenReturn("print(5)");
         when(sandboxClient.run(any())).thenReturn(ok("noise\n5\n"));
 
         JsonNode proposed = propose(alice, "Widgets", 200);
         assertEquals("PROPOSED", proposed.get("status").asText());
         assertEquals("Count the things", proposed.get("proposal").asText());
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any());
+        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
         verifyNoInteractions(sandboxClient);
         assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType(), "not wired before approval");
 
@@ -166,14 +166,14 @@ class CapabilityAgentIntegrationTest {
         }
 
         assertEquals(0, capabilityRepository.count());
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any());
+        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
         verifyNoInteractions(sandboxClient);
     }
 
     @Test
     void nonServerPlatformProposal_isRejected() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString()))
+        when(generator.propose(anyString(), anyString(), anyString()))
                 .thenReturn(new CapabilityGenerator.Proposal("Read steps", "ANDROID", NO_ACCESS));
         propose(alice, "Widgets", 422);
         assertEquals(0, capabilityRepository.count());
@@ -186,7 +186,7 @@ class CapabilityAgentIntegrationTest {
         // and the capability never goes live.
         KPI k = kpi(alice, "Widgets");
         generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any()))
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn("import urllib.request\nprint(urllib.request.urlopen('https://api.example.com').read())");
         when(sandboxClient.run(any())).thenReturn(nonZero("URLError: <urlopen error [Errno -3] Temporary failure in name resolution>"));
 
@@ -204,7 +204,7 @@ class CapabilityAgentIntegrationTest {
     void failedGate_storesVisibleReason_regenerateFeedsErrorBack_andCapsAttempts() throws Exception {
         KPI k = kpi(alice, "Widgets");
         generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("raise SystemExit(1)");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("raise SystemExit(1)");
         when(sandboxClient.run(any())).thenReturn(nonZero("Traceback: boom"));
 
         String id = propose(alice, "Widgets", 200).get("id").asText();
@@ -215,13 +215,13 @@ class CapabilityAgentIntegrationTest {
 
         JsonNode second = act(alice, "Widgets", id, "regenerate", 200);
         assertEquals(2, second.get("attempts").asInt());
-        verify(generator).generate(eq("Widgets"), anyString(), anyString(), any(),
+        verify(generator).generate(any(), eq("Widgets"), anyString(), anyString(), any(),
                 eq("raise SystemExit(1)"), org.mockito.ArgumentMatchers.contains("boom"));
 
         JsonNode third = act(alice, "Widgets", id, "regenerate", 200);
         assertEquals(3, third.get("attempts").asInt());
         act(alice, "Widgets", id, "regenerate", 409); // cap reached
-        verify(generator, times(3)).generate(any(), any(), any(), any(), any(), any());
+        verify(generator, times(3)).generate(any(), any(), any(), any(), any(), any(), any());
         assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType());
     }
 
@@ -229,7 +229,7 @@ class CapabilityAgentIntegrationTest {
     void regenerateThatPasses_goesActive() throws Exception {
         kpi(alice, "Widgets");
         generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print('x')", "print(2)");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print('x')", "print(2)");
         when(sandboxClient.run(any())).thenReturn(ok("not a number"), ok("2"));
 
         String id = propose(alice, "Widgets", 200).get("id").asText();
@@ -243,7 +243,7 @@ class CapabilityAgentIntegrationTest {
     void generatorOutage_isFailureWithReason_notCountedAsAttempt() throws Exception {
         kpi(alice, "Widgets");
         generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any()))
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new CapabilityGeneratorException("Generator upstream 502: auth expired", false, null));
 
         String id = propose(alice, "Widgets", 200).get("id").asText();
@@ -257,8 +257,35 @@ class CapabilityAgentIntegrationTest {
     @Test
     void proposeWhenGeneratorBusy_is409() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString())).thenThrow(new CapabilityGeneratorException("busy", true, null));
+        when(generator.propose(anyString(), anyString(), anyString())).thenThrow(new CapabilityGeneratorException("busy", true, null));
         propose(alice, "Widgets", 409);
+    }
+
+    @Test
+    void proposeWithNoRunnerOnline_is503WithConnectRunnerMessage() throws Exception {
+        kpi(alice, "Widgets");
+        when(generator.propose(anyString(), anyString(), anyString())).thenThrow(CapabilityGeneratorException.noRunner(null));
+        JsonNode res = propose(alice, "Widgets", 503);
+        assertEquals(CapabilityGeneratorException.NO_RUNNER_MESSAGE, res.get("error").asText());
+    }
+
+    @Test
+    void approveWithNoRunnerOnline_failsWithoutCountingAnAttempt_thenRegenerates() throws Exception {
+        kpi(alice, "Widgets");
+        generatorProposes(NO_ACCESS);
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(CapabilityGeneratorException.noRunner(null)).thenReturn("print(4)");
+        when(sandboxClient.run(any())).thenReturn(ok("4\n"));
+        String id = propose(alice, "Widgets", 200).get("id").asText();
+
+        JsonNode failed = act(alice, "Widgets", id, "approve", 200);
+        assertEquals("TEST_FAILED", failed.get("status").asText());
+        assertEquals("Code generation failed: " + CapabilityGeneratorException.NO_RUNNER_MESSAGE,
+                failed.get("failureReason").asText());
+        assertEquals(0, capabilityRepository.findById(id).orElseThrow().getAttempts() == null ? 0
+                : capabilityRepository.findById(id).orElseThrow().getAttempts());
+
+        assertEquals("ACTIVE", act(alice, "Widgets", id, "regenerate", 200).get("status").asText());
     }
 
     @Test
@@ -268,7 +295,7 @@ class CapabilityAgentIntegrationTest {
         String id = propose(alice, "Widgets", 200).get("id").asText();
         assertEquals("REJECTED", act(alice, "Widgets", id, "reject", 200).get("status").asText());
         act(alice, "Widgets", id, "approve", 409);
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any());
+        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
     }
 
     // ── M12 repair ───────────────────────────────────────────────────────────
@@ -287,14 +314,14 @@ class CapabilityAgentIntegrationTest {
     @Test
     void manualRepair_createsNewVersionSeededWithFailure_clearsNeedsRepairOnPass() throws Exception {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(9)");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(9)");
         when(sandboxClient.run(any())).thenReturn(ok("9"));
 
         JsonNode res = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/repair", null, 200);
 
         assertEquals("ACTIVE", res.get("status").asText());
         assertEquals(2, res.get("version").asInt());
-        verify(generator).generate(eq("Widgets"), eq("count widgets"), eq("spec"), any(),
+        verify(generator).generate(any(), eq("Widgets"), eq("count widgets"), eq("spec"), any(),
                 eq("print(old)"), org.mockito.ArgumentMatchers.contains("NameError old"));
         KPI after = kpiRepository.findById(k.getId()).orElseThrow();
         assertEquals(ProxyStatus.ACTIVE, after.getProxyStatus());
@@ -307,7 +334,7 @@ class CapabilityAgentIntegrationTest {
     @Test
     void repairThatFailsTestGate_keepsKpiNeedingRepair() throws Exception {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(nope)");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(nope)");
         when(sandboxClient.run(any())).thenReturn(nonZero("still broken"));
 
         JsonNode res = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/repair", null, 200);
@@ -328,7 +355,7 @@ class CapabilityAgentIntegrationTest {
     @Test
     void autoRepair_retriesUpToCap_untilTestGatePasses() {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("a", "b", "c");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("a", "b", "c");
         when(sandboxClient.run(any())).thenReturn(nonZero("x"), nonZero("y"), ok("1"));
 
         KPIProxyCapability res = service.repairFor(alice.getId(), k, true);
@@ -341,13 +368,13 @@ class CapabilityAgentIntegrationTest {
     @Test
     void autoRepair_givesUpAtCap_leavingKpiNeedingRepair() {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("a");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("a");
         when(sandboxClient.run(any())).thenReturn(nonZero("x"));
 
         KPIProxyCapability res = service.repairFor(alice.getId(), k, true);
 
         assertEquals(CapabilityStatus.TEST_FAILED, res.getStatus());
-        verify(generator, times(3)).generate(any(), any(), any(), any(), any(), any());
+        verify(generator, times(3)).generate(any(), any(), any(), any(), any(), any(), any());
         assertEquals(ProxyStatus.NEEDS_REPAIR, kpiRepository.findById(k.getId()).orElseThrow().getProxyStatus());
     }
 
@@ -372,7 +399,7 @@ class CapabilityAgentIntegrationTest {
         act(bob, "Widgets", id, "approve", 400);
         act(bob, "Widgets", id, "reject", 400);
 
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any());
+        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
         KPIProxyCapability stored = capabilityRepository.findById(id).orElseThrow();
         assertEquals(CapabilityStatus.PROPOSED, stored.getStatus());
         assertEquals(alice.getId(), stored.getUserId());
@@ -381,7 +408,7 @@ class CapabilityAgentIntegrationTest {
 
         // Alice still can.
         generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
         when(sandboxClient.run(any())).thenReturn(ok("1"));
         assertEquals("ACTIVE", act(alice, "Widgets", id, "approve", 200).get("status").asText());
     }

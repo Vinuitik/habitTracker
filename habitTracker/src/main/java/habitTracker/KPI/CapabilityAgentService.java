@@ -72,7 +72,7 @@ public class CapabilityAgentService {
             throw new IllegalStateException("This KPI already has an active capability");
         }
 
-        CapabilityGenerator.Proposal p = generator.propose(kpi.getName(), description.trim());
+        CapabilityGenerator.Proposal p = generator.propose(userId, kpi.getName(), description.trim());
         Map<String, List<String>> granted = checkGrantable(p.platform(), p.declaredCapabilities());
 
         // A newer proposal supersedes any unfinished older one.
@@ -171,13 +171,20 @@ public class CapabilityAgentService {
         }
         KPIProxyCapability result = retry(target, kpi);
         for (int i = 1; autoRetry && i < MAX_ATTEMPTS && result.getStatus() == CapabilityStatus.TEST_FAILED
-                && attemptsOf(result) < MAX_ATTEMPTS; i++) {
+                && attemptsOf(result) < MAX_ATTEMPTS && !waitingForRunner(result); i++) {
             result = retry(result, kpi);
         }
         return result;
     }
 
+    /** True when this version failed only because no runner of its owner was online (not counted as an attempt). */
+    public static boolean waitingForRunner(KPIProxyCapability c) {
+        return c != null && c.getStatus() == CapabilityStatus.TEST_FAILED && NO_RUNNER_REASON.equals(c.getFailureReason());
+    }
+
     // ── internals ────────────────────────────────────────────────────────────
+
+    static final String NO_RUNNER_REASON = "Code generation failed: " + CapabilityGeneratorException.NO_RUNNER_MESSAGE;
 
     private static String repairReason(KPIProxyCapability c) {
         String last = c.getLastResult();
@@ -215,7 +222,7 @@ public class CapabilityAgentService {
 
         String code;
         try {
-            code = generator.generate(kpi.getName(), cap.getDescription(), cap.getProposal(),
+            code = generator.generate(cap.getUserId(), kpi.getName(), cap.getDescription(), cap.getProposal(),
                     cap.getDeclaredCapabilities(), cap.getSourceCode(), cap.getFailureReason());
         } catch (CapabilityGeneratorException e) {
             // Not counted as an attempt: the model never produced code (CLI down, auth expired, busy, bad JSON).
