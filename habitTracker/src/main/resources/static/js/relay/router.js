@@ -18,6 +18,7 @@
   const dec = decodeURIComponent;
   const HASH_ROUTES = [
     [/^\/d\/([^/]+)\/s\/([^/]+)$/, (m) => [RelayChat, { dev: dec(m[1]), sid: dec(m[2]) }]],
+    [/^\/d\/([^/]+)\/p\/([^/]+)\/git$/, (m) => [RelayGit, { dev: dec(m[1]), pid: dec(m[2]) }]],
     [/^\/d\/([^/]+)$/, (m) => [RelaySessions, { dev: dec(m[1]) }]],
     [/^\/install$/, () => [RelayInstall, {}]],
   ];
