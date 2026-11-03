@@ -96,6 +96,9 @@ window.ENV = {
     PLANNER_POLL_MS: 1200,    // planner conversation poll while the AI is working
     MAP_POLL_MS: 2000,        // repo-map job progress poll
     KPI_CAP_POLL_MS: 1500,    // KPI Automate job poll while the runner/sandbox works
+    // containers
+    CONTAINERS_POLL_BUSY_MS: 2000,   // Relay Containers tab poll while start/stop runs
+    CONTAINERS_POLL_IDLE_MS: 10000,  // ...and otherwise (containers can die on their own)
   },
   BOARD: {
     POS_STEP: 65536,          // Trello pos spacing for append / empty list

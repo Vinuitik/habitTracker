@@ -3,6 +3,7 @@
 //   #/install                RelayInstall   install-a-runner guide (Linux / Windows)
 //   #/d/<dev>                RelaySessions  sessions on that machine (+ new session)
 //   #/d/<dev>/s/<sid>        RelayChat      chat
+//   #/d/<dev>/p/<pid>/containers  RelayContainers  docker compose control (temporary route until the shell)
 //   /relay/claim/<id>        RelayClaim     confirm a runner's QR pairing (path: it's the link inside the QR)
 //
 // Organism contract (js/relay/organisms/*), what later tabs (Git / Containers / Files / Subagents) plug into:
@@ -18,6 +19,7 @@
   const dec = decodeURIComponent;
   const HASH_ROUTES = [
     [/^\/d\/([^/]+)\/s\/([^/]+)$/, (m) => [RelayChat, { dev: dec(m[1]), sid: dec(m[2]) }]],
+    [/^\/d\/([^/]+)\/p\/([^/]+)\/containers$/, (m) => [RelayContainers, { dev: dec(m[1]), pid: dec(m[2]) }]],
     [/^\/d\/([^/]+)$/, (m) => [RelaySessions, { dev: dec(m[1]) }]],
     [/^\/install$/, () => [RelayInstall, {}]],
   ];
