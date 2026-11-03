@@ -6,6 +6,7 @@ import habitTracker.auth.SecurityUtils;
 import habitTracker.integrations.trello.TrelloApiClient;
 import habitTracker.integrations.trello.TrelloGatewayException;
 import habitTracker.relay.RunnerCallException;
+import habitTracker.aiusage.AiUsageService;
 import habitTracker.relay.RunnerJobService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -42,6 +43,7 @@ public class PlannerService {
     private final BoardSnapshotService boardSnapshots;
     private final TrelloApiClient trello;
     private final RunnerJobService runner;
+    private final AiUsageService usage;
     private final PlannerPrompts prompts;
     private final MongoTemplate mongo;
     private final ObjectMapper json;
@@ -49,7 +51,7 @@ public class PlannerService {
 
     public PlannerService(ProjectRepository projects, ProjectMapRepository maps,
                           PlannerConversationRepository conversations, BoardSnapshotService boardSnapshots,
-                          TrelloApiClient trello, RunnerJobService runner, PlannerPrompts prompts,
+                          TrelloApiClient trello, RunnerJobService runner, AiUsageService usage, PlannerPrompts prompts,
                           MongoTemplate mongo, ObjectMapper json,
                           @Value("${relay.plan.max-turns:80}") int maxTurns) {
         this.projects = projects;
@@ -58,6 +60,7 @@ public class PlannerService {
         this.boardSnapshots = boardSnapshots;
         this.trello = trello;
         this.runner = runner;
+        this.usage = usage;
         this.prompts = prompts;
         this.mongo = mongo;
         this.json = json;
@@ -142,6 +145,7 @@ public class PlannerService {
         PlannerConversation c = ownedConversation(p, conversationId);
         List<Map<String, Object>> events = new ArrayList<>();
         long nextSeq = Math.max(0, after);
+        AiUsageService.Tokens finishedUsage = null;
         String jobId = c.getCurrentJobId();
         if (jobId != null && !jobId.equals(c.getResultJobId())) {
             linked(p);
@@ -163,6 +167,8 @@ public class PlannerService {
             }
             nextSeq = snap.path("nextSeq").asLong(nextSeq);
             String state = snap.path("state").asText("");
+            usage.record(p.getUserId(), jobId, snap, AiUsageService.Source.plan(p.getId()));
+            finishedUsage = AiUsageService.isTerminal(state) ? AiUsageService.tokens(snap.get("usage")).orElse(null) : null;
             if ("done".equals(state)) {
                 storeResult(c, jobId, snap.get("result"));
                 c = conversations.findById(c.getId()).orElse(c);
@@ -172,7 +178,13 @@ public class PlannerService {
                 c = conversations.findById(c.getId()).orElse(c);
             }
         }
-        return view(c, events, nextSeq);
+        Map<String, Object> out = view(c, events, nextSeq);
+        // Only on the poll that sees the job finish: the UI shows "Used N tokens" under that job.
+        if (finishedUsage != null) {
+            out.put("usage", Map.of("inputTokens", finishedUsage.input(), "outputTokens", finishedUsage.output(),
+                    "totalTokens", finishedUsage.total()));
+        }
+        return out;
     }
 
     private static boolean isFailed(String state) {

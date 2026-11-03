@@ -316,11 +316,9 @@ function renderAutomateJob(body) {
     const live = job.state === 'running';
     const events = job.state === 'failed' ? job.events.filter(ev => ev.kind !== 'error') : job.events;
     const box = automateEl('div', 'automate__steps');
-    box.innerHTML = StepList.html(events, live, 'Waiting for your runner', job.startedAt);   // StepList escapes all text
+    // StepList escapes all text; usage is numbers only
+    box.innerHTML = StepList.html(events, live, 'Waiting for your runner', job.startedAt) + StepList.usage(job.usage);
     body.append(box);
-    if (job.usage && job.usage.totalTokens) {
-        body.append(automateEl('div', 'automate__usage', `Used ${job.usage.totalTokens.toLocaleString()} tokens`));
-    }
     if (live && !AUTOMATE.tickTimer) {
         AUTOMATE.tickTimer = setInterval(() => StepList.tick(document.getElementById('automateBody')), 1000);
     } else if (!live) {

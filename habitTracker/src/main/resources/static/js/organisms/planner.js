@@ -152,6 +152,7 @@ window.Planner = (() => {
     });
     const maxSeq = (res.events || []).reduce((m, ev) => Math.max(m, ev.seq + 1), s.nextSeq);
     s.nextSeq = res.nextSeq != null ? res.nextSeq : maxSeq;
+    if (res.usage) job.usage = res.usage;   // only on the poll that saw the job finish
     if (Array.isArray(res.messages) && res.messages.length >= s.messages.length) s.messages = res.messages;
     s.questions = res.state === 'waiting_user' ? (res.questions || []) : [];
     const was = s.state;
@@ -236,7 +237,8 @@ window.Planner = (() => {
   function jobHtml(job) {
     if (!job.events.length && !(job === S.jobs[S.jobs.length - 1] && S.state === 'running')) return '';
     const live = job === S.jobs[S.jobs.length - 1] && S.state === 'running';
-    return StepList.html(job.events, live, job.kind === 'lock' ? 'Starting the draft' : 'Waiting for the runner');
+    return StepList.html(job.events, live, job.kind === 'lock' ? 'Starting the draft' : 'Waiting for the runner')
+      + (live ? '' : StepList.usage(job.usage));
   }
 
   function startTick() {

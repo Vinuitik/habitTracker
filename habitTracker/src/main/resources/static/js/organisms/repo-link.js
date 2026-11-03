@@ -8,7 +8,8 @@ window.RepoLink = (() => {
   const { esc, timeAgo } = Dom;
   const EP = ENV.ENDPOINTS;
   let M = null;            // mounted: { el, projectId, project, err, map (undefined = loading, null = not mapped), mapErr }
-  const jobs = new Map();  // projectId -> { projectId, jobId, after, events, state: running|done|failed, error, fails, timer }
+  const jobs = new Map();  // projectId -> { projectId, jobId, after, events, state: running|done|failed, error, fails, timer, usage }
+  const lastUsage = new Map();  // projectId -> usage {inputTokens, outputTokens} of the last map job finished on this page
 
   const linkOf = (p) => (p && p.runnerDeviceId ? { deviceId: p.runnerDeviceId, name: p.folderName || 'folder' } : null);
   const mounted = (m) => M === m && m.el.isConnected;
@@ -52,7 +53,14 @@ window.RepoLink = (() => {
     const subs = m.map.subsystems || [];
     const sha = String(m.map.commitSha || '').slice(0, 7);
     return `<span class="badge badge--success" title="${esc(subs.map((s) => s.name).join(', '))}">Mapped</span>
-      <span class="repo-bar__meta">${sha ? `${esc(sha)} · ` : ''}${esc(timeAgo(m.map.builtAt))} · ${subs.length} subsystem${subs.length === 1 ? '' : 's'}</span>`;
+      <span class="repo-bar__meta">${sha ? `${esc(sha)} · ` : ''}${esc(timeAgo(m.map.builtAt))} · ${subs.length} subsystem${subs.length === 1 ? '' : 's'}${usedText(m.projectId, ' · ')}</span>`;
+  }
+
+  // " · Used 12.4k tokens" for the last map job of this project, '' when unknown.
+  function usedText(projectId, sep) {
+    const u = lastUsage.get(projectId);
+    const total = u ? (u.totalTokens || (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)) : 0;
+    return total ? `${sep}Used ${StepList.tokens(total)} tokens` : '';
   }
 
   function render(m) {
@@ -98,7 +106,8 @@ window.RepoLink = (() => {
         ${job.events.length ? job.events.map((ev) => `<li class="map-progress__ev map-progress__ev--${esc(ev.kind || 'text')}">${esc(ev.text ?? '')}</li>`).join('')
     : '<li class="map-progress__ev map-progress__ev--text">Starting…</li>'}
       </ol>
-      ${job.error ? `<div class="map-progress__error">${esc(job.error)}</div>` : ''}`;
+      ${job.error ? `<div class="map-progress__error">${esc(job.error)}</div>` : ''}
+      ${job.state === 'running' ? '' : StepList.usage(job.usage)}`;
     const log = box.querySelector('.map-progress__log');
     log.scrollTop = log.scrollHeight;
   }
@@ -174,6 +183,7 @@ window.RepoLink = (() => {
       job.events.push(...(r.events || []));
       if (job.events.length > ENV.REPO.MAP_LOG_MAX) job.events.splice(0, job.events.length - ENV.REPO.MAP_LOG_MAX);
       if (r.nextSeq != null) job.after = r.nextSeq;
+      if (r.usage) job.usage = r.usage;
       const state = r.state || r.status;
       if (state === 'done') job.state = 'done';
       else if (state === 'failed') {
@@ -193,7 +203,8 @@ window.RepoLink = (() => {
     if (job.state === 'running') { if (m) renderProgress(m); schedule(job); return; }
     if (job.state === 'done') {
       jobs.delete(job.projectId);
-      if (m) { Toast.show('Repo mapped'); loadMap(m); }
+      if (job.usage) lastUsage.set(job.projectId, job.usage);
+      if (m) { Toast.show(`Repo mapped${usedText(job.projectId, ' · ')}`); loadMap(m); }
       return;
     }
     if (m) render(m);   // failed: re-enable the button, show the error panel

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161920">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Habits">
+  <title>HabitTracker — AI usage</title>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/reset.css">
+  <link rel="stylesheet" href="/styles/atoms/button.css">
+  <link rel="stylesheet" href="/styles/atoms/progress.css">
+  <link rel="stylesheet" href="/styles/molecules/card.css">
+  <link rel="stylesheet" href="/styles/organisms/topbar.css">
+  <link rel="stylesheet" href="/styles/organisms/tabbar.css">
+  <link rel="stylesheet" href="/styles/pages/ai-usage.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a href="/today" class="topbar__brand">HabitTracker</a>
+      <nav class="topbar__nav"></nav>
+      <form id="logout-form" action="/logout" method="post">
+        <input type="hidden" id="logout-csrf" name="_csrf" value="">
+        <button type="submit" class="topbar__signout">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="usage-page">
+    <div class="usage-page__header">
+      <div>
+        <h1 class="usage-page__title">AI usage</h1>
+        <p class="usage-page__sub" id="usage-sub">Runs on your own Claude Code</p>
+      </div>
+      <a class="btn btn--ghost" id="usage-back">Projects</a>
+    </div>
+    <div id="usage-view"><p class="usage-page__sub">Loading…</p></div>
+  </main>
+
+  <script src="/js/env.js"></script>
+  <script src="/js/topbar.js"></script>
+  <script src="/js/registerSW.js"></script>
+  <script src="/js/atoms/dom.js"></script>
+  <script src="/js/atoms/api.js"></script>
+  <script src="/js/molecules/step-list.js"></script>
+  <script src="/js/pages/ai-usage.js"></script>
+</body>
+</html>

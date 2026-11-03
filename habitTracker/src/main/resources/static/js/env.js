@@ -49,6 +49,7 @@ window.ENV = {
     PROJECT_LINK:    (id) => `/api/projects/${id}/link`,
     PROJECT_MAP:     (id) => `/api/projects/${id}/map`,
     PROJECT_MAP_JOB: (id, jobId, after) => `/api/projects/${id}/map/job/${encodeURIComponent(jobId)}?after=${after}`,
+    AI_USAGE:        (days) => `/api/ai-usage?days=${days}`,
     RELAY_DEVICES:   '/relay/api/devices',
     // path omitted/'' = filesystem roots, '~' = Documents (else home) on the runner
     RELAY_BROWSE:    (dev, path) => `/relay/api/devices/${encodeURIComponent(dev)}/v1/browse`
@@ -70,6 +71,7 @@ window.ENV = {
     CONNECT_DRIVE:   '/connect-drive',
     INSTALL:         '/install',
     PROJECTS:        '/projects',
+    AI_USAGE:        '/projects/usage',
     RELAY:           '/relay',
     RELAY_INSTALL:   '/relay#/install',   // install-a-runner guide (not /install = PWA install page)
     TWOFA_VERIFY:    '/2fa/verify',       // + ?next=<url>
@@ -97,6 +99,9 @@ window.ENV = {
   PLANNER: {
     DEFAULT_PACE: 2,          // cards/day pre-filled in the planner footer
     MOBILE_QUERY: '(max-width: 639px)',  // stacked tabs layout; keep in sync with styles/organisms/planner.css
+  },
+  AI_USAGE: {
+    DAYS: 30,                 // window of the AI usage page (server caps at 365)
   },
   REPO: {
     MAP_LOG_MAX: 200,         // progress panel keeps the last N job events

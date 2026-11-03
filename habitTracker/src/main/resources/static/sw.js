@@ -1,6 +1,6 @@
 // Hand-rolled service worker (no build step/bundler in this app, so no Workbox injectManifest).
 // Bump VERSION whenever SHELL_URLS or the routing logic below changes, so the new SW installs.
-const VERSION = 'v11';
+const VERSION = 'v12';
 const SHELL_CACHE = `habittracker-shell-${VERSION}`;
 const API_CACHE = `habittracker-api-${VERSION}`;
 
@@ -59,6 +59,7 @@ const PAGE_ROUTES = [
   '/connect-drive',
   '/install',
   '/projects',
+  '/projects/usage',
 ];
 
 // Same-origin API GETs worth serving stale while a fresh copy loads in the background —

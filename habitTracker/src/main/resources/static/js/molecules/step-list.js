@@ -34,5 +34,20 @@ window.StepList = (() => {
     root.querySelectorAll('[data-since]').forEach((n) => { n.textContent = elapsed(+n.dataset.since); });
   }
 
-  return { html, error, tick };
+  // 950 → "950", 12400 → "12.4k", 3100000 → "3.1M". Shared with pages/ai-usage.js.
+  function tokens(n) {
+    const v = Math.max(0, Number(n) || 0);
+    if (v < 1000) return String(Math.round(v));
+    if (v < 999500) return `${+(v / 1e3).toFixed(v < 1e5 ? 1 : 0)}k`;
+    return `${+(v / 1e6).toFixed(1)}M`;
+  }
+
+  // Runner job usage {inputTokens, outputTokens, totalTokens?} → "Used 12.4k tokens" line ('' when absent).
+  function usage(u) {
+    if (!u) return '';
+    const total = u.totalTokens || (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0);
+    return total ? `<div class="step-list__usage">Used ${tokens(total)} tokens</div>` : '';
+  }
+
+  return { html, error, tick, tokens, usage };
 })();

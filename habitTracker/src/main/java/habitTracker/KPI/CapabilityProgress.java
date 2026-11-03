@@ -23,6 +23,8 @@ final class CapabilityProgress {
     }
 
     private static final ThreadLocal<Sink> CURRENT = new ThreadLocal<>();
+    /** Set while CapabilityAgentService.repairFor runs, so generator jobs are recorded as kpi_repair (AiUsage). */
+    private static final ThreadLocal<Boolean> REPAIR = new ThreadLocal<>();
 
     private CapabilityProgress() {}
 
@@ -33,6 +35,20 @@ final class CapabilityProgress {
         } finally {
             CURRENT.remove();
         }
+    }
+
+    static <T> T repairing(Supplier<T> body) {
+        Boolean outer = REPAIR.get();
+        REPAIR.set(Boolean.TRUE);
+        try {
+            return body.get();
+        } finally {
+            if (outer == null) REPAIR.remove(); else REPAIR.set(outer);
+        }
+    }
+
+    static boolean isRepair() {
+        return Boolean.TRUE.equals(REPAIR.get());
     }
 
     static void step(String text) {

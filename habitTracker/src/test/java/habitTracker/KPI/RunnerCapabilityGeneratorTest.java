@@ -2,6 +2,8 @@ package habitTracker.KPI;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import habitTracker.aiusage.AiUsage;
+import habitTracker.aiusage.AiUsageService;
 import habitTracker.relay.OnlineRunnerSelector;
 import habitTracker.relay.RunnerCallException;
 import habitTracker.relay.RunnerJobService;
@@ -23,7 +25,8 @@ class RunnerCapabilityGeneratorTest {
     RunnerJobService jobs = mock(RunnerJobService.class);
     OnlineRunnerSelector selector = mock(OnlineRunnerSelector.class);
     CapabilityPrompts prompts = new CapabilityPrompts(json);
-    RunnerCapabilityGenerator gen = new RunnerCapabilityGenerator(jobs, selector, prompts, 10_000, 1, ms -> {});
+    AiUsageService usage = mock(AiUsageService.class);
+    RunnerCapabilityGenerator gen = new RunnerCapabilityGenerator(jobs, selector, prompts, usage, 10_000, 1, ms -> {});
 
     private JsonNode snap(String s) throws Exception {
         return json.readTree(s);
@@ -50,6 +53,7 @@ class RunnerCapabilityGeneratorTest {
         assertEquals(3, spec.getValue().maxTurns());
         assertTrue(spec.getValue().prompt().contains("KPI name: PRs\nUser wants this captured automatically: count my PRs"));
         verify(selector).markUsed("dev1");
+        verify(usage, atLeastOnce()).record(eq("u"), eq("j1"), any(), eq(AiUsageService.Source.kpi(AiUsage.KPI_PROPOSE, "PRs")));
     }
 
     @Test
@@ -63,6 +67,18 @@ class RunnerCapabilityGeneratorTest {
         ArgumentCaptor<RunnerJobService.JobSpec> spec = ArgumentCaptor.forClass(RunnerJobService.JobSpec.class);
         verify(jobs).startJob(any(), any(), spec.capture());
         assertTrue(spec.getValue().prompt().contains("FAILED its dry run. Fix it.\nPrevious code:\nold\nFailure:\nboom\n"));
+        verify(usage).record(eq("u"), eq("j1"), any(), eq(AiUsageService.Source.kpi(AiUsage.KPI_GENERATE, "K")));
+    }
+
+    @Test
+    void generate_insideRepair_isRecordedAsRepair() throws Exception {
+        when(selector.pick("u")).thenReturn(Optional.of("dev1"));
+        when(jobs.startJob(eq("u"), eq("dev1"), any())).thenReturn("j1");
+        when(jobs.pollJob(any(), any(), any(), anyLong()))
+                .thenReturn(snap("{\"state\":\"done\",\"result\":{\"sourceCode\":\"print(1)\"}}"));
+
+        CapabilityProgress.repairing(() -> gen.generate("u", "K", "d", "spec", Map.of(), "old", "boom"));
+        verify(usage).record(eq("u"), eq("j1"), any(), eq(AiUsageService.Source.kpi(AiUsage.KPI_REPAIR, "K")));
     }
 
     @Test
@@ -102,7 +118,7 @@ class RunnerCapabilityGeneratorTest {
 
     @Test
     void timeout_cancelsJob() throws Exception {
-        RunnerCapabilityGenerator slow = new RunnerCapabilityGenerator(jobs, selector, prompts, 0, 1, ms -> {});
+        RunnerCapabilityGenerator slow = new RunnerCapabilityGenerator(jobs, selector, prompts, usage, 0, 1, ms -> {});
         when(selector.pick("u")).thenReturn(Optional.of("dev1"));
         when(jobs.startJob(any(), any(), any())).thenReturn("j1");
         when(jobs.pollJob(any(), any(), any(), anyLong())).thenReturn(snap("{\"state\":\"running\"}"));

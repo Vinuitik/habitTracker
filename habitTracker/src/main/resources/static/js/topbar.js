@@ -8,7 +8,7 @@ const NAV_ITEMS = [
     icon: '<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>' },
   { label: 'KPIs',     href: 'KPI_DASHBOARD',      match: ['KPI_LIST', 'KPI_DASHBOARD', 'KPI_CREATE'],
     icon: '<polyline points="3,17 9,11 13,15 21,7"/><polyline points="15,7 21,7 21,13"/>' },
-  { label: 'Projects', href: 'PROJECTS',      match: ['PROJECTS'],
+  { label: 'Projects', href: 'PROJECTS',      match: ['PROJECTS', 'AI_USAGE'],
     icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>' },
   { label: 'Relay',    href: 'RELAY',         match: ['RELAY'],
     icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><polyline points="7,9 10,12 7,15"/><line x1="12" y1="15" x2="17" y2="15"/>' },

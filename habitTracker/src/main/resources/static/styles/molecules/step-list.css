@@ -29,6 +29,15 @@
 .step-row--error,
 .step-row--error .step-row__mark { color: var(--color-danger); }
 
+/* "Used 12.4k tokens" under a finished job (StepList.usage) */
+.step-list__usage {
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-muted);
+}
+
 @keyframes step-row-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }

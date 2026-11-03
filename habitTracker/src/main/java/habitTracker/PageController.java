@@ -48,4 +48,7 @@ public class PageController {
 
     @GetMapping("/projects")
     public String projects() { return "forward:/projects.html"; }
+
+    @GetMapping("/projects/usage")
+    public String aiUsage() { return "forward:/ai-usage.html"; }
 }

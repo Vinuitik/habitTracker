@@ -245,13 +245,6 @@
   line-height: 1.5;
 }
 
-.automate__usage {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-mono);
-  color: var(--color-text-muted);
-}
-
 .automate__source summary {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);

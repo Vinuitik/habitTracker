@@ -8,6 +8,7 @@ import habitTracker.auth.User;
 import habitTracker.auth.UserPrincipal;
 import habitTracker.integrations.trello.TrelloApiClient;
 import habitTracker.relay.RunnerCallException;
+import habitTracker.aiusage.AiUsage;
 import habitTracker.relay.RunnerJobService;
 import habitTracker.relay.RunnerUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,7 +64,7 @@ class PlannerEndpointsTest {
     @BeforeEach
     void setup() {
         auth = new AuthTestHelper(mongoTemplate, jwtUtil);
-        for (Class<?> c : List.of(Project.class, ProjectMap.class, PlannerConversation.class, BoardSnapshot.class)) {
+        for (Class<?> c : List.of(Project.class, ProjectMap.class, PlannerConversation.class, BoardSnapshot.class, AiUsage.class)) {
             mongoTemplate.remove(new Query(), c);
         }
         mongoTemplate.dropCollection(User.class);
@@ -155,10 +156,17 @@ class PlannerEndpointsTest {
         assertEquals(3, r.get("nextSeq").asLong());
 
         // done, prose around the JSON
-        when(runner.pollJob(alice.getId(), "d1", "job1", 0)).thenReturn(jobSnap("done",
-                "Here you go:\n```json\n{\"reply\":\"Checkout touches Cart.\",\"questions\":[\"Card payments?\",\"Deadline?\"]}\n```"));
+        var done = (com.fasterxml.jackson.databind.node.ObjectNode) jobSnap("done",
+                "Here you go:\n```json\n{\"reply\":\"Checkout touches Cart.\",\"questions\":[\"Card payments?\",\"Deadline?\"]}\n```");
+        done.putObject("usage").put("inputTokens", 1200).put("outputTokens", 300);
+        when(runner.pollJob(alice.getId(), "d1", "job1", 0)).thenReturn(done);
         r = poll(alice, p.getId(), conv);
         assertEquals("waiting_user", r.get("state").asText());
+        assertEquals(1500, r.get("usage").get("totalTokens").asLong());
+        AiUsage recorded = mongoTemplate.findOne(new Query(), AiUsage.class);
+        assertEquals("plan", recorded.getKind());
+        assertEquals(p.getId(), recorded.getProjectId());
+        assertEquals(1200, recorded.getInputTokens());
         assertEquals(2, r.get("questions").size());
         assertEquals(2, r.get("messages").size());
         assertEquals("ai", r.get("messages").get(1).get("role").asText());
@@ -168,6 +176,8 @@ class PlannerEndpointsTest {
         r = poll(alice, p.getId(), conv);
         assertEquals(2, r.get("messages").size());
         verify(runner, times(2)).pollJob(any(), any(), any(), anyLong());
+        assertNull(r.get("usage"));
+        assertEquals(1, mongoTemplate.count(new Query(), AiUsage.class));
 
         // lock → draft job
         JsonNode locked = body(mockMvc.perform(post("/api/projects/" + p.getId() + "/planner/" + conv + "/lock")

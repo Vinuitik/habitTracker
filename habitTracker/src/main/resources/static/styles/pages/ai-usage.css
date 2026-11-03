@@ -1,0 +1,141 @@
+/* AI usage page (/projects/usage, js/pages/ai-usage.js). Bars = atoms/progress.css, cards = molecules/card.css. */
+.usage-page {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--page-top) calc(var(--page-x) + var(--safe-right)) var(--page-bottom) calc(var(--page-x) + var(--safe-left));
+}
+
+.usage-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.usage-page__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+}
+
+.usage-page__sub {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.usage-page__sub--error { color: var(--color-danger); }
+
+#usage-view > * {
+  margin-bottom: var(--space-4);
+  animation: usage-in 200ms ease-out both;
+}
+#usage-view > *:nth-child(2) { animation-delay: 50ms; }
+#usage-view > *:nth-child(3) { animation-delay: 100ms; }
+#usage-view > *:nth-child(4) { animation-delay: 150ms; }
+
+.usage-total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.usage-total__label,
+.usage-total__meta,
+.usage-list__meta,
+.usage-recent__time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-muted);
+}
+
+.usage-total__value {
+  font-family: var(--font-heading);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+}
+
+.usage-total__unit {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+}
+
+.usage-card__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-heading);
+  margin-bottom: var(--space-3);
+}
+
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.usage-grid > .usage-card { margin: 0; }
+
+.usage-list,
+.usage-recent {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.usage-list__line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.usage-list__label {
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.usage-list__value,
+.usage-recent__tokens {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-mono);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.usage-recent { gap: var(--space-2); }
+
+.usage-recent__row {
+  display: grid;
+  grid-template-columns: 96px 112px 1fr auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-size: var(--text-sm);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.usage-recent__row:last-child { border-bottom: none; padding-bottom: 0; }
+.usage-recent__kind { color: var(--color-text-secondary); }
+.usage-recent__label { color: var(--color-text-primary); overflow-wrap: anywhere; }
+
+@media (max-width: 639px) {
+  .usage-recent__row { grid-template-columns: 1fr auto; }
+  .usage-recent__time { grid-column: 1 / -1; }
+}
+
+@keyframes usage-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #usage-view > * { animation: none; }
+}

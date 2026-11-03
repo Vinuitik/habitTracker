@@ -54,6 +54,7 @@ Brief → `startJob('chat')` → POST `PLANNER_START {message, conversationId?}`
 - Close / Esc → `requestClose()`: conversation or draft present → in-dialog confirm (Keep editing / Discard); else discard. Route change → `Planner.hide()` keeps state (reopening the same project resumes; another project discards it).
 - 409/503 `{error:"runner_offline"}` → `.planner__offline` banner linking `ENV.ROUTES.INSTALL`; the failed turn is rolled back, text stays in the field.
 - <640px (`ENV.PLANNER.MOBILE_QUERY` + CSS): Conversation / Draft tabs (`setTab()`), dot on Draft when a draft arrives, auto-switch to Draft on `drafted`.
+- Finished job → `usage` on that poll → `job.usage` → "Used N tokens" under its steps (`StepList.usage()`).
 - Dev mock: `ENV.FEATURES.PLANNER_MOCK = true` → `api()` uses `PlannerMock` (js/organisms/planner-mock.js): timed fake steps, 3 questions, draft growing list by list; a brief containing "offline" fakes runner_offline.
 To change: endpoints `ENV.ENDPOINTS.PLANNER_*`; poll ms `ENV.TIMING.PLANNER_POLL_MS`; default pace `ENV.PLANNER.DEFAULT_PACE`; block sizes `.week-strip__block--i1..3` in styles/organisms/planner.css.
 
@@ -83,8 +84,12 @@ To change: poll interval `ENV.TIMING.BOARD_POLL_MS`; busy rules `Board.isBusy()`
 - Linked: "Linked to <folder>" (full path in tooltip) + Unlink (Menu inline confirm) → DELETE `PROJECT_LINK` (also drops any job state for that project).
 - Map status: GET `PROJECT_MAP` → `{commitSha, builtAt, subsystems[]}` = "Mapped · sha7 · age · N subsystems"; 404 = "Not mapped".
 - "Map repo"/"Remap" (note: uses your Claude tokens) → POST `PROJECT_MAP` → `{jobId}` → `tick()` every `ENV.TIMING.MAP_POLL_MS` (2s): GET `PROJECT_MAP_JOB(id, jobId, after)` → append `events[]` (`{kind: step|text|error, text}`), `after = nextSeq` → `state|status` `done` → panel closes, toast, status refetched; `failed` → panel stays with `error` (or the last error event) + Close. 404 on the job or 5 consecutive poll errors = failed.
+- Job `usage` from the poll → done: toast "Repo mapped · Used N tokens" + same suffix on the map status line (`lastUsage`, page-session only); failed: "Used N tokens" in the panel.
 - Hub errors via `RelayApi.call()`: 401 → `/2fa/verify?next=<current url>`; 503 → "Runner offline"; 504 → "Runner didn't answer".
 To change: picker steps `FolderPicker.showDevices()/browse()/renderBrowse()`; header row `RepoLink.render()/renderProgress()`; poll `RepoLink.tick()`; error mapping `RelayApi.call()`.
+
+## AI usage page
+"AI usage" button in the index header → `ENV.ROUTES.AI_USAGE` (`/projects/usage`, separate page, nav = Projects). Flow + API: `java/habitTracker/aiusage/FLOWS.md`.
 
 ## Trello not connected (HTTP 412)
 Any index/board/import/create call → `Api.isTrelloAuth(err)` → `showConnect()` → `ConnectPanel.render()` → PUT `TRELLO_CREDENTIALS {apiKey, token}` → `route()` (retry).

@@ -69,6 +69,7 @@ Hub feature (e.g. Project/ProjectRunnerService) → RunnerJobService.startJob/po
 - RunnerJobService: non-2xx → RunnerCallException(status, raw body); 2xx → parsed JSON (blank → `{}`).
 - Job endpoints (runner contract): `POST /v1/jobs {kind: map|plan|kpi, projectId?, prompt, model?, maxTurns?}` → `{jobId}` · `GET /v1/jobs/{id}?after=<seq>` → `{jobId, kind, state, events[], nextSeq, result?, error?, usage?}` · `DELETE /v1/jobs/{id}`. Job id must match `[A-Za-z0-9_-]{1,128}` (RunnerJobService.checkId) so it can't address another runner path.
 - No deviceId chosen by the user (e.g. KPI/RunnerCapabilityGenerator) → OnlineRunnerSelector.pick(userId): DeviceService.list() → UplinkRegistry.isOnline() → most recent markUsed() (in-memory) → then lastSeenAt → empty = "Connect a runner".
+- Token usage of finished jobs: each poller calls `aiusage/AiUsageService.record()` (see `aiusage/FLOWS.md`); RunnerJobService itself records nothing.
 - UI mapping: RunnerUnavailableException.code() = `runner_not_found` / `runner_offline` / `runner_timeout`; callers answer with `message: "Connect a runner"` (see Project/ProjectRunnerController.unavailable()).
 To change: timeout `relay.proxy.timeout-ms`; error codes RunnerUnavailableException.code().
 

@@ -11,5 +11,6 @@ For detailed flows, see the co-located FLOWS.md files:
 | Offline-sync client (Outbox, Drive bridge, service worker) | `src/main/resources/static/js/offline/FLOWS.md` |
 | Projects (Trello-linked, two-step delete) | `src/main/java/habitTracker/Project/FLOWS.md` |
 | Relay web: TOTP second factor in front of /relay | `src/main/java/habitTracker/relay/FLOWS.md` |
+| AI usage: token accounting of runner jobs + /projects/usage page | `src/main/java/habitTracker/aiusage/FLOWS.md` |
 | Backup to Google Drive | `../backup/FLOWS.md` |
 | Infrastructure / ingress / secrets | `../FLOWS_infra.md` |

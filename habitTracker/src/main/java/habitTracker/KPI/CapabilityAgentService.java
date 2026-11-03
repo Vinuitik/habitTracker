@@ -159,6 +159,10 @@ public class CapabilityAgentService {
      * KPI's proxy breaker is cleared. autoRetry loops up to MAX_ATTEMPTS (background caller only).
      */
     public KPIProxyCapability repairFor(String userId, KPI kpi, boolean autoRetry) {
+        return CapabilityProgress.repairing(() -> doRepair(userId, kpi, autoRetry));
+    }
+
+    private KPIProxyCapability doRepair(String userId, KPI kpi, boolean autoRetry) {
         if (kpi.getProxyType() != ProxyType.SANDBOX_CAPABILITY) {
             throw new IllegalStateException("KPI does not use a sandbox capability");
         }

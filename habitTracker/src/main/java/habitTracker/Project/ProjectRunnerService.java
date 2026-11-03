@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import habitTracker.auth.SecurityUtils;
 import habitTracker.relay.RunnerCallException;
+import habitTracker.aiusage.AiUsageService;
 import habitTracker.relay.RunnerJobService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -37,6 +38,7 @@ public class ProjectRunnerService {
     private final ProjectRepository projects;
     private final ProjectMapRepository maps;
     private final RunnerJobService runner;
+    private final AiUsageService usage;
     private final MongoTemplate mongo;
     private final ObjectMapper json;
     private final Resource promptResource;
@@ -44,12 +46,13 @@ public class ProjectRunnerService {
     private String mapPrompt;
 
     public ProjectRunnerService(ProjectRepository projects, ProjectMapRepository maps, RunnerJobService runner,
-                                MongoTemplate mongo, ObjectMapper json,
+                                AiUsageService usage, MongoTemplate mongo, ObjectMapper json,
                                 @Value("classpath:prompts/project-map.md") Resource promptResource,
                                 @Value("${relay.map.max-turns:200}") int mapMaxTurns) {
         this.projects = projects;
         this.maps = maps;
         this.runner = runner;
+        this.usage = usage;
         this.mongo = mongo;
         this.json = json;
         this.promptResource = promptResource;
@@ -127,6 +130,7 @@ public class ProjectRunnerService {
         Project p = linked(owned(projectId));
         if (jobId == null || !jobId.equals(p.getMapJobId())) throw new ProjectService.NotFoundException("job not found");
         JsonNode snap = runner.pollJob(p.getUserId(), p.getRunnerDeviceId(), jobId, after);
+        usage.record(p.getUserId(), jobId, snap, AiUsageService.Source.map(p.getId()));
         if (!snap.isObject() || !"done".equals(snap.path("state").asText())) return snap;
         ObjectNode out = ((ObjectNode) snap).deepCopy();
         Optional<ProjectMap> existing = maps.findByProjectId(p.getId());

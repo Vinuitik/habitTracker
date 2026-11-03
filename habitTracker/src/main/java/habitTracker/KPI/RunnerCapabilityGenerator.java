@@ -1,6 +1,8 @@
 package habitTracker.KPI;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import habitTracker.aiusage.AiUsage;
+import habitTracker.aiusage.AiUsageService;
 import habitTracker.relay.OnlineRunnerSelector;
 import habitTracker.relay.RunnerCallException;
 import habitTracker.relay.RunnerJobService;
@@ -32,22 +34,25 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
     private final RunnerJobService jobs;
     private final OnlineRunnerSelector selector;
     private final CapabilityPrompts prompts;
+    private final AiUsageService usage;
     private final long jobTimeoutMs;
     private final long pollMs;
     private final Sleeper sleeper;
 
     @Autowired
     public RunnerCapabilityGenerator(RunnerJobService jobs, OnlineRunnerSelector selector, CapabilityPrompts prompts,
+                                     AiUsageService usage,
                                      @Value("${kpi.capability.job-timeout-ms:300000}") long jobTimeoutMs,
                                      @Value("${kpi.capability.poll-ms:2000}") long pollMs) {
-        this(jobs, selector, prompts, jobTimeoutMs, pollMs, Thread::sleep);
+        this(jobs, selector, prompts, usage, jobTimeoutMs, pollMs, Thread::sleep);
     }
 
     RunnerCapabilityGenerator(RunnerJobService jobs, OnlineRunnerSelector selector, CapabilityPrompts prompts,
-                              long jobTimeoutMs, long pollMs, Sleeper sleeper) {
+                              AiUsageService usage, long jobTimeoutMs, long pollMs, Sleeper sleeper) {
         this.jobs = jobs;
         this.selector = selector;
         this.prompts = prompts;
+        this.usage = usage;
         this.jobTimeoutMs = jobTimeoutMs;
         this.pollMs = pollMs;
         this.sleeper = sleeper;
@@ -60,18 +65,20 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
 
     @Override
     public Proposal propose(String userId, String kpiName, String description) {
-        return prompts.parseProposal(run(userId, prompts.proposePrompt(kpiName, description)));
+        return prompts.parseProposal(run(userId, AiUsageService.Source.kpi(AiUsage.KPI_PROPOSE, kpiName),
+                prompts.proposePrompt(kpiName, description)));
     }
 
     @Override
     public String generate(String userId, String kpiName, String description, String proposal,
                            Map<String, List<String>> declaredCapabilities, String previousCode, String previousError) {
-        return prompts.parseSourceCode(run(userId, prompts.generatePrompt(kpiName, description, proposal,
+        String kind = CapabilityProgress.isRepair() ? AiUsage.KPI_REPAIR : AiUsage.KPI_GENERATE;
+        return prompts.parseSourceCode(run(userId, AiUsageService.Source.kpi(kind, kpiName), prompts.generatePrompt(kpiName, description, proposal,
                 declaredCapabilities, previousCode, previousError)));
     }
 
     /** → the job's result node (agent's final message). */
-    private JsonNode run(String userId, String prompt) {
+    private JsonNode run(String userId, AiUsageService.Source source, String prompt) {
         String deviceId = selector.pick(userId).orElseThrow(() -> CapabilityGeneratorException.noRunner(null));
         String jobId;
         try {
@@ -98,6 +105,7 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
             after = snap.path("nextSeq").asLong(after);
             forwardEvents(snap);
             String state = snap.path("state").asText("");
+            usage.record(userId, jobId, snap, source);
             if (!"running".equals(state) && !"queued".equals(state)) CapabilityProgress.usage(snap.get("usage"));
             if ("done".equals(state)) return snap.get("result");
             if (!"running".equals(state) && !"queued".equals(state) && !state.isEmpty()) {

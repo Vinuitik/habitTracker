@@ -93,6 +93,7 @@ UI action (Propose / Approve and build / Regenerate / Fix it)
       TEST_FAILED result = state done + an "error" event "Did not pass"; unknown/expired/foreign job → 404
   → GET .../capability/jobs/active → {jobId} | 204   (reopened dialog resumes watching)
 ```
+Each runner job is also recorded in `ai_usage` by `RunnerCapabilityGenerator.run()` → `AiUsageService.record()` as `kpi_propose` / `kpi_generate` / `kpi_repair` (repair = inside `CapabilityAgentService.repairFor()`, flagged by `CapabilityProgress.repairing()`; includes the nightly repair). See `aiusage/FLOWS.md`.
 To change stage texts: `CapabilityAgentService` `CapabilityProgress.step()` calls. Error → code mapping: `CapabilityTaskService.run()`. Token counting: `CapabilityTaskService.Task.addUsage()`. Pool size / retention: `CapabilityTaskService.WORKERS`, `KEEP_FINISHED_MS` (15 min).
 
 Blocking endpoints (`/propose`, `/{id}/approve`, `/{id}/regenerate`, `/repair`) are kept unchanged for API callers and the integration tests; the nightly repair (`AgentCapabilityRepairTrigger`) calls `repairFor()` directly and never binds a progress sink (all `CapabilityProgress` calls are no-ops there).

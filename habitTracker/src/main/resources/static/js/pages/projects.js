@@ -57,6 +57,7 @@
       <div class="projects-page__header">
         <h1 class="projects-page__title">Projects</h1>
         <div class="projects-page__actions">
+          <a class="btn btn--ghost" href="${ENV.ROUTES.AI_USAGE}">AI usage</a>
           <button class="btn btn--ghost" id="import-btn">Import from Trello</button>
           <button class="btn btn--primary" id="new-project-btn">New board</button>
         </div>
