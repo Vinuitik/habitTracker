@@ -2,6 +2,8 @@
 // FolderPicker.open(projectId, onLinked) → step 1 runners (GET RELAY_DEVICES, offline ones disabled)
 // → step 2 browse (GET RELAY_BROWSE, opens at '~') → "Select this folder" → POST PROJECT_LINK
 // {deviceId, path} → onLinked(updatedProject). Keyboard: ↑/↓ move, Enter/→ open, ←/Backspace up, Esc close.
+// FolderPicker.pick({id, name}, onPicked) → runner already chosen (relay shell "+ Project"): straight to
+// step 2, "Select this folder" just closes and calls onPicked(path, folderName) — no PROJECT_LINK.
 window.FolderPicker = (() => {
   const { $, esc, timeAgo } = Dom;
   const EP = ENV.ENDPOINTS;
@@ -37,6 +39,11 @@ window.FolderPicker = (() => {
     st = { projectId, onLinked, dev: null, res: null, seq: 0 };
     Dom.open('folder-modal');
     showDevices();
+  }
+  function pick(dev, onPicked) {
+    st = { onPicked, dev, fixedDev: true, res: null, seq: 0 };
+    Dom.open('folder-modal');
+    browse(ENV.REPO.PICKER_START);
   }
   function close() {
     st = null;
@@ -104,10 +111,10 @@ window.FolderPicker = (() => {
     renderBrowse();
   }
 
-  const barHtml = (s) => `
+  const barHtml = (s) => (s.fixedDev ? '' : `
     <div class="folder-picker__bar">
       <button type="button" class="btn btn--ghost btn--sm" data-act="runners">${Icons.back}${esc(s.dev.name || 'Runners')}</button>
-    </div>`;
+    </div>`);
 
   const actions = (path, label, act) => `
     <div class="modal-box__actions">
@@ -147,6 +154,7 @@ window.FolderPicker = (() => {
     const s = st;
     const path = s.res && s.res.path;
     if (!path) return;
+    if (s.onPicked) { close(); s.onPicked(path, folderName(path)); return; }
     btn.disabled = true;
     btn.textContent = 'Linking…';
     try {
@@ -214,5 +222,5 @@ window.FolderPicker = (() => {
     $('folder-modal').querySelector('.modal-box__close').addEventListener('click', close);
   }
 
-  return { init, open, close, folderName };
+  return { init, open, pick, close, folderName };
 })();

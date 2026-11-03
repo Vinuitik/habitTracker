@@ -1,14 +1,5 @@
 /* Relay Containers tab (js/relay/organisms/relay-containers.js): state lamp, status card, danger zone */
-.lamp {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-full);
-  border: 1.5px solid var(--color-text-muted);
-  background: transparent;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-.lamp--on { background: var(--color-success); border-color: var(--color-success); }
+/* state lamp: styles/atoms/lamp.css (.lamp, .lamp--on) */
 
 .cont-status { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
 .cont-status__line { display: flex; align-items: center; gap: var(--space-3); }

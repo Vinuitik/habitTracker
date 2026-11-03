@@ -89,6 +89,7 @@ window.ENV = {
     TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',
   },
   TIMING: {
+    RELAY_RAIL_POLL_MS: 10000, // relay shell: waiting/busy sessions poll for the rail lamps + Needs-you strip
     VIEW_FADE_MS: 180,
     DRAG_HOLD_MS: 250,        // touch long-press before a card drag starts
     UNDO_TOAST_MS: 6000,
