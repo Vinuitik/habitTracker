@@ -193,7 +193,11 @@ function renderChart(kpiName, data) {
 }
 
 function updateKPIStats(kpiName, data) {
-    if (data.length === 0) return;
+    if (data.length === 0) {
+        const t = document.getElementById(`trend-${kpiName}`);
+        if (t) t.textContent = 'No data';   // else the template's "Loading…" stays forever
+        return;
+    }
     
     const latest = data[data.length - 1];
     const latestElement = document.getElementById(`latest-${kpiName}`);
