@@ -74,28 +74,12 @@ If `mcp_server.py` exits, the container stops (PID 1 via `exec`).
 
 ---
 
-## Internal API (port 8092) — no remaining caller
+## Removed: internal API (port 8092)
 
-Files: `internal_api.py`, `tests/test_internal_api.py`
-
-```
-(no caller) ──(no auth)──► mongo-backup:8092 (FastAPI, thread in mcp_server.py process)
-  POST   /internal/boards {name}                 → Trello POST /boards            → {boardId}
-  DELETE /internal/boards/{id}                   → Trello DELETE /boards/{id}     (HARD delete)
-```
-
-javaapp stopped calling this: board lifecycle moved to the per-user `TrelloApiClient`, and all AI (project
-planner, KPI capability generation) runs on users' Relay runners. The former `/internal/agent/plan`, `/apply`,
-`/capability` endpoints and `claude_cli.py` (server-side `claude -p`) were removed, along with Node + Claude CLI
-in the image and the `CLAUDE_HOME` mount. Candidate for full removal.
-
-Not in `caddy/Caddyfile`, no published port. Delete is the one intentional hard delete (everything else
-archives); confirmation is the caller's job. Empty boards are created with no default lists/labels:
-`Completed`/`Delayed`, `done`/`parked`, `_meta/STATE` are created lazily by the tools.
+The former FastAPI `internal_api.py` (POST/DELETE `/internal/boards`, unauthenticated) was deleted: board lifecycle lives in javaapp's per-user `TrelloApiClient`, and all AI (planner, KPI capability generation) runs on users' Relay runners.
 
 ### Technology Notes
-- **Auth**: none, by choice — network isolation only (not in Caddyfile, no published port); plain HTTP inside the docker network. Any container on that network can create/hard-delete boards on the global Trello account. Uvicorn runs in a daemon thread: if it dies, MCP keeps running.
-- **Memory**: Python only since the Claude CLI was removed; mongo-backup is 256m (was 768m with Node + CLI, 128m before that).
+- **Memory**: Python only (backup.py + FastMCP); mongo-backup is 256m (was 768m with Node + Claude CLI).
 
 ---
 
@@ -482,5 +466,3 @@ get_state → describe_graph → create_lists + create_cards → propose_schedul
 | Route prefix / auth | — | `caddy/Caddyfile` `handle /mcp*` + `MCP_TOKEN` | no prefix strip |
 | Cron interval / board / logic | `mcp_server.py` | `_cron_loop()`, `TRELLO_CRON_BOARD_ID`/`_NAME`, `_cron_update_card_statuses()`, `_cron_archive_empty_day_lists()` | 1h, two sweeps |
 | Trello credentials | `config.py` | `TRELLO_API_KEY`, `TRELLO_TOKEN` env | single-tenant |
-| Internal API routes/port | `internal_api.py` | `app`, `PORT` (8092), `start_in_thread()` | docker network only; no caller |
-| Board create/hard-delete | `internal_api.py` | `create_board()`, `delete_board()` | only hard delete in the system |
