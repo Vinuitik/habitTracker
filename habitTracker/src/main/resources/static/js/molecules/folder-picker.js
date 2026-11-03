@@ -127,7 +127,7 @@ window.FolderPicker = (() => {
       <nav class="folder-crumbs" aria-label="Folder path">
         ${cs.map((c, i) => (i === cs.length - 1
     ? `<span class="folder-crumbs__item folder-crumbs__item--current" aria-current="location">${esc(c.label)}</span>`
-    : `<button type="button" class="folder-crumbs__item" data-path="${esc(c.path)}">${esc(c.label)}</button>`)).join('<span class="folder-crumbs__sep">/</span>')}
+    : `<button type="button" class="folder-crumbs__item" data-path="${esc(c.path)}">${esc(c.label)}</button>`)).join('<span class="folder-crumbs__sep" aria-hidden="true">›</span>')}
       </nav>
       <div class="folder-picker__list" data-list>
         ${up ? `<button type="button" class="folder-row folder-row--up" data-path="${esc(r.parent)}">${Icons.up}<span class="folder-row__name">..</span></button>` : ''}
