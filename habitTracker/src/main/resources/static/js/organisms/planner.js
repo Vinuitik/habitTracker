@@ -18,6 +18,10 @@ window.Planner = (() => {
     apply: (pid, conv, body) => Api.request(E.PLANNER_APPLY(pid, conv), 'POST', body),
   };
   const api = () => (ENV.FEATURES.PLANNER_MOCK && window.PlannerMock ? window.PlannerMock : Real);
+  // Server error codes → readable text (Api uses the {error} code as the message).
+  const ERR_TEXT = { project_not_linked: 'Link a folder to this board first.', planner_busy: 'The AI is still working on the last message.',
+    runner_not_found: 'The linked runner was removed. Link the folder again.', runner_timeout: "Runner didn't answer. Try again." };
+  const errText = (e) => ERR_TEXT[e.code] || e.message;
   const isOffline = (e) => !!e && (e.status === 409 || e.status === 503) && e.code === 'runner_offline';
 
   let S = null;            // conversation state for S.projectId (survives hide(), dropped by discard())
@@ -113,7 +117,7 @@ window.Planner = (() => {
       if (message) s.messages.pop();
       s.jobs.pop();
       Object.assign(s, prev);
-      if (isOffline(e)) s.offline = true; else s.error = e.message;
+      if (isOffline(e)) s.offline = true; else s.error = errText(e);
       renderAll();
     }
   }
@@ -158,7 +162,7 @@ window.Planner = (() => {
     const was = s.state;
     s.state = res.state || s.state;
     if (res.draft && (was === 'running')) adoptDraft(s, res.draft);
-    if (s.state === 'failed' && !s.error) s.error = 'Planning failed. Try again.';
+    if (s.state === 'failed') s.error = res.error || s.error || 'Planning failed. Try again.';
     if (was !== 'drafted' && s.state === 'drafted' && window.matchMedia(ENV.PLANNER.MOBILE_QUERY).matches) setTab('draft');
     renderAll();
   }
@@ -437,7 +441,7 @@ window.Planner = (() => {
       if (isOffline(e)) s.offline = true;
       renderAll();
       $('planner-status').textContent = isOffline(e) ? 'No runner connected.'
-        : e.code === 'planner_already_applied' ? 'Already added to the board' : e.message;
+        : e.code === 'planner_already_applied' ? 'Already added to the board' : errText(e);
       $('planner-status').classList.add('planner__status--error');
     }
   }
