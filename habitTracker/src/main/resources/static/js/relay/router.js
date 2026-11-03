@@ -2,6 +2,7 @@
 //   #/                       RelayDevices   devices (pair / revoke)
 //   #/install                RelayInstall   install-a-runner guide (Linux / Windows)
 //   #/d/<dev>                RelaySessions  sessions on that machine (+ new session)
+//   #/d/<dev>/p/<pid>/chats  RelayChats     project Chats tab
 //   #/d/<dev>/s/<sid>        RelayChat      chat
 //   #/d/<dev>/p/<pid>/containers  RelayContainers  docker compose control (temporary route until the shell)
 //   /relay/claim/<id>        RelayClaim     confirm a runner's QR pairing (path: it's the link inside the QR)
@@ -19,6 +20,7 @@
   const dec = decodeURIComponent;
   const HASH_ROUTES = [
     [/^\/d\/([^/]+)\/p\/([^/]+)\/files$/, (m) => [RelayFiles, { dev: dec(m[1]), pid: dec(m[2]) }]],   // temporary until the M1 shell
+    [/^\/d\/([^/]+)\/p\/([^/]+)\/chats$/, (m) => [RelayChats, { dev: dec(m[1]), pid: dec(m[2]) }]],
     [/^\/d\/([^/]+)\/s\/([^/]+)$/, (m) => [RelayChat, { dev: dec(m[1]), sid: dec(m[2]) }]],
     [/^\/d\/([^/]+)\/p\/([^/]+)\/containers$/, (m) => [RelayContainers, { dev: dec(m[1]), pid: dec(m[2]) }]],
     [/^\/d\/([^/]+)\/p\/([^/]+)\/git$/, (m) => [RelayGit, { dev: dec(m[1]), pid: dec(m[2]) }]],
