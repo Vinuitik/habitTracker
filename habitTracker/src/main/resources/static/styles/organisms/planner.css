@@ -14,6 +14,13 @@
 }
 .planner[hidden] { display: none; }
 
+/* Explicit rows: the offline banner is display:none most of the time, and auto-placement would then
+   shift body into the `auto` row and the footer into the 1fr row (body overflows, footer pushed off). */
+.planner__header  { grid-row: 1; }
+.planner__offline { grid-row: 2; }
+.planner__body    { grid-row: 3; }
+.planner__footer  { grid-row: 4; }
+
 /* Page behind the open planner must not scroll (set by Planner.open/hide) */
 .planner-open { overflow: hidden; }
 
