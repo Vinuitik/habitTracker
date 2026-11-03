@@ -1,6 +1,6 @@
 // #/d/<dev>/s/<sid> chat: message list, blocking cards (permission / quota / login), Cancel / Stop,
 // model+effort chip and permission-mode select above the composer, per-session draft; polls the session.
-// #chat-agents is an empty slot above the messages: M3 (subagents panel) mounts into it.
+// #chat-agents is an empty slot above the messages: relay-agents.js mounts into it.
 // RelayChat.mount(el, {dev, sid}) → unmount (contract: js/relay/router.js). unmount stops polling.
 window.RelayChat = (() => {
   const { $, esc } = Dom;
@@ -13,6 +13,7 @@ window.RelayChat = (() => {
   const draftKey = (sid) => `relay.draft.${sid}`;
   let chat = null;      // open chat: {dev, sid, state, sig, notice}; null once unmounted
   let pollTimer = null;
+  let agentsOff = null;    // unmounts the subagents panel (relay-agents.js)
   let popoverOff = null;   // closes the config popover (removes its document listeners)
 
   const sessionUrl = (c, tail = '') => EP.RELAY_V1(c.dev, `/sessions/${R.enc(c.sid)}${tail}`);
@@ -219,6 +220,7 @@ window.RelayChat = (() => {
         </form>
       </div>`;
     chat = { dev, sid, state: '', sig: null, notice: '', configOptions: [] };
+    agentsOff = RelayAgents.mount($('chat-agents'), { dev, sid });
     const input = $('chat-input');
     input.value = loadDraft(sid);
     input.addEventListener('input', () => saveDraft(input.value));
@@ -244,6 +246,7 @@ window.RelayChat = (() => {
     return () => {
       chat = null;
       closePopover();
+      if (agentsOff) { agentsOff(); agentsOff = null; }
       clearTimeout(pollTimer);
       off();
       document.removeEventListener('visibilitychange', onVisibility);
