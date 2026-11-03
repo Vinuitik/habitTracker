@@ -1,13 +1,19 @@
-// #/d/<dev>/s/<sid> chat: message list, permission prompt, Cancel / Stop, composer; polls the session.
+// #/d/<dev>/s/<sid> chat: message list, blocking cards (permission / quota / login), Cancel / Stop,
+// model+effort chip and permission-mode select above the composer, per-session draft; polls the session.
+// #chat-agents is an empty slot above the messages: M3 (subagents panel) mounts into it.
 // RelayChat.mount(el, {dev, sid}) → unmount (contract: js/relay/router.js). unmount stops polling.
 window.RelayChat = (() => {
   const { $, esc } = Dom;
   const R = Relay;
   const EP = ENV.ENDPOINTS;
-  const POLL_ACTIVE_MS = 2000;   // busy / waiting
+  const POLL_BUSY_MS = 1000;
+  const POLL_WAITING_MS = 3000;
   const POLL_IDLE_MS = 10000;    // idle / error
+  const CHIP_CATEGORIES = ['model', 'thought_level'];   // shown in the chip label, in this order
+  const draftKey = (sid) => `relay.draft.${sid}`;
   let chat = null;      // open chat: {dev, sid, state, sig, notice}; null once unmounted
   let pollTimer = null;
+  let popoverOff = null;   // closes the config popover (removes its document listeners)
 
   const sessionUrl = (c, tail = '') => EP.RELAY_V1(c.dev, `/sessions/${R.enc(c.sid)}${tail}`);
 
@@ -37,11 +43,64 @@ window.RelayChat = (() => {
     schedule();
   }
 
-  // Poll while the tab is visible: 2s while working/waiting, 10s idle, never once finished.
+  // Poll while the tab is visible: 1s busy, 3s waiting, 10s idle, never once finished.
   function schedule() {
     clearTimeout(pollTimer);
     if (!chat || document.hidden || chat.state === 'finished') return;
-    pollTimer = setTimeout(refresh, chat.state === 'busy' || chat.state === 'waiting' ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+    pollTimer = setTimeout(refresh, chat.state === 'busy' ? POLL_BUSY_MS : chat.state === 'waiting' ? POLL_WAITING_MS : POLL_IDLE_MS);
+  }
+
+  // ---- model / effort chip + mode select ----
+  const choiceName = (o) => (o.options.find((c) => c.value === o.currentValue) || {}).name || o.currentValue;
+  const chipLabel = (opts) => {
+    const parts = CHIP_CATEGORIES.map((cat) => opts.find((o) => o.category === cat)).filter(Boolean).map(choiceName);
+    return parts.join(' · ') || (opts[0] ? choiceName(opts[0]) : '');
+  };
+
+  function closePopover() {
+    if (popoverOff) { const f = popoverOff; popoverOff = null; f(); }
+    const pop = $('chat-config-pop');
+    if (pop) pop.hidden = true;
+  }
+
+  // Groups: model, thought_level, then everything else (fast, model_config…); the `mode` option has its own select.
+  function openPopover() {
+    const opts = (chat.configOptions || []).filter((o) => o.category !== 'mode' && o.id !== 'mode');
+    const rank = (o) => { const i = CHIP_CATEGORIES.indexOf(o.category); return i < 0 ? CHIP_CATEGORIES.length : i; };
+    const pop = $('chat-config-pop');
+    pop.innerHTML = opts.slice().sort((a, b) => rank(a) - rank(b)).map((o) => `
+      <div class="chip-pop__group" role="group" aria-label="${esc(o.name)}">
+        <div class="chip-pop__label">${esc(o.name)}</div>
+        ${(o.options || []).map((c) => `
+          <button type="button" class="chip-pop__item${c.value === o.currentValue ? ' chip-pop__item--on' : ''}"
+            data-act="config" data-config="${esc(o.id)}" data-value="${esc(c.value)}" title="${esc(c.description || '')}">${esc(c.name)}</button>`).join('')}
+      </div>`).join('');
+    pop.hidden = false;
+    const onDoc = (e) => { if (!pop.contains(e.target) && !$('chat-config').contains(e.target)) closePopover(); };
+    const onKey = (e) => { if (e.key === 'Escape') closePopover(); };
+    document.addEventListener('click', onDoc, true);
+    document.addEventListener('keydown', onKey, true);
+    popoverOff = () => { document.removeEventListener('click', onDoc, true); document.removeEventListener('keydown', onKey, true); };
+  }
+
+  function renderConfig(s, locked) {
+    const opts = s.configOptions || [];
+    chat.configOptions = opts;
+    const chip = $('chat-config');
+    const label = chipLabel(opts);
+    chip.hidden = !label;
+    chip.textContent = label ? label + ' ▾' : '';
+    chip.disabled = locked;
+    if (locked) closePopover();
+    const modes = s.modes || [];
+    const sel = $('chat-mode');
+    const key = JSON.stringify([modes, s.mode]);
+    if (sel.dataset.key !== key) {
+      sel.dataset.key = key;
+      sel.hidden = !modes.length;
+      sel.innerHTML = modes.map((m) => `<option value="${esc(m.id)}" title="${esc(m.description || '')}"${m.id === s.mode ? ' selected' : ''}>${esc(m.name)}</option>`).join('');
+    }
+    sel.disabled = locked;
   }
 
   function render(s) {
@@ -50,6 +109,7 @@ window.RelayChat = (() => {
     $('chat-title').textContent = s.title || 'New session';
     $('chat-state').innerHTML = R.stateBadge(s.state);
     const working = s.state === 'busy' || s.state === 'waiting';
+    renderConfig(s, working || s.state === 'finished');
     $('chat-cancel').hidden = !working;
     $('chat-stop').hidden = s.state === 'finished';
     $('chat-input').disabled = $('chat-send').disabled = s.state === 'finished';
@@ -83,6 +143,13 @@ window.RelayChat = (() => {
       return `<div class="relay-tool relay-tool--${esc(m.status || 'completed')}">
         <span class="relay-tool__kind">${esc(m.toolKind || 'tool')}</span><span>${esc(m.text)}</span></div>`;
     }
+    if (m.role === 'agent' && (m.kind === 'quota' || m.kind === 'auth')) {
+      const quota = m.kind === 'quota';
+      return `<div class="relay-block"><div class="relay-block__title">${quota ? 'Quota exhausted' : 'Claude login expired'}</div>
+        <div class="relay-block__text">${quota ? 'Your Claude subscription limit is used up. Sessions work again once it resets.'
+          : 'Sign in to Claude again on the runner machine, then send your message again.'}</div>
+        ${m.text ? `<div class="relay-block__detail">${R.md(m.text)}</div>` : ''}</div>`;
+    }
     const cls = m.role === 'user' ? 'relay-msg--user' : 'relay-msg--agent' + (m.kind ? ' relay-msg--alert' : '');
     return `<div class="relay-msg ${cls}">${R.md(m.text)}</div>`;
   }
@@ -103,6 +170,17 @@ window.RelayChat = (() => {
     }
   }
 
+  function saveDraft(text) {
+    try { if (text) localStorage.setItem(draftKey(chat.sid), text); else localStorage.removeItem(draftKey(chat.sid)); } catch (_) { /* storage blocked */ }
+  }
+  function loadDraft(sid) {
+    try { return localStorage.getItem(draftKey(sid)) || ''; } catch (_) { return ''; }
+  }
+
+  async function setMode(modeId) {
+    if (await act('/mode', { modeId }) === false) refresh();
+  }
+
   async function send() {
     const input = $('chat-input');
     const text = input.value.trim();
@@ -110,7 +188,7 @@ window.RelayChat = (() => {
     $('chat-send').disabled = true;
     const ok = await act('/message', { text }, (e) => notice(e.status === 409
       ? 'Still working on the previous message — wait for it, or Cancel.' : e.message, e.status === 409 ? 'busy' : 'error'));
-    if (ok) { input.value = ''; input.style.height = 'auto'; notice(''); }
+    if (ok) { input.value = ''; input.style.height = 'auto'; saveDraft(''); notice(''); }
     if (chat) $('chat-send').disabled = chat.state === 'finished';
   }
 
@@ -126,16 +204,25 @@ window.RelayChat = (() => {
           <button class="btn btn--ghost btn--sm" data-act="cancel" id="chat-cancel" title="Stop the current turn, keep the session" hidden>Cancel</button>
           <button class="btn btn--danger btn--sm" data-act="stop" id="chat-stop" title="End the session (kills the agent process)" hidden>Stop</button>
         </div>
+        <div class="relay-agents" id="chat-agents"></div>
         <div class="relay-msgs" id="chat-msgs"></div>
         <div class="relay-perm" id="chat-perm" hidden></div>
         <div class="relay-notice" id="chat-notice" hidden></div>
+        <div class="relay-chatbar">
+          <button type="button" class="btn btn--ghost btn--sm" id="chat-config" data-act="config-open" aria-haspopup="true" hidden></button>
+          <select class="input relay-chatbar__mode" id="chat-mode" aria-label="Permission mode" hidden></select>
+          <div class="chip-pop" id="chat-config-pop" hidden></div>
+        </div>
         <form class="relay-composer" id="chat-form">
           <textarea class="input" id="chat-input" rows="1" placeholder="Message…" aria-label="Message"></textarea>
           <button class="btn btn--primary" type="submit" id="chat-send">Send</button>
         </form>
       </div>`;
-    chat = { dev, sid, state: '', sig: null, notice: '' };
+    chat = { dev, sid, state: '', sig: null, notice: '', configOptions: [] };
     const input = $('chat-input');
+    input.value = loadDraft(sid);
+    input.addEventListener('input', () => saveDraft(input.value));
+    $('chat-mode').addEventListener('change', (e) => setMode(e.target.value));
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('chat-form').requestSubmit(); }
     });
@@ -143,6 +230,8 @@ window.RelayChat = (() => {
     $('chat-form').addEventListener('submit', (e) => { e.preventDefault(); send(); });
     const off = R.onAct(el, {
       perm: (b) => act('/permission', { optionId: b.dataset.option }),
+      'config-open': () => ($('chat-config-pop').hidden ? openPopover() : closePopover()),
+      config: (b) => { closePopover(); act('/config', { configId: b.dataset.config, value: b.dataset.value }); },
       cancel: () => act('/cancel'),
       stop: () => { if (confirm('End this session? The agent process is stopped.')) act('/stop'); },
     });
@@ -154,6 +243,7 @@ window.RelayChat = (() => {
     refresh();
     return () => {
       chat = null;
+      closePopover();
       clearTimeout(pollTimer);
       off();
       document.removeEventListener('visibilitychange', onVisibility);

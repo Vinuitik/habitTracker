@@ -1,0 +1,39 @@
+/* Chip popover: grouped single-choice list that opens above its chip (relay chat model / effort). */
+.chip-pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--space-1));
+  z-index: 20;
+  width: min(320px, 100%);
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.chip-pop[hidden] { display: none; }
+.chip-pop__label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.chip-pop__item {
+  display: block;
+  width: 100%;
+  padding: var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.chip-pop__item:hover { background: var(--color-bg-surface); }
+.chip-pop__item--on { color: var(--color-accent); }
+.chip-pop__item--on::after { content: ' ✓'; }
