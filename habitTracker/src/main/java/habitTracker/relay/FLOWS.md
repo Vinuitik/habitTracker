@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,sessions,claim,install,chat}.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -37,7 +37,7 @@ Checkbox on twofa-setup.html + twofa-verify.html (hidden when `RELAY_2FA_TRUST_D
 TrustedDeviceService.trust() → 32 random bytes (base64url token) → insert `relay_trusted_devices` {userId, tokenHash = sha256 hex, createdAt, expiresAt = now + N days, userAgent (≤200 chars)} → Set-Cookie `relay_trust=<rowId>.<token>`; HttpOnly; Secure; SameSite=Lax; Path=/relay; Max-Age N days
 Gate: TwoFactorInterceptor → TrustedDeviceService.accepts(userId) → findById(rowId) → MessageDigest.isEqual(sha256(token), tokenHash) + same userId + expiresAt > now → AND User.totpEnabled → markVerified() (same 12h session flag as a typed code)
 - unknown id / tampered token / other user / expired / feature off → cookie cleared (Max-Age=0), normal 2FA redirect
-Forget: relay.js showTrusted() (devices page footer, only when count > 0) → GET /relay/api/trusted-devices `{days, count}`; "Forget trusted devices" → DELETE /relay/api/trusted-devices → TrustedDeviceService.forgetAll(user) `{removed}` + clears this browser's cookie. Both behind the gate (a verified session).
+Forget: relay-devices.js showTrusted() (devices page footer, only when count > 0) → GET /relay/api/trusted-devices `{days, count}`; "Forget trusted devices" → DELETE /relay/api/trusted-devices → TrustedDeviceService.forgetAll(user) `{removed}` + clears this browser's cookie. Both behind the gate (a verified session).
 Indexes: TrustedDeviceService.ensureIndexes() at startup → tokenHash (unique), userId, expiresAt (TTL, expireAfterSeconds 0)
 
 To change duration / turn off: `RELAY_2FA_TRUST_DAYS` (default 30, 0 = off). Cookie name/path: TrustedDeviceService.COOKIE, COOKIE_PATH.
@@ -45,7 +45,7 @@ To change duration / turn off: `RELAY_2FA_TRUST_DAYS` (default 30, 0 = off). Coo
 ## Hub (contract: Relay repo shared/HUB.md)
 ### QR pairing (recommended, phone first)
 runner `POST /relay/pair/start {name}` (permitAll, CSRF-ignored, not 2FA) → ClaimController.start() → ClaimService.start() (sweeps expired; ≥ MAX_PENDING (100) → 429) → claimId (20 chars, 100 bits) + pollSecret (32 bytes; only sha256 kept) → `{claimId, pollSecret, expiresInSeconds:600}`
-runner shows QR of `/relay/claim/<claimId>` → phone opens it → GET /relay/claim/{id} (gated: login → 2FA → back here) → RelayController.relay() → relay.html → relay.js route() (pathname) → showClaim()
+runner shows QR of `/relay/claim/<claimId>` → phone opens it → GET /relay/claim/{id} (gated: login → 2FA → back here) → RelayController.relay() → relay.html → router.js route() (pathname) → RelayClaim.mount()
 → GET /relay/api/claims/{id} → `{name}` → "Add <name>?" → Confirm → POST …/approve → ClaimService.approve() → DeviceService.create(currentUser, name) → `{deviceId}` · "Not mine" → POST …/deny → 204
 runner `POST /relay/pair/poll {claimId, pollSecret}` → ClaimService.poll() (constant-time secret check) → 202 pending · 200 `{deviceId, token}` once (claim removed) · 404 declined/expired/unknown/wrong secret
 To change TTL / pending cap / id length: ClaimService.TTL_SECONDS, MAX_PENDING, ID_LENGTH.
@@ -78,7 +78,7 @@ GET /relay/api/devices → `[{id, name, online, lastSeenAt}]` (current user only
 DELETE /relay/api/devices/{id} → owned else 404 → delete document → UplinkRegistry.disconnect() (close 4001) → 204
 
 ## UI (browser)
-GET /relay (gated, see Gate) → RelayController.relay() → templates/relay.html (empty shell) → js/relay/relay.js → initTopbar(ENV.ROUTES.RELAY) → route() on hashchange
+GET /relay (gated, see Gate) → RelayController.relay() → templates/relay.html (empty shell) → js/relay/router.js → initTopbar(ENV.ROUTES.RELAY) → route() on hashchange → previous organism unmount() → <Organism>.mount(#relay-view, ctx) (contract: comment atop router.js)
 Every call: relay.js call() → Api.raw() (sends cookie `XSRF-TOKEN` as `X-XSRF-TOKEN`) → status mapping: 401 → `/2fa/verify?next=<path+hash>` (safeNext keeps the hash, so you land back on the same chat); 503 → "Device offline (machine asleep?)"; 504 → "Device didn't answer"; fetch threw → "Network error"
 To change messages / redirect: relay.js call().
 
@@ -94,22 +94,22 @@ showInstall() → OS tabs (guideOs, preselected = OS; `data-act="os"` re-renders
 → Troubleshooting `<details>`: QR expired / Ctrl-C → rerun pair · offline → Linux `systemctl status relay-runner@<user>` + `journalctl -u relay-runner@<user> -f`, Windows Task Scheduler "Relay keeper" · pair run as the wrong user · machine asleep
 Origin ≠ DEFAULT_HUB → extra hint: Ctrl-C the installer's QR, use the pair command (it carries `--hub`).
 Commands are a contract with the Relay repo's release scripts (install.sh / install.ps1, Linux service `relay-runner@<user>`, Windows task "Relay keeper"); the page only displays them.
-To change commands: relay.js INSTALL_CMD, PAIR_CMD, LINUX_AS_USER. Guide text per OS: relay.js GUIDE. OS guess: relay.js OS.
+To change commands: relay.js INSTALL_CMD, PAIR_CMD, LINUX_AS_USER. Guide text per OS: relay-install.js GUIDE. OS guess: relay.js OS.
 "Revoke" → confirm() → DELETE /relay/api/devices/{id} → re-render. New device shows after Refresh (no auto-poll on this view).
 
 ### Sessions `#/d/<id>`
-showDevice() → in parallel GET `…/v1/projects` (fills the New-session select) + GET `…/v1/sessions` (all projects; runner sorts waiting → busy → rest) → rows: title, project name, timeAgo(lastActiveAt|createdAt), preview, state badge → `#/d/<id>/s/<sid>`
+relay-sessions.js load() → in parallel GET `…/v1/projects` (fills the New-session select) + GET `…/v1/sessions` (all projects; runner sorts waiting → busy → rest) → rows: title, project name, timeAgo(lastActiveAt|createdAt), preview, state badge → `#/d/<id>/s/<sid>`
 "New session" → POST `…/v1/projects/{projectId}/sessions {provider:"claude"}` → 201 Session → open its chat
-To change the provider: relay.js PROVIDER.
+To change the provider: relay-sessions.js PROVIDER.
 
 ### Chat `#/d/<id>/s/<sid>`
-showChat() → refresh() → GET `…/v1/sessions/{sid}` → render(): title, state badge, messages (user/agent bubbles via md(); tool = one mono line with toolKind + status; agent `kind` quota/auth → warning bubble) → schedule()
+relay-chat.js mount() → refresh() → GET `…/v1/sessions/{sid}` → render(): title, state badge, messages (user/agent bubbles via md(); tool = one mono line with toolKind + status; agent `kind` quota/auth → warning bubble) → schedule()
 schedule(): busy|waiting → 2s, idle|error → 10s, finished → stop; tab hidden → stop, visible again → refresh() at once
 Messages re-render only when JSON of `messages` changed; auto-scroll only if you were already at the bottom.
 Composer: Enter → send(), Shift+Enter newline → POST `…/message {text}` → 202 → poll at 2s; 409 → "Still working…" notice (clears when state leaves busy)
 state waiting → pendingPermission.options as buttons (allow_* = primary) → POST `…/permission {optionId}` → 200 Session → render
 Cancel (busy/waiting) → POST `…/cancel` (ends the turn, keeps session) · Stop → confirm() → POST `…/stop` (kills the agent, session finished; composer disabled)
-To change poll rates: relay.js POLL_ACTIVE_MS / POLL_IDLE_MS. Markdown subset: relay.js md()/inline() (``` fences, paragraphs, `code`, **bold**; everything escaped first via Dom.esc).
+To change poll rates: relay-chat.js POLL_ACTIVE_MS / POLL_IDLE_MS. Markdown subset: relay.js md()/inline() (``` fences, paragraphs, `code`, **bold**; everything escaped first via Dom.esc).
 Not in the UI (API.md has them, proxy would carry them): mode/config switch, agent-chats (open a VS Code chat), subagents, files, git, containers, schedule, tokens/usage, auth sign-in relay, VS Code permissions, handoff [NOT IMPLEMENTED].
 
 ## Not yet
@@ -151,7 +151,7 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 
 - **UI is polling, no live push:** an open chat costs one proxied GET every 2s while busy/waiting (each a full transcript, up to the 4 MiB body limit, through Cloudflare → hub → WebSocket → runner) and every 10s idle; nothing while the tab is hidden or the session finished. Replies appear with up to 2s lag; a long transcript polled at 2s is the main bandwidth cost. Each poll also holds a Tomcat thread for its duration (Blocking proxy, above).
 - **UI state is in memory only:** the hash URL (`#/d/<id>/s/<sid>`) is the only thing that survives a refresh. An unsent draft is lost on refresh and on the 401 → /2fa/verify redirect; scroll position is lost too. Device names are cached per page load only.
-- **No JS tests:** HabitTracker has no JS test framework; relay.js keeps logic small (router, call(), md(), render()). The MockMvc test only proves the shell renders for a verified user.
+- **No JS tests:** HabitTracker has no JS test framework; relay JS keeps logic small (router, call(), md(), render()). The MockMvc test only proves the shell renders for a verified user.
 - **Service worker:** /relay is not in sw.js PAGE_ROUTES (precaching would follow the 2FA redirect), but a good online visit caches the shell like any navigation; /relay/api is never cached (not in API_PREFIXES). Offline you get the shell plus "Network error".
 - **Install commands are hardcoded** (relay.js INSTALL_CMD/PAIR_CMD): GitHub repo `Vinuitik/relay`, `releases/latest`, `/opt/relay/bin`, `%LOCALAPPDATA%\Relay\bin`. Renaming the repo, moving the install dir or dropping a release asset breaks the guide silently; `latest` means the guide always installs the newest runner, no pinning.
 - **OS guess is userAgent-only:** anything not matching `Windows` (macOS, ChromeOS, phones) defaults to the Linux tab; macOS has no runner build [NOT IMPLEMENTED].
@@ -193,24 +193,24 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | Trust token size / UA truncation | TrustedDeviceService.TOKEN_BYTES, MAX_USER_AGENT |
 | Trusted-device rows / indexes | TrustedDevice (`relay_trusted_devices`), TrustedDeviceService.ensureIndexes() |
 | Cookie → verified session | TwoFactorInterceptor.preHandle(), TrustedDeviceService.accepts() |
-| Forget trusted devices (API / UI) | TwoFactorController.trustedDevices(), forgetTrustedDevices(); relay.js showTrusted(), forgetTrusted(); relay.css `.relay-foot` |
+| Forget trusted devices (API / UI) | TwoFactorController.trustedDevices(), forgetTrustedDevices(); relay-devices.js showTrusted(), forgetTrusted(); relay.css `.relay-foot` |
 | Re-enrol forgets trust | TwoFactorService.confirmSetup() |
 | Relay page shell | templates/relay.html, RelayController.relay() |
-| Relay UI routes (hash) | relay.js route() |
+| Relay UI routes (hash) | router.js route() |
 | Hub status → message / 2FA redirect | relay.js call() |
-| Pair command text | relay.js addDevice(), getCode(), PAIR_CMD (per OS), pairCmd(), DEFAULT_HUB |
+| Pair command text | relay-devices.js addDevice(); relay.js getCode(), PAIR_CMD (per OS), pairCmd(), DEFAULT_HUB |
 | Installer commands (contract with Relay release scripts) | relay.js INSTALL_CMD |
-| Install guide text / troubleshooting per OS | relay.js GUIDE, showInstall() |
+| Install guide text / troubleshooting per OS | relay-install.js GUIDE, render() |
 | OS preselect (userAgent) | relay.js OS |
-| Install guide entry points | relay.js showDevices() (empty CTA), addDevice() (link); static/install.html (card) |
+| Install guide entry points | relay-devices.js mount() (empty CTA), addDevice() (link); static/install.html (card) |
 | Install guide look | relay.css `.relay-steps`, `.relay-step`, `.relay-tabs`, `.relay-faq`, `.relay-empty__cta`, `.relay-link` |
 | QR claim TTL / cap / id length | ClaimService.TTL_SECONDS, MAX_PENDING, ID_LENGTH |
-| QR confirm page | relay.js showClaim(), claimAction(); route RelayController `/relay/claim/{id}` |
+| QR confirm page | relay-claim.js mount(), claimAction(); route RelayController `/relay/claim/{id}` |
 | QR runner endpoints (permitAll, CSRF-ignored, 2FA-excluded) | SecurityConfig, WebConfig (`/relay/pair/start`, `/relay/pair/poll`) |
-| New-session provider | relay.js PROVIDER |
-| Poll rates | relay.js POLL_ACTIVE_MS, POLL_IDLE_MS, schedule() |
+| New-session provider | relay-sessions.js PROVIDER |
+| Poll rates | relay-chat.js POLL_ACTIVE_MS, POLL_IDLE_MS, schedule() |
 | State labels / badge colours | relay.js STATES |
 | Markdown subset | relay.js md(), inline() |
-| Permission buttons | relay.js render() (pendingPermission) |
+| Permission buttons | relay-chat.js render() (pendingPermission) |
 | Relay look | static/styles/pages/relay.css |
 | Nav entry | static/js/topbar.js NAV_ITEMS (Relay), env.js ROUTES.RELAY |

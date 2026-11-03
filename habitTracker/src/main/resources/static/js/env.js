@@ -1,3 +1,6 @@
+// Runner API through the hub proxy (shared/API.md in the Relay repo). path starts with '/'.
+const relayV1 = (dev, path) => `/relay/api/devices/${encodeURIComponent(dev)}/v1${path}`;
+
 window.ENV = {
   ENDPOINTS: {
     AUTH_ME:         '/auth/me',
@@ -51,9 +54,15 @@ window.ENV = {
     PROJECT_MAP_JOB: (id, jobId, after) => `/api/projects/${id}/map/job/${encodeURIComponent(jobId)}?after=${after}`,
     AI_USAGE:        (days) => `/api/ai-usage?days=${days}`,
     RELAY_DEVICES:   '/relay/api/devices',
+    RELAY_DEVICE:    (dev) => `/relay/api/devices/${encodeURIComponent(dev)}`,
+    RELAY_PAIRING_CODE: '/relay/api/devices/pairing-code',
+    RELAY_TRUSTED:   '/relay/api/trusted-devices',
+    RELAY_CLAIM:     (id) => `/relay/api/claims/${encodeURIComponent(id)}`,
+    RELAY_CLAIM_ACT: (id, approve) => `/relay/api/claims/${encodeURIComponent(id)}/${approve ? 'approve' : 'deny'}`,
+    // Every runner call goes through the hub proxy: RELAY_V1(dev, '/sessions') → /relay/api/devices/<dev>/v1/sessions
+    RELAY_V1:        relayV1,
     // path omitted/'' = filesystem roots, '~' = Documents (else home) on the runner
-    RELAY_BROWSE:    (dev, path) => `/relay/api/devices/${encodeURIComponent(dev)}/v1/browse`
-      + (path ? `?path=${encodeURIComponent(path)}` : ''),
+    RELAY_BROWSE:    (dev, path) => relayV1(dev, '/browse') + (path ? `?path=${encodeURIComponent(path)}` : ''),
   },
   ROUTES: {
     HOME:            '/today',
