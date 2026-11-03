@@ -184,9 +184,6 @@
 .relay-faq > summary { cursor: pointer; font-weight: 600; }
 .relay-faq > * + * { margin-top: var(--space-2); }
 
-.relay-new { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
-.relay-new select { flex: 1; min-width: 0; }
-
 /* ── chat ── */
 .relay-chat {
   display: flex;
@@ -291,7 +288,7 @@
 
 /* Phones: 16px inputs so iOS doesn't zoom on focus. */
 @media (max-width: 768px) {
-  .relay-composer textarea, .relay-new select { font-size: 16px; }
+  .relay-composer textarea { font-size: 16px; }
   .relay-msg { max-width: 100%; }
 }
 .relay-perm[hidden] { display: none; }

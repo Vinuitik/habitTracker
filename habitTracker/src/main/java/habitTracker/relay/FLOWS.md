@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,sessions,claim,install,chat}.js, static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,shell,claim,install,chat}.js, static/styles/organisms/relay-shell.css, static/styles/atoms/lamp.css, static/js/molecules/folder-picker.js (FolderPicker.pick), static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -97,10 +97,17 @@ Commands are a contract with the Relay repo's release scripts (install.sh / inst
 To change commands: relay.js INSTALL_CMD, PAIR_CMD, LINUX_AS_USER. Guide text per OS: relay-install.js GUIDE. OS guess: relay.js OS.
 "Revoke" → confirm() → DELETE /relay/api/devices/{id} → re-render. New device shows after Refresh (no auto-poll on this view).
 
-### Sessions `#/d/<id>`
-relay-sessions.js load() → in parallel GET `…/v1/projects` (fills the New-session select) + GET `…/v1/sessions` (all projects; runner sorts waiting → busy → rest) → rows: title, project name, timeAgo(lastActiveAt|createdAt), preview, state badge → `#/d/<id>/s/<sid>`
-"New session" → POST `…/v1/projects/{projectId}/sessions {provider:"claude"}` → 201 Session → open its chat
-To change the provider: relay-sessions.js PROVIDER.
+### Shell `#/d/<id>[/p/<pid>[/<tab>] | /s/<sid>]` (layout A)
+router.js → RelayShell.mount() once per runner; later routes on the same runner → unmount.update(params) (rail kept, only the work area re-routes); another runner → full remount
+Rail: brand (→ `#/`) · runner switcher (GET RELAY_DEVICES, online lamp; click → Menu of runners + "Manage devices…") · GET `…/v1/projects` rows with lamps · "+ Project"
+Lamps + Needs-you strip: poll GET `…/v1/sessions?state=waiting,busy` every ENV.TIMING.RELAY_RAIL_POLL_MS (10s), stopped while the tab is hidden and on unmount. Project lamp: any waiting → amber (needs you), else any busy → green, else outline. Strip cards → `#/d/<id>/s/<sid>`.
+To change the poll: env.js TIMING.RELAY_RAIL_POLL_MS. Lamp look: styles/atoms/lamp.css.
+"+ Project" → inline form: name and/or "Folder…" → FolderPicker.pick({id,name}, cb) (browse only, no PROJECT_LINK) → POST `…/v1/projects {name?, path?}` → 201 → appended to the rail → `#/d/<id>/p/<new>/chats`
+No project (`#/d/<id>`): "Pick a project" + recent sessions (GET `…/v1/sessions`, newest 8).
+Project (`/p/<pid>/<tab>`, default chats): header (name, path) + seg-tabs Chats · Git · Containers · Files → mounts RelayChats / RelayGit / RelayContainers / RelayFiles into #shell-content (previous one unmounted). Their own back link + title are hidden by relay-shell.css.
+Chat (`/s/<sid>`): RelayChat in #shell-content; crumb "← <project> · Chats" from the sid → projectId map (filled by the polls, else one GET `…/v1/sessions`).
+Mobile (<900px): drill-down — no project = rail is the list screen (Needs-you cards inside it); project/chat = work area only, back arrow → `#/d/<id>`, tabs scroll horizontally at the top (bottom bar = app tabbar).
+To change tabs: relay-shell.js TABS + router.js HASH_ROUTES regex. New-chat provider: relay-chats.js PROVIDER.
 
 ### Chat `#/d/<id>/s/<sid>`
 relay-chat.js mount() → refresh() → GET `…/v1/sessions/{sid}` → render(): title, state badge, messages (user/agent bubbles via md(); tool = one mono line with toolKind + status; agent `kind` quota/auth → warning bubble) → schedule()
@@ -122,6 +129,7 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 ## Technology Notes
 - **Key:** `KPI_SECRETS_KEY` (base64, 32 bytes), shared with KPI capability secrets via VaultEncryptionService.serverKey(). Unset (true in prod today) → derived from `JWT_SECRET`, so rotating JWT_SECRET makes every stored TOTP secret undecryptable (users must re-enrol). Setting KPI_SECRETS_KEY later has the same effect on existing rows.
 - **Why encrypted, not hashed:** the server must recompute codes from the secret. Mongo dumps go to Drive; ciphertext there is useless without the key, which lives only in `.env`.
+- **Relay shell state is per page load:** project list, lamps and the sid → project map live in the RelayShell closure; a reload refetches. Lamps lag real state by up to 10s (poll), and pause entirely while the tab is hidden. Each open tab polls the runner on its own (20 users × tabs → that many proxy calls per 10s).
 - **Lockout state is in-memory** (ConcurrentHashMap in TwoFactorService): a restart clears it; single JVM only. `synchronized` verify/confirm also assumes one JVM.
 - **Verified flag is a session attribute:** sessions are the default in-memory Tomcat store, so a restart forces password + code again. Bound to the user id, so a reused session for another user doesn't inherit it.
 - **Enrolment is trust-on-first-use:** whoever first holds a logged-in session for an account without 2FA can enrol their own authenticator. Enrol right after creating the account.
@@ -207,7 +215,8 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | QR claim TTL / cap / id length | ClaimService.TTL_SECONDS, MAX_PENDING, ID_LENGTH |
 | QR confirm page | relay-claim.js mount(), claimAction(); route RelayController `/relay/claim/{id}` |
 | QR runner endpoints (permitAll, CSRF-ignored, 2FA-excluded) | SecurityConfig, WebConfig (`/relay/pair/start`, `/relay/pair/poll`) |
-| New-session provider | relay-sessions.js PROVIDER |
+| New-session provider | relay-chats.js PROVIDER |
+| Shell layout / tabs / lamps poll | relay-shell.js (TABS, poll), relay-shell.css, env.js TIMING.RELAY_RAIL_POLL_MS |
 | Poll rates | relay-chat.js POLL_ACTIVE_MS, POLL_IDLE_MS, schedule() |
 | State labels / badge colours | relay.js STATES |
 | Markdown subset | relay.js md(), inline() |

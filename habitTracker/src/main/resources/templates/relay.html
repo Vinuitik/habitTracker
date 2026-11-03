@@ -14,15 +14,21 @@
   <link rel="stylesheet" href="/styles/atoms/input.css">
   <link rel="stylesheet" href="/styles/atoms/badge.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
+  <link rel="stylesheet" href="/styles/atoms/icon.css">
+  <link rel="stylesheet" href="/styles/atoms/lamp.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/molecules/menu.css">
   <link rel="stylesheet" href="/styles/molecules/step-list.css">
   <link rel="stylesheet" href="/styles/molecules/chip-popover.css">
+  <link rel="stylesheet" href="/styles/molecules/seg-tabs.css">
+  <link rel="stylesheet" href="/styles/molecules/modal.css">
+  <link rel="stylesheet" href="/styles/molecules/folder-picker.css">
   <link rel="stylesheet" href="/styles/pages/relay.css">
   <link rel="stylesheet" href="/styles/organisms/relay-files.css">
   <link rel="stylesheet" href="/styles/organisms/relay-containers.css">
   <link rel="stylesheet" href="/styles/organisms/relay-git.css">
+  <link rel="stylesheet" href="/styles/organisms/relay-shell.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -41,10 +47,21 @@
     </div>
   </header>
 
-  <!-- Rendered by js/relay/router.js (hash router: #/ devices, #/d/<id> sessions, #/d/<id>/s/<sid> chat) → js/relay/organisms/* -->
+  <!-- Rendered by js/relay/router.js (hash router: #/ devices, #/d/<id>[/p/<pid>/<tab> | /s/<sid>] shell) → js/relay/organisms/* -->
   <main class="relay-page" id="relay-page">
     <div id="relay-view"></div>
   </main>
+
+  <!-- Relay shell "+ Project" → Folder…: js/molecules/folder-picker.js (FolderPicker.pick) -->
+  <div class="modal-overlay" id="folder-modal">
+    <div class="modal-box modal-box--picker" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title">
+      <div class="modal-box__header">
+        <span class="modal-box__title" id="folder-modal-title">Pick a folder</span>
+        <button class="modal-box__close" data-close aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="folder-picker" id="folder-picker"></div>
+    </div>
+  </div>
 
   <script src="/js/env.js"></script>
   <script src="/js/topbar.js"></script>
@@ -53,10 +70,12 @@
   <script src="/js/atoms/dom.js"></script>
   <script src="/js/atoms/api.js"></script>
   <script src="/js/atoms/menu.js"></script>
+  <script src="/js/atoms/icons.js"></script>
+  <script src="/js/atoms/relay-api.js"></script>
+  <script src="/js/molecules/folder-picker.js"></script>
   <script src="/js/molecules/step-list.js"></script>
   <script src="/js/relay/relay.js"></script>
   <script src="/js/relay/organisms/relay-devices.js"></script>
-  <script src="/js/relay/organisms/relay-sessions.js"></script>
   <script src="/js/relay/organisms/relay-claim.js"></script>
   <script src="/js/relay/organisms/relay-install.js"></script>
   <script src="/js/relay/organisms/relay-chats.js"></script>
@@ -64,6 +83,7 @@
   <script src="/js/relay/organisms/relay-files.js"></script>
   <script src="/js/relay/organisms/relay-containers.js"></script>
   <script src="/js/relay/organisms/relay-git.js"></script>
+  <script src="/js/relay/organisms/relay-shell.js"></script>
   <script src="/js/relay/router.js"></script>
 </body>
 </html>

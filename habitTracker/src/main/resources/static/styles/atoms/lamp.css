@@ -1,0 +1,15 @@
+/* Status lamp (Relay "Signal Box"): 8px dot, outline = off, filled = lit.
+   .lamp--busy / .lamp--on  success green — running / online
+   .lamp--wait  warning amber — needs you (and nothing else) */
+.lamp {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--color-text-muted);
+  border-radius: var(--radius-full);
+  background: transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.lamp--busy, .lamp--on { background: var(--color-success); border-color: var(--color-success); }
+.lamp--wait { background: var(--color-warning); border-color: var(--color-warning); }
