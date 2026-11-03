@@ -21,6 +21,7 @@
     [/^\/d\/([^/]+)\/p\/([^/]+)\/files$/, (m) => [RelayFiles, { dev: dec(m[1]), pid: dec(m[2]) }]],   // temporary until the M1 shell
     [/^\/d\/([^/]+)\/s\/([^/]+)$/, (m) => [RelayChat, { dev: dec(m[1]), sid: dec(m[2]) }]],
     [/^\/d\/([^/]+)\/p\/([^/]+)\/containers$/, (m) => [RelayContainers, { dev: dec(m[1]), pid: dec(m[2]) }]],
+    [/^\/d\/([^/]+)\/p\/([^/]+)\/git$/, (m) => [RelayGit, { dev: dec(m[1]), pid: dec(m[2]) }]],
     [/^\/d\/([^/]+)$/, (m) => [RelaySessions, { dev: dec(m[1]) }]],
     [/^\/install$/, () => [RelayInstall, {}]],
   ];
