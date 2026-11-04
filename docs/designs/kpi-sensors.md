@@ -166,7 +166,7 @@ Pipeline order, which corrects the earlier one: **the user approves the contract
 | Route | Body → Response |
 |---|---|
 | `GET /v1/collectors` | → `[{id, kpiName, version, contractHash, approved, state:"pending"\|"active"\|"failed", lastRunAt, lastError}]` |
-| `POST /v1/collectors` | `{id, kpiName, manifest, files:{"collector.py":str, "fixtures/<case>/inputs/...":str, "fixtures/<case>/expected.json":str}}` → `{id, version, contractHash, approved}`. Same id = a new version. It stays approved if the contractHash is unchanged. |
+| `POST /v1/collectors` | `{id, kpiName, manifest, files:{"collector.py":str, "fixtures/<case>/inputs/...":str, "fixtures/<case>/expected.json":str}}` → `{id, version, contractHash, approved}`. expected.json = `{value, tolerance?, from?, to?}`. Same id = a new version. It stays approved if the contractHash is unchanged. |
 | `POST /v1/collectors/{id}/test` | → `{passed, sandbox, cases:[{name, passed, expected, got, error?}]}`. Fixtures are run inside the sandbox. |
 | `POST /v1/collectors/{id}/approve` | `{contractHash}` → 200, or 409 if the hash doesn't match the current version |
 | `POST /v1/collectors/{id}/run` | `{from, to}` (ISO) → `{value, unit, evidence:[{label, value}], sandbox}`. Synchronous, ≤60s. 403 if not approved. |
