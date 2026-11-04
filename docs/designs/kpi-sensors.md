@@ -142,6 +142,18 @@ Steps are run on the Windows machine. Its Relay runner's Claude can do them from
 Success means the number is within about 15% of your estimate, the evidence explains it, and a network call made inside the sandbox fails.
 Results: [PENDING]
 
+## Phone: a dumb sensor, the PC does the thinking (user idea 2026-11-04)
+The phone runs no collectors and no sandbox. A thin layer on it only exports raw data. The runner on the PC/laptop pulls that data periodically and runs the normal sandboxed collectors over it.
+- **Thin layer, preferred:** a small module in the existing Relay Android app. It reads Health Connect (steps) and UsageStats (screen time per app) and hands raw rows to the hub. The runner then pulls them as a `phone` source.
+- **No-app option to spike:** ADB over Wi-Fi from the PC (`adb shell dumpsys usagestats`). It needs no install, but wireless debugging must be paired and switches off after a reboot or network change, so it's fragile.
+[NOT IMPLEMENTED]
+
+## Setup UX: one command, not a shopping list
+The user should never install sensor tools by hand. The plan is `relay-runner sensors install`, which installs ActivityWatch silently and starts it at login (winget / the release zip on Windows, the AppImage/zip on Linux, the dmg on macOS). ActivityWatch is MPL-2.0, so bundling is fine.
+- **The one step that stays manual:** the browser extension. Browsers block silent installs, so the runner prints a single store link.
+- **Later option:** a built-in watcher inside the runner. The Win32 foreground window plus the idle time is a small amount of Go, and it removes the ActivityWatch dependency entirely. Browser URLs still need the extension.
+[NOT IMPLEMENTED]
+
 ## Not in scope / later
 - **Network access for RUNNER collectors:** never. Use SERVER.
 
