@@ -245,6 +245,17 @@ async function automateStart(action, extra) {
     }
 }
 
+// "Looks right" is instant (AWAITING_CONFIRM -> SHADOW), no job. "Wrong, because..." is a job (action 'wrong').
+async function automateConfirm(capId) {
+    try {
+        const cap = await automateFetch(E_KPI.KPI_CAP_CONFIRM(AUTOMATE.kpiName, capId), 'POST');
+        if (cap && (cap.status === 'ACTIVE' || cap.status === 'SHADOW')) AUTOMATE.reloadOnClose = true;
+        renderAutomate(cap);
+    } catch (e) {
+        renderAutomate(AUTOMATE.current, e.message);
+    }
+}
+
 // Rejecting is instant, no job.
 async function automateReject(capId) {
     try {
@@ -279,7 +290,7 @@ async function automatePoll(gen) {
         job.usage = snap.usage || job.usage;
         if (snap.state === 'done') {
             const cap = snap.result;
-            if (cap && cap.status === 'ACTIVE') AUTOMATE.reloadOnClose = true;
+            if (cap && (cap.status === 'ACTIVE' || cap.status === 'SHADOW')) AUTOMATE.reloadOnClose = true;
             renderAutomate(cap);
             return;
         }
@@ -325,6 +336,53 @@ function renderAutomateJob(body) {
         clearInterval(AUTOMATE.tickTimer);
         AUTOMATE.tickTimer = null;
     }
+}
+
+// Confirm gate: "Yesterday's value: 47 min" + the evidence rows, then Looks right / Wrong, because...
+function renderAutomateConfirm(body, cap) {
+    const when = cap.sampleDate ? `Value for ${cap.sampleDate}` : "Yesterday's value";
+    body.append(automateEl('div', 'automate__text', 'The script works. Before it starts filling this KPI, check that its number is right.'));
+    body.append(automateEl('div', 'automate__sample', `${when}: ${cap.sampleText}`));
+    const rows = cap.sampleEvidence || [];
+    if (rows.length) {
+        const list = automateEl('div', 'automate__evidence');
+        rows.forEach(r => {
+            const row = automateEl('div', 'automate__evidence-row');
+            row.append(automateEl('span', 'automate__evidence-label', r.label),
+                automateEl('span', 'automate__evidence-value', r.value));
+            list.append(row);
+        });
+        body.append(list);
+    } else {
+        body.append(automateEl('div', 'form-group__hint', 'This script did not list what it counted, so there is nothing more to check it against.'));
+    }
+    const left = (cap.maxConfirmRounds || 3) - (cap.confirmRounds || 0);
+    const group = automateEl('div', 'form-group');
+    group.hidden = true;
+    const label = automateEl('label', 'form-group__label', 'What is wrong with the number?');
+    label.htmlFor = 'automateWrongReason';
+    const ta = automateEl('textarea', 'input');
+    ta.id = 'automateWrongReason';
+    ta.rows = 3;
+    ta.maxLength = 500;
+    ta.placeholder = 'e.g. I watched about 2 hours, and Shorts were not counted';
+    group.append(label, ta, automateEl('span', 'form-group__hint',
+        `The AI will rewrite the script using your answer. You have ${left} ${left === 1 ? 'try' : 'tries'} left.`));
+    const actions = automateEl('div', 'modal-box__actions');
+    const send = automateButton('Send and rebuild', 'btn--primary', () => {
+        const reason = ta.value.trim();
+        if (!reason) { renderAutomate(cap, 'Say what is wrong first.'); return; }
+        automateStart('wrong', { id: cap.id, description: reason });
+    });
+    send.hidden = true;
+    const wrong = automateButton('Wrong, because…', 'btn--ghost', () => {
+        group.hidden = false; send.hidden = false; wrong.hidden = true; ta.focus();
+    });
+    actions.append(
+        automateButton('Looks right', 'btn--primary', () => automateConfirm(cap.id)),
+        wrong, send,
+        automateButton('Start over', 'btn--ghost', () => automateReject(cap.id)));
+    body.append(group, actions);
 }
 
 // Plain-language summary of a capability: what / where from / how often / what it needs.
@@ -509,7 +567,8 @@ function renderAutomate(cap, error) {
 
     const STATUS_TEXT = {
         PROPOSED: 'Waiting for your approval', TEST_FAILED: 'Test did not pass', ACTIVE: 'Active',
-        PENDING_TEST: 'In progress', NEEDS_REPAIR: 'Needs a fix'
+        PENDING_TEST: 'In progress', NEEDS_REPAIR: 'Needs a fix',
+        AWAITING_CONFIRM: 'Check the number', SHADOW: 'Trial run'
     };
     body.append(automateEl('div', 'automate__meta', `Version ${cap.version} · ${STATUS_TEXT[status] || status}`));
 
@@ -532,6 +591,20 @@ function renderAutomate(cap, error) {
         }
         actions.append(automateButton('Start over', 'btn--ghost', () => automateReject(cap.id)));
         body.append(actions);
+    } else if (status === 'AWAITING_CONFIRM') {
+        renderAutomateConfirm(body, cap);
+    } else if (status === 'SHADOW') {
+        body.append(automateEl('div', 'automate__ok',
+            `On trial until ${cap.shadowUntil || 'the trial ends'}. Each night's value is saved but marked unconfirmed, and shows up in your confirm list so you can check it.`));
+        body.append(automateEl('div', 'form-group__hint', 'After the trial it becomes active on its own.'));
+        renderAutomateSummary(body, cap);
+        if (cap.lastResult) body.append(automateEl('div', 'form-group__hint', `Last run: ${cap.lastResult}`));
+        renderAutomateCode(body, cap);
+        if (AUTOMATE.needsRepair) {
+            const actions = automateEl('div', 'modal-box__actions');
+            actions.append(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
+            body.append(automateEl('div', 'form-group__hint', 'This KPI stopped producing valid values. Fix it lets the AI repair the script.'), actions);
+        }
     } else if (status === 'ACTIVE') {
         body.append(automateEl('div', 'automate__ok', 'Active. This KPI now fills itself every night.'));
         renderAutomateSummary(body, cap);

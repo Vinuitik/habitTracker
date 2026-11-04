@@ -22,5 +22,7 @@ public class KPIDataDTO {
     private Boolean higherIsBetter; // true if higher values are better, false otherwise
     private Boolean autoFilled; // true if synthesized by the default-fill cron rather than entered manually
     private KPIDataSource source; // MANUAL / AUTOFILL / PROXY_TRELLO / PROXY_CAPABILITY
+    private String flag; // SHADOW / IMPLAUSIBLE when held back for confirmation, else null
+    private String flagReason; // plain-language reason for the flag
     private Boolean pending; // true if written by a proxy provider and still awaiting manual confirmation
 }

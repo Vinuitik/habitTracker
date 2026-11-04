@@ -117,6 +117,28 @@ class ProxyHealthServiceTest {
         assertTrue(service.needsRepair(brokenKpi));
     }
 
+    // --- S1 plausibility guard ---------------------------------------------------------------
+
+    @Test
+    void plausibilityReason_flagsOverFiveTimesMedian_ignoringPointsStillHeldInTheInbox() {
+        KPI kpi = kpi();
+        List<KPIData> history = new java.util.ArrayList<>(dataPoints(10.0, 12.0, 11.0, 9.0, 10.0));
+        history.add(KPIData.builder().value(5000.0).pending(true).flag("IMPLAUSIBLE").build()); // must not move the median
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(anyInt(), anyString())).thenReturn(history);
+
+        assertTrue(service.plausibilityReason(kpi, 80.0, "min").isPresent());
+        assertTrue(service.plausibilityReason(kpi, 40.0, "min").isEmpty());
+        verify(repairTrigger, never()).attemptRepair(any());
+    }
+
+    @Test
+    void plausibilityReason_withTooLittleHistory_onlyChecksImpossibleValues() {
+        KPI kpi = kpi();
+        when(dynamicKPIDataRepository.findTopNOrderByDateDesc(anyInt(), anyString())).thenReturn(dataPoints(10.0, 12.0));
+        assertTrue(service.plausibilityReason(kpi, 9999.0, "min").isEmpty());
+        assertTrue(service.plausibilityReason(kpi, -1.0, "min").isPresent());
+    }
+
     // --- anomaly check ---------------------------------------------------------------------
 
     @Test

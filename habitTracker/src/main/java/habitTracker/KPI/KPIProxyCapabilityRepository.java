@@ -10,6 +10,8 @@ public interface KPIProxyCapabilityRepository extends MongoRepository<KPIProxyCa
 
     List<KPIProxyCapability> findByKpiIdAndUserId(String kpiId, String userId);
 
+    List<KPIProxyCapability> findByStatus(CapabilityStatus status);
+
     // Ownership-scoped lookup: every agent endpoint resolves capabilities through this, never findById.
     Optional<KPIProxyCapability> findByIdAndUserIdAndKpiId(String id, String userId, String kpiId);
 }

@@ -33,6 +33,9 @@ import java.util.Optional;
  * isAnomalous) is still written — it may be real data — but also trips the breaker so the proxy
  * isn't hit again until reviewed.
  *
+ * S1: for SANDBOX_CAPABILITY KPIs a SHADOW-state capability's readings and plausibility-guard hits are stored via
+ * KPIService.addFlaggedProxyDataForUser (pending + flag) instead of silently; they count as successes (breaker untouched).
+ *
  * Mirrors KPIDefaultFillService's scan-all-users-then-filter pattern (no request context on a
  * cron thread); every write is scoped to that KPI's own id-keyed collection via KPIService, so
  * one user's proxy data never touches another user's.
@@ -90,6 +93,28 @@ public class KPIProxyFillService {
             if (value.isEmpty()) {
                 proxyHealthService.recordFailure(kpi);
                 continue;
+            }
+
+            // S1 (capability proxies only): a capability on SHADOW trial, or a value the plausibility guard rejects,
+            // is stored as pending/flagged so it lands in the confirm-inbox. Neither trips the breaker.
+            if (type == ProxyType.SANDBOX_CAPABILITY) {
+                ProxyProvider.Context ctx = provider.get().context(kpi);
+                if (ctx == null) ctx = ProxyProvider.Context.NONE;
+                java.util.Optional<String> implausible = proxyHealthService.plausibilityReason(kpi, value.get(), ctx.unit());
+                if (implausible != null && implausible.isPresent()) {
+                    kpiService.addFlaggedProxyDataForUser(kpi.getUserId(), kpi.getName(), targetDate, value.get(),
+                            sourceFor(type), "IMPLAUSIBLE", implausible.get());
+                    proxyHealthService.recordSuccess(kpi);
+                    filled++;
+                    continue;
+                }
+                if (ctx.shadow()) {
+                    kpiService.addFlaggedProxyDataForUser(kpi.getUserId(), kpi.getName(), targetDate, value.get(),
+                            sourceFor(type), "SHADOW", "Trial run: check this against what really happened");
+                    proxyHealthService.recordSuccess(kpi);
+                    filled++;
+                    continue;
+                }
             }
 
             boolean anomalous = proxyHealthService.isAnomalous(kpi, value.get());

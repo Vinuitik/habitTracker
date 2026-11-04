@@ -150,9 +150,108 @@ class CapabilityAgentIntegrationTest {
         String approveJob = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
                 "{\"action\":\"approve\",\"id\":\"" + capId + "\"}", 202).get("jobId").asText();
         JsonNode approved = waitJob(alice, "Widgets", approveJob);
-        assertEquals("ACTIVE", approved.at("/result/status").asText());
+        assertEquals("AWAITING_CONFIRM", approved.at("/result/status").asText());
         assertEquals(2, approved.get("events").size()); // writing + testing
         call(auth.session(alice), "GET", "/api/kpis/Widgets/capability/jobs/active", null, 204);
+    }
+
+    // ── S1 confirm gate / shadow ─────────────────────────────────────────────
+
+    private String builtAwaitingConfirm(String stdout) throws Exception {
+        generatorProposes(NO_ACCESS);
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
+        when(sandboxClient.run(any())).thenReturn(ok(stdout));
+        String id = propose(alice, "Widgets", 200).get("id").asText();
+        assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "approve", 200).get("status").asText());
+        return id;
+    }
+
+    @Test
+    void jsonOutput_storesSampleAndEvidence_forTheConfirmScreen() throws Exception {
+        kpi(alice, "Widgets");
+        String id = builtAwaitingConfirm("{\"value\": 47, \"unit\": \"min\", \"evidence\": [{\"label\": \"YouTube\", \"value\": \"40 min\"},"
+                + " {\"label\": \"Docs\", \"value\": \"7 min\"}]}\n");
+        JsonNode cap = call(auth.session(alice), "GET", "/api/kpis/Widgets/capability", null, 200);
+        assertEquals("47 min", cap.get("sampleText").asText());
+        assertEquals(LocalDate.now().minusDays(1).toString(), cap.get("sampleDate").asText());
+        assertEquals(2, cap.get("sampleEvidence").size());
+        assertEquals("YouTube", cap.at("/sampleEvidence/0/label").asText());
+        assertEquals("40 min", cap.at("/sampleEvidence/0/value").asText());
+        assertEquals(id, cap.get("id").asText());
+    }
+
+    @Test
+    void wrong_feedsReasonIntoNextGeneration_andComesBackForConfirmation() throws Exception {
+        kpi(alice, "Widgets");
+        String id = builtAwaitingConfirm("{\"value\": 47, \"unit\": \"min\"}");
+        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(2)");
+        when(sandboxClient.run(any())).thenReturn(ok("{\"value\": 120, \"unit\": \"min\"}"));
+
+        JsonNode res = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong",
+                "{\"reason\":\"Shorts were not counted\"}", 200);
+
+        assertEquals("AWAITING_CONFIRM", res.get("status").asText());
+        assertEquals("120 min", res.get("sampleText").asText());
+        assertEquals(1, res.get("confirmRounds").asInt());
+        ArgumentCaptor<String> previousError = ArgumentCaptor.forClass(String.class);
+        verify(generator).generate(any(), any(), any(), any(), any(), eq("print(1)"), previousError.capture());
+        assertTrue(previousError.getValue().contains("Shorts were not counted"));
+        assertTrue(previousError.getValue().contains("47 min"));
+    }
+
+    @Test
+    void wrong_thirdTime_failsWithClearSentence_andNothingIsWired() throws Exception {
+        KPI k = kpi(alice, "Widgets");
+        String id = builtAwaitingConfirm("5");
+        for (int round = 1; round < CapabilityAgentService.MAX_CONFIRM_ROUNDS; round++) {
+            assertEquals("AWAITING_CONFIRM", call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong",
+                    "{\"reason\":\"nope\"}", 200).get("status").asText());
+        }
+        JsonNode last = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong",
+                "{\"reason\":\"still nope\"}", 200);
+        assertEquals("TEST_FAILED", last.get("status").asText());
+        assertTrue(last.get("failureReason").asText().startsWith("You said the number was wrong 3 times"));
+        assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType());
+    }
+
+    @Test
+    void wrong_needsAReason_andOnlyWhenAwaitingConfirm() throws Exception {
+        kpi(alice, "Widgets");
+        String id = builtAwaitingConfirm("5");
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong", "{\"reason\":\" \"}", 400);
+        act(alice, "Widgets", id, "confirm", 200);
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong", "{\"reason\":\"x\"}", 409);
+        act(alice, "Widgets", id, "confirm", 409); // already SHADOW
+    }
+
+    @Autowired CapabilityLifecycleService lifecycle;
+
+    @Test
+    void shadow_becomesActive_afterShadowDays_andNotBefore() throws Exception {
+        kpi(alice, "Widgets");
+        String id = builtAwaitingConfirm("5");
+        act(alice, "Widgets", id, "confirm", 200);
+        KPIProxyCapability shadow = capabilityRepository.findById(id).orElseThrow();
+        assertEquals(CapabilityStatus.SHADOW, shadow.getStatus());
+        assertEquals(LocalDate.now().plusDays(7), shadow.getShadowUntil());
+
+        assertEquals(0, lifecycle.promoteDueShadows(LocalDate.now().plusDays(6)));
+        assertEquals(CapabilityStatus.SHADOW, capabilityRepository.findById(id).orElseThrow().getStatus());
+        assertEquals(1, lifecycle.promoteDueShadows(LocalDate.now().plusDays(7)));
+        assertEquals(CapabilityStatus.ACTIVE, capabilityRepository.findById(id).orElseThrow().getStatus());
+    }
+
+    @Test
+    void existingActiveCapability_isUntouchedByPromotion_andReadsBackWithoutNewFields() {
+        KPI k = kpi(alice, "Widgets");
+        KPIProxyCapability old = capabilityRepository.save(KPIProxyCapability.builder().userId(alice.getId()).kpiId(k.getId())
+                .sourceCode("print(42)").status(CapabilityStatus.ACTIVE).version(1).build());
+        assertEquals(0, lifecycle.promoteDueShadows(LocalDate.now().plusDays(365)));
+        KPIProxyCapability after = capabilityRepository.findById(old.getId()).orElseThrow();
+        assertEquals(CapabilityStatus.ACTIVE, after.getStatus());
+        assertNull(after.getSampleValue());
+        assertNull(after.getShadowUntil());
+        assertNull(after.getRepair());
     }
 
     @Test
@@ -184,7 +283,8 @@ class CapabilityAgentIntegrationTest {
         assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType(), "not wired before approval");
 
         JsonNode approved = act(alice, "Widgets", proposed.get("id").asText(), "approve", 200);
-        assertEquals("ACTIVE", approved.get("status").asText());
+        assertEquals("AWAITING_CONFIRM", approved.get("status").asText());
+        assertEquals(5.0, approved.get("sampleValue").asDouble());
         assertEquals("print(5)", approved.get("sourceCode").asText());
         assertEquals(1, approved.get("attempts").asInt());
 
@@ -194,10 +294,12 @@ class CapabilityAgentIntegrationTest {
         assertTrue(req.getValue().sourceCode().startsWith("TARGET_DATE = \"" + LocalDate.now().minusDays(1) + "\""));
         assertTrue(req.getValue().sourceCode().endsWith("print(5)"));
 
+        assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType(), "not wired before the user confirms");
+        assertEquals("SHADOW", act(alice, "Widgets", proposed.get("id").asText(), "confirm", 200).get("status").asText());
         KPI after = kpiRepository.findById(k.getId()).orElseThrow();
         assertEquals(ProxyType.SANDBOX_CAPABILITY, after.getProxyType());
         assertEquals(ProxyStatus.ACTIVE, after.getProxyStatus());
-        assertEquals("ACTIVE", call(auth.session(alice), "GET", "/api/kpis/Widgets/capability", null, 200).get("status").asText());
+        assertEquals("SHADOW", call(auth.session(alice), "GET", "/api/kpis/Widgets/capability", null, 200).get("status").asText());
     }
 
     // ── enforcement: what the sandbox cannot grant ───────────────────────────
@@ -287,7 +389,7 @@ class CapabilityAgentIntegrationTest {
         JsonNode first = act(alice, "Widgets", id, "approve", 200);
         assertEquals("TEST_FAILED", first.get("status").asText());
         assertTrue(first.get("failureReason").asText().contains("not a number"));
-        assertEquals("ACTIVE", act(alice, "Widgets", id, "regenerate", 200).get("status").asText());
+        assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "regenerate", 200).get("status").asText());
     }
 
     @Test
@@ -336,7 +438,7 @@ class CapabilityAgentIntegrationTest {
         assertEquals(0, capabilityRepository.findById(id).orElseThrow().getAttempts() == null ? 0
                 : capabilityRepository.findById(id).orElseThrow().getAttempts());
 
-        assertEquals("ACTIVE", act(alice, "Widgets", id, "regenerate", 200).get("status").asText());
+        assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "regenerate", 200).get("status").asText());
     }
 
     @Test
@@ -461,7 +563,7 @@ class CapabilityAgentIntegrationTest {
         generatorProposes(NO_ACCESS);
         when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
         when(sandboxClient.run(any())).thenReturn(ok("1"));
-        assertEquals("ACTIVE", act(alice, "Widgets", id, "approve", 200).get("status").asText());
+        assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "approve", 200).get("status").asText());
     }
 
     @Test

@@ -8,6 +8,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,21 @@ public class KPIProxyCapability {
     private Integer attempts = 0;
     // Why the last test gate failed (or what broke, when seeding a repair); fed back into the next prompt.
     private String failureReason;
+
+    // S1 confirm gate / shadow (additive, all nullable: pre-S1 documents read back unchanged).
+    // The test-gate sample the user is asked about: value, unit, evidence rows, and the day it was computed for.
+    private Double sampleValue;
+    private String sampleUnit;
+    private List<CapabilityOutput.Row> sampleEvidence;
+    private LocalDate sampleDate;
+    // How many times the user answered "Wrong" for this version (cap: CapabilityAgentService.MAX_CONFIRM_ROUNDS).
+    private Integer confirmRounds;
+    // SHADOW runs until this date (exclusive of later readings), then the nightly promotion makes it ACTIVE.
+    private LocalDate shadowUntil;
+    // True for versions created by repair of a live capability: they skip AWAITING_CONFIRM.
+    private Boolean repair;
+    // Unit of the last production run (set by the provider); feeds the plausibility guard.
+    private String lastUnit;
 
     private LocalDateTime createdAt;
     private LocalDateTime lastRunAt;

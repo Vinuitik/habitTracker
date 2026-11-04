@@ -32,7 +32,7 @@ class CapabilityPromptsTest {
     @Test
     void generateWithFailureButNoCode_saysNone() {
         String p = prompts.generatePrompt("K", "d", "spec", Map.of(), null, "boom");
-        assertTrue(p.contains("No other secrets exist.\n\nA previous version FAILED its dry run. Fix it.\n"
+        assertTrue(p.contains("No other secrets exist.\n\nA previous version FAILED its dry run, or ran but its number was judged WRONG by the user. Fix it.\n"
                 + "Previous code:\n(none)\nFailure:\nboom\nReply with ONLY"));
     }
 

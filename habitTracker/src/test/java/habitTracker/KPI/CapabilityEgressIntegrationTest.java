@@ -210,7 +210,7 @@ class CapabilityEgressIntegrationTest {
 
         JsonNode res = call(alice, "POST", "/api/kpis/PRs/capability/" + id + "/regenerate", null, 200);
 
-        assertEquals("ACTIVE", res.get("status").asText());
+        assertEquals("AWAITING_CONFIRM", res.get("status").asText());
         ArgumentCaptor<SandboxClient.Request> cap = ArgumentCaptor.forClass(SandboxClient.Request.class);
         verify(sandboxClient).run(cap.capture());
         SandboxClient.Request req = cap.getValue();
@@ -218,6 +218,7 @@ class CapabilityEgressIntegrationTest {
         assertEquals(Map.of("GITHUB_TOKEN", "ghp_alice_value"), req.secrets(), "only the declared secret");
         assertEquals(alice.getId(), req.userId());
         assertFalse(req.toString().contains("ghp_alice_value"), "Request.toString must not leak values");
+        call(alice, "POST", "/api/kpis/PRs/capability/" + id + "/confirm", null, 200);
         assertEquals(ProxyType.SANDBOX_CAPABILITY, kpiRepository.findById(k.getId()).orElseThrow().getProxyType());
         assertFalse(res.toString().contains("ghp_alice_value"));
     }

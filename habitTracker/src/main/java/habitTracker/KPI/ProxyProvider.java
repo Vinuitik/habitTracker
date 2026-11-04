@@ -16,4 +16,17 @@ public interface ProxyProvider {
     ProxyType getType();
 
     Optional<Double> fetchValue(KPI kpi, LocalDate date);
+
+    /**
+     * What the nightly fill needs to know about the source besides the value (S1): whether the capability is still
+     * on SHADOW trial (readings must be stored unconfirmed) and the unit of its output (plausibility guard).
+     * Default: nothing special. May return null from mocks; callers treat null as NONE.
+     */
+    default Context context(KPI kpi) {
+        return Context.NONE;
+    }
+
+    record Context(boolean shadow, String unit) {
+        public static final Context NONE = new Context(false, null);
+    }
 }

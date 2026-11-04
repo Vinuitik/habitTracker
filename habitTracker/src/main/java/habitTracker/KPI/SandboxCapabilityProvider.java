@@ -11,7 +11,7 @@ import java.util.Optional;
 
 /**
  * M7 provider for ProxyType.SANDBOX_CAPABILITY: loads the KPI's stored KPIProxyCapability from
- * Mongo, asks the sandbox sidecar to run it, and parses the LAST non-blank stdout line as a double.
+ * Mongo, asks the sandbox sidecar to run it, and parses the LAST non-blank stdout line (plain number or {value, unit?, evidence?} JSON).
  * Any failure (no/inactive capability, timeout, non-zero exit, sidecar down, unparseable output)
  * returns Optional.empty(), which KPIProxyFillService turns into
  * ProxyHealthService.recordFailure (M12 circuit breaker). Never throws.
@@ -52,7 +52,8 @@ public class SandboxCapabilityProvider implements ProxyProvider {
             return Optional.empty();
         }
         KPIProxyCapability cap = found.get();
-        if (cap.getStatus() != CapabilityStatus.ACTIVE || cap.getPlatform() != CapabilityPlatform.SERVER
+        if ((cap.getStatus() != CapabilityStatus.ACTIVE && cap.getStatus() != CapabilityStatus.SHADOW)
+                || cap.getPlatform() != CapabilityPlatform.SERVER
                 || cap.getSourceCode() == null || cap.getSourceCode().isBlank()) {
             log.warn("[Sandbox] capability {} not runnable (status={} platform={})",
                     cap.getId(), cap.getStatus(), cap.getPlatform());
@@ -69,9 +70,11 @@ public class SandboxCapabilityProvider implements ProxyProvider {
         }
         SandboxClient.Result result = sandboxClient.run(request);
 
-        Double value = result.ok() ? parseLastLine(result.stdout()) : null;
+        CapabilityOutput out = result.ok() ? CapabilityOutput.parse(result.stdout()) : null;
+        Double value = out == null ? null : out.value();
         if (value != null) {
-            record(cap, "OK: " + value, true);
+            cap.setLastUnit(out.unit());
+            record(cap, "OK: " + CapabilityOutput.formatValue(value, out.unit()), true);
         } else {
             String detail = result.stderr() == null || result.stderr().isBlank() ? result.stdout() : result.stderr();
             record(cap, result.outcome() + (result.exitCode() != null ? " exit=" + result.exitCode() : "")
@@ -95,19 +98,17 @@ public class SandboxCapabilityProvider implements ProxyProvider {
         }
     }
 
+    /** Value of the last stdout line: a plain number or the {value, unit?, evidence?} JSON (see CapabilityOutput). */
     static Double parseLastLine(String stdout) {
-        if (stdout == null) return null;
-        String last = null;
-        for (String line : stdout.split("\\R")) {
-            if (!line.isBlank()) last = line.trim();
-        }
-        if (last == null) return null;
-        try {
-            double d = Double.parseDouble(last);
-            return Double.isFinite(d) ? d : null;
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        CapabilityOutput o = CapabilityOutput.parse(stdout);
+        return o == null ? null : o.value();
+    }
+
+    @Override
+    public Context context(KPI kpi) {
+        return repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), kpi.getUserId())
+                .map(c -> new Context(c.getStatus() == CapabilityStatus.SHADOW, c.getLastUnit()))
+                .orElse(Context.NONE);
     }
 
     private static String truncate(String s) {

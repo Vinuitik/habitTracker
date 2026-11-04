@@ -23,6 +23,7 @@ window.ENV = {
     KPI_SECRET:      (name) => `/api/kpi-secrets/${encodeURIComponent(name)}`,
     KPI_CAP:         (name) => `/api/kpis/${encodeURIComponent(name)}/capability`,
     KPI_CAP_REJECT:  (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/reject`,
+    KPI_CAP_CONFIRM: (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/confirm`,
     KPI_CAP_JOBS:    (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs`,
     KPI_CAP_ACTIVE:  (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/active`,
     KPI_CAP_JOB:     (name, id, after) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/${encodeURIComponent(id)}?after=${after}`,

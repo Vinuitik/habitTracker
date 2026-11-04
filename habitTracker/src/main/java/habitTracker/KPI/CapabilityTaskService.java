@@ -37,7 +37,7 @@ public class CapabilityTaskService {
     static final int MAX_EVENTS = 200;
     static final int WORKERS = 4;
 
-    enum Action { PROPOSE, APPROVE, REGENERATE, REPAIR }
+    enum Action { PROPOSE, APPROVE, REGENERATE, REPAIR, WRONG }
 
     record Event(long seq, String kind, String text) {}
 
@@ -128,7 +128,7 @@ public class CapabilityTaskService {
     /** userId must be captured on the request thread. → jobId. */
     public String start(String userId, String kpiName, String action, String capabilityId, String description) {
         Action a = parse(action);
-        if ((a == Action.APPROVE || a == Action.REGENERATE) && (capabilityId == null || capabilityId.isBlank())) {
+        if ((a == Action.APPROVE || a == Action.REGENERATE || a == Action.WRONG) && (capabilityId == null || capabilityId.isBlank())) {
             throw new IllegalArgumentException("Missing capability id");
         }
         evictFinished();
@@ -173,6 +173,7 @@ public class CapabilityTaskService {
                 case APPROVE -> agent.approveAs(task.userId, task.kpiName, capabilityId);
                 case REGENERATE -> agent.regenerateAs(task.userId, task.kpiName, capabilityId);
                 case REPAIR -> agent.repairAs(task.userId, task.kpiName);
+                case WRONG -> agent.wrongAs(task.userId, task.kpiName, capabilityId, description); // description = the user's reason
             });
             if (dto.status() == CapabilityStatus.TEST_FAILED) task.add("error", "Did not pass");
             task.result = dto;
@@ -209,7 +210,7 @@ public class CapabilityTaskService {
         try {
             return Action.valueOf(String.valueOf(action).trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown action (expected propose, approve, regenerate or repair)");
+            throw new IllegalArgumentException("Unknown action (expected propose, approve, regenerate, repair or wrong)");
         }
     }
 }

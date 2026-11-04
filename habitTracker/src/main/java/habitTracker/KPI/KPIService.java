@@ -195,7 +195,25 @@ public class KPIService {
         return convertToDTO(saved);
     }
 
+    /**
+     * S1: stores an automatic (proxy) reading that must NOT be trusted silently: forced `pending` so it shows in the
+     * confirm-inbox, with flag "SHADOW" (capability on trial) or "IMPLAUSIBLE" (plausibility guard) and a plain-language
+     * reason. Same upsert/EMA path as every other write; a later confirm or edit clears the flag.
+     */
+    @Transactional
+    public void addFlaggedProxyDataForUser(String userId, String kpiName, LocalDate date, Double value,
+                                           KPIDataSource source, String flag, String flagReason) {
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+        saveKPIDataPoint(kpi, date, value, false, source, flag, flagReason);
+    }
+
     private void saveKPIDataPoint(KPI kpi, LocalDate date, Double value, boolean autoFilled, KPIDataSource source) {
+        saveKPIDataPoint(kpi, date, value, autoFilled, source, null, null);
+    }
+
+    private void saveKPIDataPoint(KPI kpi, LocalDate date, Double value, boolean autoFilled, KPIDataSource source,
+                                  String flag, String flagReason) {
         String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
 
         Optional<KPIData> existingData = dynamicKPIDataRepository.findByDate(date, collectionName);
@@ -213,7 +231,9 @@ public class KPIService {
         kpiData.setAutoFilled(autoFilled);
         KPIDataSource resolvedSource = source != null ? source : KPIDataSource.MANUAL;
         kpiData.setSource(resolvedSource);
-        kpiData.setPending(rollForPending(kpi, resolvedSource));
+        kpiData.setPending(flag != null || rollForPending(kpi, resolvedSource));
+        kpiData.setFlag(flag);
+        kpiData.setFlagReason(flagReason);
 
         Double ema = calculateEMA(collectionName, value);
         kpiData.setExponentialMovingAverage(ema);
@@ -278,6 +298,8 @@ public class KPIService {
                         "No KPI data found for '" + kpiName + "' on " + date));
 
         data.setPending(false);
+        data.setFlag(null);
+        data.setFlagReason(null);
         KPIData saved = dynamicKPIDataRepository.save(data, collectionName);
         return convertToDataDTO(saved, kpiName, Boolean.TRUE.equals(kpi.getHigherIsBetter()));
     }
@@ -495,6 +517,8 @@ public class KPIService {
                 .autoFilled(Boolean.TRUE.equals(data.getAutoFilled()))
                 .source(data.getSource() != null ? data.getSource() : KPIDataSource.MANUAL)
                 .pending(Boolean.TRUE.equals(data.getPending()))
+                .flag(data.getFlag())
+                .flagReason(data.getFlagReason())
                 .build();
     }
 }

@@ -66,7 +66,7 @@ class RunnerCapabilityGeneratorTest {
         assertEquals("print(1)", gen.generate("u", "K", "d", "spec", Map.of(), "old", "boom"));
         ArgumentCaptor<RunnerJobService.JobSpec> spec = ArgumentCaptor.forClass(RunnerJobService.JobSpec.class);
         verify(jobs).startJob(any(), any(), spec.capture());
-        assertTrue(spec.getValue().prompt().contains("FAILED its dry run. Fix it.\nPrevious code:\nold\nFailure:\nboom\n"));
+        assertTrue(spec.getValue().prompt().contains("judged WRONG by the user. Fix it.\nPrevious code:\nold\nFailure:\nboom\n"));
         verify(usage).record(eq("u"), eq("j1"), any(), eq(AiUsageService.Source.kpi(AiUsage.KPI_GENERATE, "K")));
     }
 

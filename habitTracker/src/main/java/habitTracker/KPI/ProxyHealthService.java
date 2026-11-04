@@ -97,6 +97,23 @@ public class ProxyHealthService {
         return value < min - margin || value > max + margin;
     }
 
+    /**
+     * S1 plausibility guard (ReadingPlausibility) against this KPI's last 14 trusted readings. Points still held in the
+     * confirm-inbox by an earlier guard hit are left out so one bad value cannot move the median. A reason means:
+     * store the reading as pending/IMPLAUSIBLE instead of silently, and do NOT trip the breaker.
+     */
+    public java.util.Optional<String> plausibilityReason(KPI kpi, double value, String unit) {
+        String collectionName = collectionNameUtil.toCollectionName(kpi.getId());
+        List<Double> history = dynamicKPIDataRepository
+                .findTopNOrderByDateDesc(ReadingPlausibility.HISTORY_WINDOW * 2, collectionName).stream()
+                .filter(d -> !(Boolean.TRUE.equals(d.getPending()) && "IMPLAUSIBLE".equals(d.getFlag())))
+                .map(KPIData::getValue)
+                .filter(Objects::nonNull)
+                .limit(ReadingPlausibility.HISTORY_WINDOW)
+                .toList();
+        return ReadingPlausibility.check(value, unit, history);
+    }
+
     /** Record a fetch failure (empty/exception). Trips the breaker at failureThreshold. */
     public void recordFailure(KPI kpi) {
         int failures = (kpi.getConsecutiveProxyFailures() != null ? kpi.getConsecutiveProxyFailures() : 0) + 1;

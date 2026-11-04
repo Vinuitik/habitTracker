@@ -50,6 +50,18 @@ public class CapabilityAgentController {
         return service.regenerate(name, id);
     }
 
+    /** Confirm gate "Looks right": AWAITING_CONFIRM -> SHADOW. */
+    @PostMapping("/{id}/confirm")
+    public CapabilityDTO confirm(@PathVariable String name, @PathVariable String id) {
+        return service.confirm(name, id);
+    }
+
+    /** Confirm gate "Wrong, because...": body {reason}. Blocking; the UI uses the async job action "wrong" instead. */
+    @PostMapping("/{id}/wrong")
+    public CapabilityDTO wrong(@PathVariable String name, @PathVariable String id, @RequestBody Map<String, Object> body) {
+        return service.wrong(name, id, str(body.get("reason")));
+    }
+
     // Manual "fix it" (M12): same pipeline as the automatic repair trigger.
     @PostMapping("/repair")
     public CapabilityDTO repair(@PathVariable String name) {
@@ -58,7 +70,7 @@ public class CapabilityAgentController {
 
     // ── async (UI) ──────────────────────────────────────────────────────────
 
-    /** body: {action: propose|approve|regenerate|repair, id?, description?} → 202 {jobId}. */
+    /** body: {action: propose|approve|regenerate|repair|wrong, id?, description? (= the reason for "wrong")} → 202 {jobId}. */
     @PostMapping("/jobs")
     public ResponseEntity<?> startJob(@PathVariable String name, @RequestBody Map<String, Object> body) {
         String jobId = tasks.start(currentUser(), name, str(body.get("action")), str(body.get("id")),

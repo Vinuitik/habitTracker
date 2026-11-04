@@ -42,4 +42,10 @@ public class KPIData {
     // migration.
     @Builder.Default
     private Boolean pending = false;
+
+    // S1: why an automatic reading was held back for confirmation: "SHADOW" (capability still on trial) or
+    // "IMPLAUSIBLE" (plausibility guard). Always set together with pending=true; cleared by confirm/edit.
+    // Null on every pre-S1 document.
+    private String flag;
+    private String flagReason;
 }

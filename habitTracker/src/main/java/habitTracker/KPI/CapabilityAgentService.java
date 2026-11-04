@@ -17,6 +17,7 @@ import java.util.Optional;
  *   propose (LLM writes a spec; server rejects what the sandbox cannot grant)
  *   -> approve (user's approval = permission grant) -> generate sourceCode (LLM, scoped to the spec)
  *   -> test gate (dry run in the M7 sandbox for yesterday; exit 0 + parseable number) -> ACTIVE + KPI wired.
+ * A passing first build then stops at AWAITING_CONFIRM -> SHADOW -> ACTIVE (CapabilityLifecycleService); repairs go live directly.
  * Failure keeps the version non-active with failureReason stored; regenerate feeds it back (cap MAX_ATTEMPTS).
  * Repair (M12) = a new version seeded with the old code + failure, same test gate.
  *
@@ -31,23 +32,27 @@ public class CapabilityAgentService {
     private static final Logger log = LoggerFactory.getLogger(CapabilityAgentService.class);
 
     public static final int MAX_ATTEMPTS = 3;
+    public static final int MAX_CONFIRM_ROUNDS = CapabilityLifecycleService.MAX_CONFIRM_ROUNDS;
+    private static final int MAX_REASON_CHARS = 500;
     private static final int MAX_DESCRIPTION_CHARS = 2000;
     private final KPIRepository kpiRepository;
     private final KPIProxyCapabilityRepository repository;
     private final CapabilityGenerator generator;
     private final SandboxClient sandboxClient;
     private final CapabilitySecretService secretService;
+    private final CapabilityLifecycleService lifecycle;
     private final int timeoutSeconds;
 
     public CapabilityAgentService(KPIRepository kpiRepository, KPIProxyCapabilityRepository repository,
                                   CapabilityGenerator generator, SandboxClient sandboxClient,
-                                  CapabilitySecretService secretService,
+                                  CapabilitySecretService secretService, CapabilityLifecycleService lifecycle,
                                   @Value("${sandbox.script-timeout-seconds:30}") int timeoutSeconds) {
         this.kpiRepository = kpiRepository;
         this.repository = repository;
         this.generator = generator;
         this.sandboxClient = sandboxClient;
         this.secretService = secretService;
+        this.lifecycle = lifecycle;
         this.timeoutSeconds = timeoutSeconds;
     }
 
@@ -73,7 +78,8 @@ public class CapabilityAgentService {
             throw new IllegalArgumentException("Description too long (max " + MAX_DESCRIPTION_CHARS + " chars)");
         }
         Optional<KPIProxyCapability> latest = repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), userId);
-        if (latest.isPresent() && latest.get().getStatus() == CapabilityStatus.ACTIVE) {
+        if (latest.isPresent() && (latest.get().getStatus() == CapabilityStatus.ACTIVE
+                || latest.get().getStatus() == CapabilityStatus.SHADOW)) {
             throw new IllegalStateException("This KPI already has an active capability");
         }
 
@@ -84,7 +90,7 @@ public class CapabilityAgentService {
         // A newer proposal supersedes any unfinished older one.
         for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
             if (old.getStatus() == CapabilityStatus.PROPOSED || old.getStatus() == CapabilityStatus.TEST_FAILED
-                    || old.getStatus() == CapabilityStatus.PENDING_TEST) {
+                    || old.getStatus() == CapabilityStatus.PENDING_TEST || old.getStatus() == CapabilityStatus.AWAITING_CONFIRM) {
                 old.setStatus(CapabilityStatus.REJECTED);
                 repository.save(old);
             }
@@ -121,7 +127,8 @@ public class CapabilityAgentService {
         String userId = currentUser();
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
-        if (cap.getStatus() != CapabilityStatus.PROPOSED && cap.getStatus() != CapabilityStatus.TEST_FAILED) {
+        if (cap.getStatus() != CapabilityStatus.PROPOSED && cap.getStatus() != CapabilityStatus.TEST_FAILED
+                && cap.getStatus() != CapabilityStatus.AWAITING_CONFIRM) {
             throw new IllegalStateException("Cannot reject a capability in status " + cap.getStatus());
         }
         cap.setStatus(CapabilityStatus.REJECTED);
@@ -140,6 +147,48 @@ public class CapabilityAgentService {
             throw new IllegalStateException("Only a failed capability can be regenerated (status " + cap.getStatus() + ")");
         }
         return CapabilityDTO.from(retry(cap, kpi));
+    }
+
+    /** Confirm gate, "Looks right": AWAITING_CONFIRM -> SHADOW. Instant, no LLM. */
+    public CapabilityDTO confirm(String kpiName, String capabilityId) {
+        return confirmAs(currentUser(), kpiName, capabilityId);
+    }
+
+    CapabilityDTO confirmAs(String userId, String kpiName, String capabilityId) {
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        return CapabilityDTO.from(lifecycle.confirmRight(cap, kpi));
+    }
+
+    /**
+     * Confirm gate, "Wrong, because...": the user's reason is appended to the generation prompt and the version goes
+     * back through generate + test gate (-> AWAITING_CONFIRM again). The MAX_CONFIRM_ROUNDS-th "Wrong" ends in
+     * TEST_FAILED with a clear sentence. Not limited by MAX_ATTEMPTS (that cap is for test-gate failures).
+     */
+    public CapabilityDTO wrong(String kpiName, String capabilityId, String reason) {
+        return wrongAs(currentUser(), kpiName, capabilityId, reason);
+    }
+
+    CapabilityDTO wrongAs(String userId, String kpiName, String capabilityId, String reason) {
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        if (cap.getStatus() != CapabilityStatus.AWAITING_CONFIRM) {
+            throw new IllegalStateException("Only a capability waiting for confirmation can be marked wrong (status "
+                    + cap.getStatus() + ")");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Say what is wrong with the number");
+        }
+        if (reason.length() > MAX_REASON_CHARS) {
+            throw new IllegalArgumentException("Reason too long (max " + MAX_REASON_CHARS + " chars)");
+        }
+        String feedback = CapabilityLifecycleService.wrongFeedback(cap, reason.trim());
+        if (!lifecycle.recordWrong(cap)) {
+            return CapabilityDTO.from(fail(cap, CapabilityLifecycleService.giveUpSentence()));
+        }
+        cap.setFailureReason(feedback);
+        checkGrantable(cap);
+        return CapabilityDTO.from(attempt(cap, kpi));
     }
 
     /** Manual "fix it": same pipeline as the automatic M12 repair trigger, single attempt. */
@@ -171,7 +220,7 @@ public class CapabilityAgentService {
         KPIProxyCapability target;
         switch (latest.getStatus()) {
             case TEST_FAILED -> target = latest; // a previous repair/generation failed: keep working on it
-            case ACTIVE, NEEDS_REPAIR -> {
+            case ACTIVE, NEEDS_REPAIR, SHADOW -> {
                 if (kpi.getProxyStatus() != ProxyStatus.NEEDS_REPAIR) {
                     throw new IllegalStateException("This KPI's proxy is not flagged for repair");
                 }
@@ -183,6 +232,7 @@ public class CapabilityAgentService {
                         .measures(latest.getMeasures()).dataSource(latest.getDataSource())
                         .declaredCapabilities(latest.getDeclaredCapabilities())
                         .sourceCode(latest.getSourceCode())
+                        .repair(true).shadowUntil(latest.getShadowUntil())
                         .failureReason(repairReason(latest))
                         .status(CapabilityStatus.PENDING_TEST)
                         .version(latest.getVersion() == null ? 2 : latest.getVersion() + 1)
@@ -263,23 +313,15 @@ public class CapabilityAgentService {
         }
         CapabilityProgress.step("Testing the script in the sandbox for " + sampleDate);
         SandboxClient.Result result = sandboxClient.run(request);
-        Double value = result.ok() ? SandboxCapabilityProvider.parseLastLine(result.stdout()) : null;
-        if (value == null) {
+        CapabilityOutput out = result.ok() ? CapabilityOutput.parse(result.stdout()) : null;
+        if (out == null) {
             String detail = result.ok()
-                    ? "script exited 0 but the last stdout line was not a number: " + truncate(result.stdout())
+                    ? "script exited 0 but the last stdout line was not a number or a {\"value\": ...} JSON object: " + truncate(result.stdout())
                     : result.outcome() + (result.exitCode() != null ? " exit=" + result.exitCode() : "") + ": "
                             + truncate(result.stderr() == null || result.stderr().isBlank() ? result.stdout() : result.stderr());
             return fail(cap, "Test gate failed: " + detail);
         }
-
-        cap.setStatus(CapabilityStatus.ACTIVE);
-        cap.setFailureReason(null);
-        cap.setLastRunAt(LocalDateTime.now());
-        cap.setLastResult("Test gate OK for " + sampleDate + ": " + value);
-        cap.setConsecutiveFailures(0);
-        repository.save(cap);
-        activate(cap, kpi);
-        return cap;
+        return lifecycle.testGatePassed(cap, kpi, out, sampleDate, Boolean.TRUE.equals(cap.getRepair()));
     }
 
     private KPIProxyCapability fail(KPIProxyCapability cap, String reason) {
@@ -287,23 +329,6 @@ public class CapabilityAgentService {
         cap.setFailureReason(reason);
         log.warn("[CapabilityAgent] capability {} v{} failed: {}", cap.getId(), cap.getVersion(), reason);
         return repository.save(cap);
-    }
-
-    /** Wires the KPI to the capability and retires older live versions. */
-    private void activate(KPIProxyCapability cap, KPI kpi) {
-        for (KPIProxyCapability other : repository.findByKpiIdAndUserId(cap.getKpiId(), cap.getUserId())) {
-            if (!other.getId().equals(cap.getId())
-                    && (other.getStatus() == CapabilityStatus.ACTIVE || other.getStatus() == CapabilityStatus.NEEDS_REPAIR)) {
-                other.setStatus(CapabilityStatus.DISABLED);
-                repository.save(other);
-            }
-        }
-        KPI fresh = kpiRepository.findById(kpi.getId()).orElse(kpi);
-        fresh.setProxyType(ProxyType.SANDBOX_CAPABILITY);
-        fresh.setProxyStatus(ProxyStatus.ACTIVE);
-        fresh.setConsecutiveProxyFailures(0);
-        fresh.setUpdatedAt(LocalDateTime.now());
-        kpiRepository.save(fresh);
     }
 
     private static void checkGrantable(KPIProxyCapability c) {
