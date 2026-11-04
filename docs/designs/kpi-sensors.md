@@ -171,7 +171,7 @@ Pipeline order, which corrects the earlier one: **the user approves the contract
 | `POST /v1/collectors/{id}/approve` | `{contractHash}` → 200, or 409 if the hash doesn't match the current version |
 | `POST /v1/collectors/{id}/run` | `{from, to}` (ISO) → `{value, unit, evidence:[{label, value}], sandbox}`. Synchronous, ≤60s. 403 if not approved. |
 | `POST /v1/collectors/{id}/activate` | → 200 (the runner starts scheduling it) |
-| `GET /v1/collectors/{id}/readings?since=ISO` | → `[{from, to, value, unit}]` |
+| `GET /v1/collectors/{id}/readings?since=ISO` | → `[{from, to, value, unit, recordedAt}]`; `since` filters on recordedAt (so backfilled windows still arrive), hub dedupes on `from` |
 | `DELETE /v1/collectors/{id}` | → 204 |
 | `GET /v1/sensors` | → `{activitywatch:{installed, running, buckets:[str]}, sandbox:{available, kind:"bwrap"\|"appcontainer"\|"none", error?}, operation:""\|"installing"}` |
 | `POST /v1/sensors/install` | `{name:"activitywatch"}` → 202. Poll `GET /v1/sensors` until `operation==""`. |
