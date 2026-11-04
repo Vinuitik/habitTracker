@@ -154,6 +154,80 @@ The user should never install sensor tools by hand. The plan is `relay-runner se
 - **Later option:** a built-in watcher inside the runner. The Win32 foreground window plus the idle time is a small amount of Go, and it removes the ActivityWatch dependency entirely. Browser URLs still need the extension.
 [NOT IMPLEMENTED]
 
+## Iteration 1: thin end-to-end slice (started 2026-11-04)
+Scope:
+- **In:** one KPI from description to runner collector to readings in habitTracker, plus the confirm gate, plus the sensor installer.
+- **Out:** multi-turn chat, fusion, TimesFM, phone.
+
+Pipeline order, which corrects the earlier one: **the user approves the contract before real data is read.**
+`generate → static (hub) → fixtures (runner /test) → CONTRACT approve (user) → dry-run (runner /run) → CONFIRM number (user) → SHADOW 7d → ACTIVE`
+
+### Runner API (Relay repo, `runner/internal/api/collectors.go`)
+| Route | Body → Response |
+|---|---|
+| `GET /v1/collectors` | → `[{id, kpiName, version, contractHash, approved, state:"pending"\|"active"\|"failed", lastRunAt, lastError}]` |
+| `POST /v1/collectors` | `{id, kpiName, manifest, files:{"collector.py":str, "fixtures/<case>/inputs/...":str, "fixtures/<case>/expected.json":str}}` → `{id, version, contractHash, approved}`. Same id = a new version. It stays approved if the contractHash is unchanged. |
+| `POST /v1/collectors/{id}/test` | → `{passed, sandbox, cases:[{name, passed, expected, got, error?}]}`. Fixtures are run inside the sandbox. |
+| `POST /v1/collectors/{id}/approve` | `{contractHash}` → 200, or 409 if the hash doesn't match the current version |
+| `POST /v1/collectors/{id}/run` | `{from, to}` (ISO) → `{value, unit, evidence:[{label, value}], sandbox}`. Synchronous, ≤60s. 403 if not approved. |
+| `POST /v1/collectors/{id}/activate` | → 200 (the runner starts scheduling it) |
+| `GET /v1/collectors/{id}/readings?since=ISO` | → `[{from, to, value, unit}]` |
+| `DELETE /v1/collectors/{id}` | → 204 |
+| `GET /v1/sensors` | → `{activitywatch:{installed, running, buckets:[str]}, sandbox:{available, kind:"bwrap"\|"appcontainer"\|"none", error?}, operation:""\|"installing"}` |
+| `POST /v1/sensors/install` | `{name:"activitywatch"}` → 202. Poll `GET /v1/sensors` until `operation==""`. |
+
+Manifest:
+```
+{ schedule:"daily 00:10"|"hourly", window:"1d"|"1h",
+  sources:[{type:"activitywatch", buckets:["window","web","afk"]} | {type:"file", glob, why}],
+  unit, aggregation:"sum"|"last"|"max" }
+```
+- `contractHash` = sha256 of canonical JSON (sorted keys) of `{sources, schedule, window}`.
+- The collector is invoked as `python3 collector.py --inputs /in --from F --to T`. Stdout is `{value, unit, evidence}`.
+- The activitywatch source writes `/in/aw/<bucketType>.json`, which holds the events in [from, to) for the first bucket whose id starts with `aw-watcher-<type>`.
+- Scheduler: active collectors run per schedule on aligned windows (daily = the previous local day). Missed windows are backfilled for up to 7 days. Readings live in `<dataDir>/collectors/<id>/readings.jsonl`.
+
+### Sandbox interface (`runner/internal/collectors/sandbox/sandbox.go`, exact)
+```go
+package sandbox
+
+import (
+	"context"
+	"errors"
+	"time"
+)
+
+// ErrUnavailable means this OS/machine cannot sandbox; callers must refuse to run.
+var ErrUnavailable = errors.New("sandbox unavailable")
+
+// Spec describes one sandboxed run: no network, InputsDir read-only, ScratchDir writable.
+type Spec struct {
+	Python     string        // python interpreter path on the host
+	ScriptDir  string        // dir holding collector.py, mounted read-only
+	InputsDir  string        // mounted read-only as the script's --inputs
+	ScratchDir string        // the only writable dir
+	Args       []string      // args after the script path
+	Timeout    time.Duration // hard kill
+	MemoryMB   int
+}
+
+type Result struct {
+	Stdout   []byte
+	Stderr   []byte
+	ExitCode int
+}
+
+// Kind returns "bwrap", "appcontainer" or "none".
+func Kind() string { return kind() }
+
+// Available reports whether Run can work here, with a reason if not.
+func Available() error { return available() }
+
+// Run executes the spec sandboxed. Implementations: sandbox_linux.go (bwrap),
+// sandbox_windows.go (AppContainer), sandbox_other.go (returns ErrUnavailable).
+func Run(ctx context.Context, s Spec) (Result, error) { return run(ctx, s) }
+```
+
 ## Not in scope / later
 - **Network access for RUNNER collectors:** never. Use SERVER.
 
