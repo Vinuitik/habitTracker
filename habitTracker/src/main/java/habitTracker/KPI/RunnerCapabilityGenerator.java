@@ -77,6 +77,14 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
                 declaredCapabilities, previousCode, previousError)));
     }
 
+    @Override
+    public CollectorBundle generateCollector(String userId, String kpiName, String description, String proposal,
+                                             List<String> sources, String previousBundleJson, String previousError) {
+        String kind = CapabilityProgress.isRepair() ? AiUsage.KPI_REPAIR : AiUsage.KPI_GENERATE;
+        return prompts.parseCollectorBundle(run(userId, AiUsageService.Source.kpi(kind, kpiName),
+                prompts.collectorPrompt(kpiName, description, proposal, sources, previousBundleJson, previousError)));
+    }
+
     /** → the job's result node (agent's final message). */
     private JsonNode run(String userId, AiUsageService.Source source, String prompt) {
         String deviceId = selector.pick(userId).orElseThrow(() -> CapabilityGeneratorException.noRunner(null));

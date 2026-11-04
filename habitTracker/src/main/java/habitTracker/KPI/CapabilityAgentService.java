@@ -41,11 +41,13 @@ public class CapabilityAgentService {
     private final SandboxClient sandboxClient;
     private final CapabilitySecretService secretService;
     private final CapabilityLifecycleService lifecycle;
+    private final RunnerCollectorPipeline runnerPipeline;
     private final int timeoutSeconds;
 
     public CapabilityAgentService(KPIRepository kpiRepository, KPIProxyCapabilityRepository repository,
                                   CapabilityGenerator generator, SandboxClient sandboxClient,
                                   CapabilitySecretService secretService, CapabilityLifecycleService lifecycle,
+                                  RunnerCollectorPipeline runnerPipeline,
                                   @Value("${sandbox.script-timeout-seconds:30}") int timeoutSeconds) {
         this.kpiRepository = kpiRepository;
         this.repository = repository;
@@ -53,6 +55,7 @@ public class CapabilityAgentService {
         this.sandboxClient = sandboxClient;
         this.secretService = secretService;
         this.lifecycle = lifecycle;
+        this.runnerPipeline = runnerPipeline;
         this.timeoutSeconds = timeoutSeconds;
     }
 
@@ -85,19 +88,21 @@ public class CapabilityAgentService {
 
         CapabilityProgress.step("Drafting a plan on your runner");
         CapabilityGenerator.Proposal p = generator.propose(userId, kpi.getName(), description.trim());
-        Map<String, List<String>> granted = checkGrantable(p.platform(), p.declaredCapabilities());
+        Map<String, List<String>> granted = checkGrantable(p.platform(), p.declaredCapabilities(), p.sources());
+        CapabilityPlatform platform = "RUNNER".equalsIgnoreCase(p.platform()) ? CapabilityPlatform.RUNNER : CapabilityPlatform.SERVER;
 
         // A newer proposal supersedes any unfinished older one.
         for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
             if (old.getStatus() == CapabilityStatus.PROPOSED || old.getStatus() == CapabilityStatus.TEST_FAILED
-                    || old.getStatus() == CapabilityStatus.PENDING_TEST || old.getStatus() == CapabilityStatus.AWAITING_CONFIRM) {
+                    || old.getStatus() == CapabilityStatus.PENDING_TEST || old.getStatus() == CapabilityStatus.AWAITING_CONFIRM
+                    || old.getStatus() == CapabilityStatus.AWAITING_SENSOR || old.getStatus() == CapabilityStatus.AWAITING_CONTRACT) {
                 old.setStatus(CapabilityStatus.REJECTED);
                 repository.save(old);
             }
         }
         KPIProxyCapability cap = KPIProxyCapability.builder()
                 .userId(userId).kpiId(kpi.getId())
-                .platform(CapabilityPlatform.SERVER).language("python")
+                .platform(platform).language("python")
                 .description(description.trim()).proposal(p.proposal())
                 .measures(p.measures()).dataSource(p.dataSource())
                 .declaredCapabilities(granted)
@@ -128,11 +133,17 @@ public class CapabilityAgentService {
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
         if (cap.getStatus() != CapabilityStatus.PROPOSED && cap.getStatus() != CapabilityStatus.TEST_FAILED
-                && cap.getStatus() != CapabilityStatus.AWAITING_CONFIRM) {
+                && cap.getStatus() != CapabilityStatus.AWAITING_CONFIRM && cap.getStatus() != CapabilityStatus.AWAITING_SENSOR
+                && cap.getStatus() != CapabilityStatus.AWAITING_CONTRACT) {
             throw new IllegalStateException("Cannot reject a capability in status " + cap.getStatus());
         }
         cap.setStatus(CapabilityStatus.REJECTED);
-        return CapabilityDTO.from(repository.save(cap));
+        KPIProxyCapability saved = repository.save(cap);
+        // RUNNER first build: take the collector off the runner. Not for a repair: the live version shares its id.
+        if (cap.getPlatform() == CapabilityPlatform.RUNNER && !Boolean.TRUE.equals(cap.getRepair())) {
+            runnerPipeline.forget(cap);
+        }
+        return CapabilityDTO.from(saved);
     }
 
     /** Retry after a failed test gate, feeding the stored failure back into the prompt. */
@@ -158,6 +169,30 @@ public class CapabilityAgentService {
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
         return CapabilityDTO.from(lifecycle.confirmRight(cap, kpi));
+    }
+
+    /** S3 RUNNER contract "Approve": POST /approve {contractHash} on the runner, then the dry run on real data. */
+    public CapabilityDTO approveContract(String kpiName, String capabilityId) {
+        return approveContractAs(currentUser(), kpiName, capabilityId);
+    }
+
+    CapabilityDTO approveContractAs(String userId, String kpiName, String capabilityId) {
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        if (cap.getPlatform() != CapabilityPlatform.RUNNER) throw new IllegalStateException("Only runner collectors have a contract");
+        return CapabilityDTO.from(runnerPipeline.approveContract(cap, kpi));
+    }
+
+    /** S3 RUNNER "Install it" / "Check again" while AWAITING_SENSOR (ActivityWatch missing on the runner). */
+    public CapabilityDTO installSensor(String kpiName, String capabilityId) {
+        return installSensorAs(currentUser(), kpiName, capabilityId);
+    }
+
+    CapabilityDTO installSensorAs(String userId, String kpiName, String capabilityId) {
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
+        if (cap.getPlatform() != CapabilityPlatform.RUNNER) throw new IllegalStateException("Only runner collectors use sensors");
+        return CapabilityDTO.from(runnerPipeline.installSensor(cap, kpi, MAX_ATTEMPTS));
     }
 
     /**
@@ -212,8 +247,8 @@ public class CapabilityAgentService {
     }
 
     private KPIProxyCapability doRepair(String userId, KPI kpi, boolean autoRetry) {
-        if (kpi.getProxyType() != ProxyType.SANDBOX_CAPABILITY) {
-            throw new IllegalStateException("KPI does not use a sandbox capability");
+        if (kpi.getProxyType() != ProxyType.SANDBOX_CAPABILITY && kpi.getProxyType() != ProxyType.RUNNER_COLLECTOR) {
+            throw new IllegalStateException("KPI does not use a sandbox capability or runner collector");
         }
         KPIProxyCapability latest = repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), userId)
                 .orElseThrow(() -> new IllegalArgumentException("No capability to repair"));
@@ -232,6 +267,11 @@ public class CapabilityAgentService {
                         .measures(latest.getMeasures()).dataSource(latest.getDataSource())
                         .declaredCapabilities(latest.getDeclaredCapabilities())
                         .sourceCode(latest.getSourceCode())
+                        // RUNNER: same collector id on the same runner; the approved contract hash carries over
+                        // (unchanged hash → no new approval; changed → AWAITING_CONTRACT, never auto-approved)
+                        .runnerDeviceId(latest.getRunnerDeviceId()).collectorId(latest.getCollectorId())
+                        .collectorBundle(latest.getCollectorBundle()).contractHash(latest.getContractHash())
+                        .approvedContractHash(latest.getApprovedContractHash())
                         .repair(true).shadowUntil(latest.getShadowUntil())
                         .failureReason(repairReason(latest))
                         .status(CapabilityStatus.PENDING_TEST)
@@ -282,6 +322,9 @@ public class CapabilityAgentService {
     private KPIProxyCapability attempt(KPIProxyCapability cap, KPI kpi) {
         cap.setStatus(CapabilityStatus.PENDING_TEST);
         repository.save(cap);
+        if (cap.getPlatform() == CapabilityPlatform.RUNNER) {
+            return runnerPipeline.attempt(cap, kpi, MAX_ATTEMPTS);
+        }
 
         // A declared secret the user has not set can never pass the gate: say so now instead of burning an LLM call.
         List<String> unset = secretService.missing(cap.getUserId(),
@@ -332,14 +375,33 @@ public class CapabilityAgentService {
     }
 
     private static void checkGrantable(KPIProxyCapability c) {
-        checkGrantable(c.getPlatform() == null ? null : c.getPlatform().name(), c.getDeclaredCapabilities());
+        checkGrantable(c.getPlatform() == null ? null : c.getPlatform().name(), c.getDeclaredCapabilities(),
+                RunnerCollectorPipeline.sources(c));
     }
 
     // The grant boundary: SERVER only; declared network hosts / secret names must be valid (see CapabilityGrants).
     // Approving the proposal grants exactly the returned (normalized) declaredCapabilities and nothing else.
-    private static Map<String, List<String>> checkGrantable(String platform, Map<String, List<String>> declared) {
+    // RUNNER (S3): no hosts, no secrets (a collector never has network), sources ⊆ {activitywatch, file}, ≥ 1;
+    // stored as {network: [], secrets: [], sources: [...]}. The runner sandbox + the contract approval enforce it.
+    private static Map<String, List<String>> checkGrantable(String platform, Map<String, List<String>> declared,
+                                                            List<String> sources) {
+        if (platform != null && "RUNNER".equalsIgnoreCase(platform)) {
+            Map<String, List<String>> norm = CapabilityGrants.normalize(declared);
+            if (!norm.get("network").isEmpty() || !norm.get("secrets").isEmpty()) {
+                throw new CapabilityRejectedException("A collector on your runner never gets internet access or secrets; "
+                        + "this KPI needs a server capability instead.");
+            }
+            List<String> src = sources == null ? List.of() : sources.stream().distinct().toList();
+            if (src.isEmpty() || !List.of(RunnerCollectorPipeline.ACTIVITYWATCH, "file").containsAll(src)) {
+                throw new CapabilityRejectedException("A runner collector must read ActivityWatch and/or local files "
+                        + "(the agent proposed sources " + src + ").");
+            }
+            Map<String, List<String>> out = new java.util.LinkedHashMap<>(norm);
+            out.put("sources", src);
+            return out;
+        }
         if (platform != null && !"SERVER".equalsIgnoreCase(platform)) {
-            throw new CapabilityRejectedException("Not supported yet: only SERVER capabilities can be generated "
+            throw new CapabilityRejectedException("Not supported yet: only SERVER and RUNNER capabilities can be generated "
                     + "(the agent proposed platform " + platform + ").");
         }
         return CapabilityGrants.normalize(declared);

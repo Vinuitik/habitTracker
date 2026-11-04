@@ -3,6 +3,7 @@ package habitTracker.KPI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -31,12 +32,14 @@ public class CapabilityLifecycleService {
     private final KPIProxyCapabilityRepository repository;
     private final KPIRepository kpiRepository;
     private final int shadowDays;
+    private final ApplicationEventPublisher events;
 
     public CapabilityLifecycleService(KPIProxyCapabilityRepository repository, KPIRepository kpiRepository,
-                                      @Value("${kpi.shadow.days:7}") int shadowDays) {
+                                      @Value("${kpi.shadow.days:7}") int shadowDays, ApplicationEventPublisher events) {
         this.repository = repository;
         this.kpiRepository = kpiRepository;
         this.shadowDays = shadowDays;
+        this.events = events;
     }
 
     /**
@@ -140,10 +143,11 @@ public class CapabilityLifecycleService {
             }
         }
         KPI fresh = kpiRepository.findById(kpi.getId()).orElse(kpi);
-        fresh.setProxyType(ProxyType.SANDBOX_CAPABILITY);
+        fresh.setProxyType(cap.getPlatform() == CapabilityPlatform.RUNNER ? ProxyType.RUNNER_COLLECTOR : ProxyType.SANDBOX_CAPABILITY);
         fresh.setProxyStatus(ProxyStatus.ACTIVE);
         fresh.setConsecutiveProxyFailures(0);
         fresh.setUpdatedAt(LocalDateTime.now());
         kpiRepository.save(fresh);
+        if (events != null) events.publishEvent(new CapabilityWentLive(cap));
     }
 }

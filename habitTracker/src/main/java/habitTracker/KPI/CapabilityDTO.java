@@ -28,7 +28,11 @@ public record CapabilityDTO(
         List<CapabilityOutput.Row> sampleEvidence,
         int confirmRounds,
         int maxConfirmRounds,
-        String shadowUntil) {
+        String shadowUntil,
+        // S3 RUNNER: the data-access contract in plain language + per-case fixture results (null / empty for SERVER)
+        String contractText,
+        List<KPIProxyCapability.CollectorTestCase> collectorTests,
+        boolean repair) {
 
     /** Pre-S1 shape (no sample / confirm fields). */
     public CapabilityDTO(String id, String kpiId, int version, CapabilityStatus status, String description,
@@ -37,7 +41,7 @@ public record CapabilityDTO(
                          int maxAttempts, String failureReason, String lastResult) {
         this(id, kpiId, version, status, description, proposal, measures, dataSource, platform, declaredCapabilities,
                 sourceCode, attempts, maxAttempts, failureReason, lastResult,
-                null, null, null, null, List.of(), 0, CapabilityAgentService.MAX_CONFIRM_ROUNDS, null);
+                null, null, null, null, List.of(), 0, CapabilityAgentService.MAX_CONFIRM_ROUNDS, null, null, List.of(), false);
     }
 
     static CapabilityDTO from(KPIProxyCapability c) {
@@ -50,6 +54,15 @@ public record CapabilityDTO(
                 c.getSampleDate() == null ? null : c.getSampleDate().toString(),
                 c.getSampleEvidence() == null ? List.of() : c.getSampleEvidence(),
                 c.getConfirmRounds() == null ? 0 : c.getConfirmRounds(), CapabilityAgentService.MAX_CONFIRM_ROUNDS,
-                c.getShadowUntil() == null ? null : c.getShadowUntil().toString());
+                c.getShadowUntil() == null ? null : c.getShadowUntil().toString(),
+                contractText(c),
+                c.getCollectorTests() == null ? List.of() : c.getCollectorTests(),
+                Boolean.TRUE.equals(c.getRepair()));
+    }
+
+    private static String contractText(KPIProxyCapability c) {
+        if (c.getPlatform() != CapabilityPlatform.RUNNER) return null;
+        CollectorBundle b = CollectorBundle.fromJson(c.getCollectorBundle());
+        return b == null ? null : CollectorStaticCheck.contractText(b.manifest());
     }
 }

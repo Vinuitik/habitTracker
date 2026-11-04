@@ -7,6 +7,7 @@ import habitTracker.KPI.KPIService;
 import habitTracker.KPI.ProxyHealthService;
 import habitTracker.KPI.ProxyProvider;
 import habitTracker.KPI.ProxyProviderRegistry;
+import habitTracker.KPI.ProxyReadingRecorder;
 import habitTracker.KPI.ProxyType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,7 @@ public class KPIProxyFillService {
     private final KPIService kpiService;
     private final ProxyProviderRegistry registry;
     private final ProxyHealthService proxyHealthService;
+    private final ProxyReadingRecorder recorder;
 
     public KPIProxyFillService(KPIRepository kpiRepository, KPIService kpiService, ProxyProviderRegistry registry,
                                 ProxyHealthService proxyHealthService) {
@@ -56,6 +58,7 @@ public class KPIProxyFillService {
         this.kpiService = kpiService;
         this.registry = registry;
         this.proxyHealthService = proxyHealthService;
+        this.recorder = new ProxyReadingRecorder(kpiService, proxyHealthService);
     }
 
     public void fillFromProxies() {
@@ -69,6 +72,9 @@ public class KPIProxyFillService {
             ProxyType type = kpi.getProxyType() != null ? kpi.getProxyType() : ProxyType.NONE;
             if (type == ProxyType.NONE || type == ProxyType.MANUAL_PROMPT) {
                 continue; // not wired to an automatic proxy — untouched by this step
+            }
+            if (type == ProxyType.RUNNER_COLLECTOR) {
+                continue; // runner collectors are pulled by RunnerCollectorProvider (offline runner = skip, no breaker)
             }
             if (proxyHealthService.needsRepair(kpi)) {
                 skippedNeedsRepair++;
@@ -95,26 +101,12 @@ public class KPIProxyFillService {
                 continue;
             }
 
-            // S1 (capability proxies only): a capability on SHADOW trial, or a value the plausibility guard rejects,
-            // is stored as pending/flagged so it lands in the confirm-inbox. Neither trips the breaker.
+            // S1 (capability proxies only): SHADOW trial / plausibility guard via the shared recorder
+            // (stored pending + flagged, breaker untouched); same path as the RUNNER pull.
             if (type == ProxyType.SANDBOX_CAPABILITY) {
-                ProxyProvider.Context ctx = provider.get().context(kpi);
-                if (ctx == null) ctx = ProxyProvider.Context.NONE;
-                java.util.Optional<String> implausible = proxyHealthService.plausibilityReason(kpi, value.get(), ctx.unit());
-                if (implausible != null && implausible.isPresent()) {
-                    kpiService.addFlaggedProxyDataForUser(kpi.getUserId(), kpi.getName(), targetDate, value.get(),
-                            sourceFor(type), "IMPLAUSIBLE", implausible.get());
-                    proxyHealthService.recordSuccess(kpi);
-                    filled++;
-                    continue;
-                }
-                if (ctx.shadow()) {
-                    kpiService.addFlaggedProxyDataForUser(kpi.getUserId(), kpi.getName(), targetDate, value.get(),
-                            sourceFor(type), "SHADOW", "Trial run: check this against what really happened");
-                    proxyHealthService.recordSuccess(kpi);
-                    filled++;
-                    continue;
-                }
+                recorder.record(kpi, targetDate, value.get(), provider.get().context(kpi), sourceFor(type));
+                filled++;
+                continue;
             }
 
             boolean anomalous = proxyHealthService.isAnomalous(kpi, value.get());

@@ -54,7 +54,7 @@ public class AgentCapabilityRepairTrigger implements CapabilityRepairTrigger {
 
     @Override
     public void attemptRepair(KPI kpi) {
-        if (kpi.getProxyType() != ProxyType.SANDBOX_CAPABILITY) {
+        if (!repairable(kpi.getProxyType())) {
             log.info("KPI proxy repair: nothing to regenerate for KPI id={} proxyType={} (manual reset only)",
                     kpi.getId(), kpi.getProxyType());
             return;
@@ -81,7 +81,7 @@ public class AgentCapabilityRepairTrigger implements CapabilityRepairTrigger {
             waiting.remove(kpiId);
             KPI kpi = kpiRepository.findById(kpiId).orElse(null);
             // Re-read: the user may have deleted the KPI, reset it manually, or fixed it via "fix it" meanwhile.
-            if (kpi == null || kpi.getProxyType() != ProxyType.SANDBOX_CAPABILITY
+            if (kpi == null || !repairable(kpi.getProxyType())
                     || kpi.getProxyStatus() != ProxyStatus.NEEDS_REPAIR) {
                 log.info("KPI proxy repair for KPI id={} no longer needed, dropped from waiting set", kpiId);
                 continue;
@@ -105,6 +105,11 @@ public class AgentCapabilityRepairTrigger implements CapabilityRepairTrigger {
                 log.warn("KPI proxy repair for KPI id={} did not run: {}", kpi.getId(), e.toString());
             }
         });
+    }
+
+    /** Agent-built proxies: sandbox scripts and (S3) runner collectors. */
+    static boolean repairable(ProxyType t) {
+        return t == ProxyType.SANDBOX_CAPABILITY || t == ProxyType.RUNNER_COLLECTOR;
     }
 
     private void park(String kpiId, String userId) {

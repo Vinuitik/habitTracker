@@ -26,6 +26,7 @@ window.ENV = {
     KPI_CAP_CONFIRM: (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/confirm`,
     KPI_CAP_JOBS:    (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs`,
     KPI_CAP_ACTIVE:  (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/active`,
+    KPI_CAP_PULL:    (name) => `/api/kpis/${encodeURIComponent(name)}/capability/pull`,
     KPI_CAP_JOB:     (name, id, after) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/${encodeURIComponent(id)}?after=${after}`,
     PROJECTS:        '/api/projects',
     PROJECT:         (id) => `/api/projects/${id}`,

@@ -47,7 +47,15 @@ public class RunnerJobService {
 
     /** Generic JSON call: 2xx → parsed body (empty object when blank), else RunnerCallException. */
     public JsonNode send(String userId, String deviceId, String method, String path, String body) {
-        UplinkRegistry.Response r = client.call(userId, deviceId, method, path, body);
+        return parse(client.call(userId, deviceId, method, path, body));
+    }
+
+    /** Same with an explicit wait for the runner's answer (long synchronous runner calls). */
+    public JsonNode send(String userId, String deviceId, String method, String path, String body, long waitMs) {
+        return parse(client.call(userId, deviceId, method, path, body, waitMs));
+    }
+
+    private JsonNode parse(UplinkRegistry.Response r) {
         if (r.status() < 200 || r.status() >= 300) throw new RunnerCallException(r.status(), r.body());
         if (r.body() == null || r.body().isBlank()) return json.createObjectNode();
         try {

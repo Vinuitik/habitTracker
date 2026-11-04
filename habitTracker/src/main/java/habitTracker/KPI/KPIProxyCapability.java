@@ -75,6 +75,27 @@ public class KPIProxyCapability {
     // Unit of the last production run (set by the provider); feeds the plausibility guard.
     private String lastUnit;
 
+    // S3 RUNNER platform (additive, null for SERVER capabilities).
+    // The paired runner (relay Device id) the collector is installed on, and its id there ("kpi-<kpiId>", same
+    // across versions: a repair re-installs under the same id).
+    private String runnerDeviceId;
+    private String collectorId;
+    // Generated bundle as one JSON string {manifest, files} (file paths contain dots, which Mongo map keys can't).
+    private String collectorBundle;
+    // contractHash = the runner's sha256 of {sources, schedule, window} for this version's manifest;
+    // approvedContractHash = the hash the user approved (copied to repair versions: same hash = no new approval).
+    private String contractHash;
+    private String approvedContractHash;
+    // Last fixture test run on the runner (per case), shown in the UI.
+    private List<CollectorTestCase> collectorTests;
+    // Readings pull bookkeeping: max recordedAt seen (ISO, the runner's ?since=), the day of the last pull,
+    // and whether POST /activate succeeded.
+    private String readingsSince;
+    private LocalDate lastPulledOn;
+    private Boolean collectorActivated;
+
+    public record CollectorTestCase(String name, boolean passed, Double expected, Double got, String error) {}
+
     private LocalDateTime createdAt;
     private LocalDateTime lastRunAt;
     private String lastResult;

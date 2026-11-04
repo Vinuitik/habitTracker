@@ -22,5 +22,10 @@ public enum CapabilityStatus {
     DISABLED,
     NEEDS_REPAIR,
     AWAITING_CONFIRM,
-    SHADOW
+    SHADOW,
+    /** S3 RUNNER: a declared local source (ActivityWatch) is not running on the runner; the user can install it. */
+    AWAITING_SENSOR,
+    /** S3 RUNNER: fixtures passed; the user approves the data-access contract before real data is read. A repair
+     *  whose contract hash changed stops here too (never auto-approved). */
+    AWAITING_CONTRACT
 }

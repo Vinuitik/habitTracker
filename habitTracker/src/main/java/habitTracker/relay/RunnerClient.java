@@ -29,14 +29,24 @@ public class RunnerClient {
 
     /** Ownership-checked call: deviceId must belong to userId, else DEVICE_NOT_FOUND. Any status is returned. */
     public UplinkRegistry.Response call(String userId, String deviceId, String method, String path, String body) {
+        return call(userId, deviceId, method, path, body, timeoutMs);
+    }
+
+    /** Same, with its own wait (e.g. a sandboxed collector run that may take up to a minute on the runner). */
+    public UplinkRegistry.Response call(String userId, String deviceId, String method, String path, String body,
+                                        long waitMs) {
         if (devices.owned(userId, deviceId).isEmpty()) {
             throw new RunnerUnavailableException(RunnerUnavailableException.Reason.DEVICE_NOT_FOUND, "device not found");
         }
-        return exchange(deviceId, method, path, body);
+        return exchange(deviceId, method, path, body, waitMs);
     }
 
     /** No ownership check: callers must have done it. Throws OFFLINE / TIMEOUT. */
     UplinkRegistry.Response exchange(String deviceId, String method, String path, String body) {
+        return exchange(deviceId, method, path, body, timeoutMs);
+    }
+
+    private UplinkRegistry.Response exchange(String deviceId, String method, String path, String body, long timeoutMs) {
         Optional<UplinkRegistry.Request> sent = uplinks.request(deviceId, method, path, body == null ? "" : body);
         if (sent.isEmpty()) throw offline();
         try {

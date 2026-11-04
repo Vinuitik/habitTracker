@@ -12,10 +12,16 @@ import java.util.Map;
 public interface CapabilityGenerator {
 
     /** measures / dataSource: optional one-sentence plain-language summaries for the UI (null when omitted). */
+    /** sources: RUNNER only, the local source types the collector will read ("activitywatch", "file"). */
     record Proposal(String proposal, String platform, Map<String, List<String>> declaredCapabilities,
-                    String measures, String dataSource) {
+                    String measures, String dataSource, List<String> sources) {
         public Proposal(String proposal, String platform, Map<String, List<String>> declaredCapabilities) {
-            this(proposal, platform, declaredCapabilities, null, null);
+            this(proposal, platform, declaredCapabilities, null, null, List.of());
+        }
+
+        public Proposal(String proposal, String platform, Map<String, List<String>> declaredCapabilities,
+                        String measures, String dataSource) {
+            this(proposal, platform, declaredCapabilities, measures, dataSource, List.of());
         }
     }
 
@@ -27,4 +33,11 @@ public interface CapabilityGenerator {
     /** previousCode/previousError are non-null when seeding a retry or repair with a failure. */
     String generate(String userId, String kpiName, String description, String proposal,
                     Map<String, List<String>> declaredCapabilities, String previousCode, String previousError);
+
+    /**
+     * S3 RUNNER: a collector bundle (manifest + collector.py + fixtures). previousBundleJson/previousError are
+     * non-null when seeding a retry or repair with a failure.
+     */
+    CollectorBundle generateCollector(String userId, String kpiName, String description, String proposal,
+                                      List<String> sources, String previousBundleJson, String previousError);
 }

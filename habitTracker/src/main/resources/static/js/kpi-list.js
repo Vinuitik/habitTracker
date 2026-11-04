@@ -393,6 +393,18 @@ function renderAutomateSummary(body, cap) {
     const facts = automateEl('dl', 'automate__facts');
     const fact = (label, value) => facts.append(automateEl('dt', null, label), automateEl('dd', null, value));
     fact('Measures', cap.measures || cap.description || 'See the plan below.');
+    if (cap.platform === 'RUNNER') {
+        fact('Data comes from', cap.dataSource || 'Your own computer, read by your runner.');
+        fact('Updates', 'Once a day on your runner. Values reach this site whenever your runner is online.');
+        fact('Needs from you', 'Your runner switched on now and then. No passwords or API keys.');
+        body.append(facts);
+        if (cap.proposal) {
+            const plan = automateEl('details', 'automate__source');
+            plan.append(automateEl('summary', null, 'Full plan'), automateEl('div', 'automate__text', cap.proposal));
+            body.append(plan);
+        }
+        return;
+    }
     fact('Data comes from', cap.dataSource
         || (hosts.length ? `The internet: ${hosts.join(', ')}` : 'Computed inside the sandbox, without internet access.'));
     fact('Updates', 'Once a day, overnight, recording the previous day’s value.');
@@ -410,6 +422,15 @@ function renderAutomateSummary(body, cap) {
 // Declared hosts + secret inputs. Secret inputs are write-only: the server never returns a value,
 // only which names are set. All text via textContent (names/hosts are LLM output).
 function renderAutomateAccess(body, cap) {
+    if (cap.platform === 'RUNNER') {
+        const SOURCE_TEXT = { activitywatch: 'ActivityWatch (which apps, windows and sites were in use)', file: 'files of an app on your computer' };
+        const sources = ((cap.declaredCapabilities || {}).sources || []).map(s => SOURCE_TEXT[s] || s);
+        const box = automateEl('div', 'automate__access');
+        box.append(automateEl('div', 'form-group__hint',
+            `Runs on your runner in a sandbox with no internet. It may read only: ${sources.join(', ') || 'nothing'}. You approve exactly what it reads before it touches real data.`));
+        body.append(box);
+        return;
+    }
     const declared = cap.declaredCapabilities || {};
     const hosts = declared.network || [];
     const secrets = declared.secrets || [];
@@ -452,7 +473,7 @@ function renderAutomateAccess(body, cap) {
 function renderAutomateCode(body, cap) {
     if (!cap.sourceCode) return;
     const d = automateEl('details', 'automate__source');
-    d.append(automateEl('summary', null, 'View the script (Python)'),
+    d.append(automateEl('summary', null, cap.platform === 'RUNNER' ? 'View the collector (Python)' : 'View the script (Python)'),
         automateEl('pre', 'automate__code automate__code--source', cap.sourceCode));
     body.append(d);
 }
@@ -495,6 +516,15 @@ function describeFailure(cap) {
         const why = reason.slice(gen.length);
         return { headline: why.endsWith('.') ? why : why + '.', action: 'Then press Regenerate.' };
     }
+    const runnerPrefixes = [
+        ['Runner sandbox unavailable: ', why => ({ headline: why, action: 'Nothing was run. Fix the runner, then press Regenerate.' })],
+        ['Static check failed: ', why => ({ headline: 'The collector broke a safety rule (for example it used a module that is not allowed, or read a forbidden path).', action: retry, detail: why })],
+        ['The runner rejected the collector: ', why => ({ headline: 'Your runner refused the collector as written.', action: retry, detail: why })],
+        ['Fixture test failed: ', why => ({ headline: 'The collector gave wrong numbers on its own sample days.', action: retry, detail: why })],
+    ];
+    for (const [prefix, f] of runnerPrefixes) {
+        if (reason.startsWith(prefix)) return f(reason.slice(prefix.length));
+    }
     if (reason.startsWith(gate)) {
         const why = reason.slice(gate.length);
         if (/secret .* not set/i.test(why)) {
@@ -520,6 +550,80 @@ function renderAutomateFailure(body, cap) {
         d.append(automateEl('summary', null, 'What the script printed'), automateEl('pre', 'automate__code', f.detail));
         body.append(d);
     }
+}
+
+// S3 RUNNER: per-case result of the collector's own sample days (fixtures). Plain rows, no JSON.
+function renderAutomateTests(body, cap) {
+    const cases = cap.collectorTests || [];
+    if (!cases.length) return;
+    const list = automateEl('div', 'automate__evidence');
+    cases.forEach(c => {
+        const row = automateEl('div', 'automate__evidence-row');
+        const got = c.got == null ? 'no number' : String(c.got);
+        const want = c.expected == null ? '' : ` (expected ${c.expected})`;
+        row.append(automateEl('span', 'automate__evidence-label', `${c.passed ? '✓' : '✕'} Sample day “${c.name}”`),
+            automateEl('span', 'automate__evidence-value', c.error ? `${got}${want}: ${c.error}` : `${got}${want}`));
+        list.append(row);
+    });
+    body.append(automateEl('div', 'form-group__hint', 'Sample days the collector was tested on:'), list);
+}
+
+// S3 RUNNER contract: what the collector may read, in plain language. Approve → runner approval + dry run on yesterday.
+function renderAutomateContract(body, cap) {
+    body.append(automateEl('div', 'automate__text', cap.repair
+        ? 'The fix needs to read different data than the version you approved, so it needs your OK again.'
+        : 'The collector passed its tests on sample days. Before it reads your real data, approve what it may read.'));
+    body.append(automateEl('div', 'automate__sample', cap.contractText || 'Reads only what the plan declared · no internet'));
+    body.append(automateEl('div', 'form-group__hint',
+        'Your runner enforces this: the collector sees only these inputs, with no internet. A later fix that reads anything else will ask you again.'));
+    if (cap.failureReason) body.append(automateEl('div', 'automate__fail', describeFailure(cap).headline));
+    renderAutomateTests(body, cap);
+    renderAutomateSummary(body, cap);
+    renderAutomateCode(body, cap);
+    const actions = automateEl('div', 'modal-box__actions');
+    actions.append(
+        automateButton('Approve', 'btn--primary', () => automateStart('contract', { id: cap.id })),
+        automateButton('Cancel', 'btn--ghost', () => automateReject(cap.id)));
+    body.append(actions);
+}
+
+// S3 RUNNER: ActivityWatch missing / stopped on the runner. "Install it" checks first, installs if needed, then continues.
+function renderAutomateSensor(body, cap) {
+    body.append(automateEl('div', 'automate__fail', cap.failureReason || 'ActivityWatch isn’t running on your runner.'));
+    const installed = /installed but not started|could not read|install it from/i.test(cap.failureReason || '');
+    body.append(automateEl('div', 'form-group__hint', installed
+        ? 'Start ActivityWatch on that computer, then press Check again.'
+        : 'ActivityWatch records which apps and sites you use, only on that computer. Install it lets your runner set it up; this can take a few minutes.'));
+    renderAutomateSummary(body, cap);
+    const actions = automateEl('div', 'modal-box__actions');
+    actions.append(
+        automateButton(installed ? 'Check again' : 'Install it', 'btn--primary', () => automateStart('sensor', { id: cap.id })),
+        automateButton('Start over', 'btn--ghost', () => automateReject(cap.id)));
+    body.append(actions);
+}
+
+// S3 RUNNER: fetch the runner's stored readings now instead of waiting for the hourly pull.
+function renderAutomatePull(body, cap) {
+    if (cap.platform !== 'RUNNER') return;
+    const PULL_TEXT = {
+        PULLED: (n) => n ? `Fetched ${n} new value${n === 1 ? '' : 's'} from your runner.` : 'Your runner had no new values yet.',
+        SKIPPED_OFFLINE: () => 'Your runner is offline. Values wait there until it is back.',
+        NOT_RUNNABLE: () => 'This collector is not running yet.',
+        FAILED: () => 'The collector failed on your runner. It will be repaired automatically.',
+    };
+    const note = automateEl('div', 'form-group__hint', '');
+    const actions = automateEl('div', 'modal-box__actions');
+    actions.append(automateButton('Fetch values now', 'btn--ghost', async () => {
+        note.textContent = 'Fetching...';
+        try {
+            const r = await automateFetch(E_KPI.KPI_CAP_PULL(AUTOMATE.kpiName), 'POST');
+            note.textContent = (PULL_TEXT[r && r.outcome] || (() => 'Done.'))(r ? r.stored : 0);
+            AUTOMATE.reloadOnClose = true;
+        } catch (e) {
+            note.textContent = e.message;
+        }
+    }));
+    body.append(actions, note);
 }
 
 function renderAutomate(cap, error) {
@@ -568,10 +672,19 @@ function renderAutomate(cap, error) {
     const STATUS_TEXT = {
         PROPOSED: 'Waiting for your approval', TEST_FAILED: 'Test did not pass', ACTIVE: 'Active',
         PENDING_TEST: 'In progress', NEEDS_REPAIR: 'Needs a fix',
-        AWAITING_CONFIRM: 'Check the number', SHADOW: 'Trial run'
+        AWAITING_CONFIRM: 'Check the number', SHADOW: 'Trial run',
+        AWAITING_SENSOR: 'Needs ActivityWatch', AWAITING_CONTRACT: 'Approve what it reads'
     };
     body.append(automateEl('div', 'automate__meta', `Version ${cap.version} · ${STATUS_TEXT[status] || status}`));
 
+    if (status === 'AWAITING_CONTRACT') {
+        renderAutomateContract(body, cap);
+        return;
+    }
+    if (status === 'AWAITING_SENSOR') {
+        renderAutomateSensor(body, cap);
+        return;
+    }
     if (status === 'PROPOSED') {
         renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
@@ -582,6 +695,7 @@ function renderAutomate(cap, error) {
         body.append(actions);
     } else if (status === 'TEST_FAILED') {
         renderAutomateFailure(body, cap);
+        renderAutomateTests(body, cap);
         renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
         renderAutomateCode(body, cap);
@@ -599,6 +713,7 @@ function renderAutomate(cap, error) {
         body.append(automateEl('div', 'form-group__hint', 'After the trial it becomes active on its own.'));
         renderAutomateSummary(body, cap);
         if (cap.lastResult) body.append(automateEl('div', 'form-group__hint', `Last run: ${cap.lastResult}`));
+        renderAutomatePull(body, cap);
         renderAutomateCode(body, cap);
         if (AUTOMATE.needsRepair) {
             const actions = automateEl('div', 'modal-box__actions');
@@ -609,6 +724,7 @@ function renderAutomate(cap, error) {
         body.append(automateEl('div', 'automate__ok', 'Active. This KPI now fills itself every night.'));
         renderAutomateSummary(body, cap);
         if (cap.lastResult) body.append(automateEl('div', 'form-group__hint', `Last run: ${cap.lastResult}`));
+        renderAutomatePull(body, cap);
         renderAutomateCode(body, cap);
         if (AUTOMATE.needsRepair) {
             const actions = automateEl('div', 'modal-box__actions');

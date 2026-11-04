@@ -43,6 +43,34 @@ public class CapabilityPrompts {
         this.proposeTemplate = load("kpi-capability-propose.md").stripTrailing();
         this.generateTemplate = load("kpi-capability-generate.md").stripTrailing();
         this.previousFailureTemplate = load("kpi-capability-previous-failure.md");
+        this.collectorTemplate = load("kpi-collector-generate.md").stripTrailing();
+    }
+
+    private final String collectorTemplate;
+
+    /** S3 RUNNER collector bundle prompt (kpi-collector-generate.md). */
+    public String collectorPrompt(String kpiName, String description, String proposal, List<String> sources,
+                                  String previousBundleJson, String previousError) {
+        String previous = previousError == null || previousError.isEmpty() ? ""
+                : fill(previousFailureTemplate, Map.of(
+                        "PREVIOUS_CODE", previousBundleJson == null || previousBundleJson.isEmpty() ? "(none)" : previousBundleJson,
+                        "PREVIOUS_ERROR", previousError));
+        Map<String, String> vars = new HashMap<>();
+        vars.put("KPI_NAME", kpiName);
+        vars.put("DESCRIPTION", description);
+        vars.put("PROPOSAL", String.valueOf(proposal));
+        vars.put("SOURCES", sources == null || sources.isEmpty() ? "(none declared)" : String.join(", ", sources));
+        vars.put("PREVIOUS_FAILURE", previous);
+        return fill(collectorTemplate, vars);
+    }
+
+    /** Agent's final message → collector bundle (shape only; CollectorStaticCheck validates the content). */
+    public CollectorBundle parseCollectorBundle(JsonNode result) {
+        try {
+            return CollectorBundle.of(extractObject(result));
+        } catch (IllegalArgumentException e) {
+            throw bad("collector bundle: " + e.getMessage());
+        }
     }
 
     public String proposePrompt(String kpiName, String description) {
@@ -93,8 +121,16 @@ public class CapabilityPrompts {
             }
             norm.put(key, list);
         }
+        List<String> sources = new ArrayList<>();
+        JsonNode src = out.get("sources");
+        if (src != null && src.isArray()) {
+            src.forEach(v -> {
+                String s = v.asText("").strip().toLowerCase(Locale.ROOT);
+                if (!s.isEmpty() && !sources.contains(s)) sources.add(s);
+            });
+        }
         return new CapabilityGenerator.Proposal(proposal.asText().strip(), platform, norm,
-                optionalText(out, "measures"), optionalText(out, "dataSource"));
+                optionalText(out, "measures"), optionalText(out, "dataSource"), sources);
     }
 
     // Optional one-line summaries for the UI; absent / non-text / blank → null (the UI falls back).

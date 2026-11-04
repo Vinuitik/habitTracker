@@ -22,6 +22,8 @@ public class CapabilityAgentController {
 
     private final CapabilityAgentService service;
     private final CapabilityTaskService tasks;
+    private final KPIRepository kpiRepository;
+    private final RunnerCollectorProvider runnerPull;
 
     @GetMapping
     public ResponseEntity<?> latest(@PathVariable String name) {
@@ -60,6 +62,26 @@ public class CapabilityAgentController {
     @PostMapping("/{id}/wrong")
     public CapabilityDTO wrong(@PathVariable String name, @PathVariable String id, @RequestBody Map<String, Object> body) {
         return service.wrong(name, id, str(body.get("reason")));
+    }
+
+    /** S3 RUNNER contract "Approve" (blocking twin of job action "contract"). */
+    @PostMapping("/{id}/contract")
+    public CapabilityDTO approveContract(@PathVariable String name, @PathVariable String id) {
+        return service.approveContract(name, id);
+    }
+
+    /** S3 RUNNER "Install it" / "Check again" for ActivityWatch (blocking twin of job action "sensor"). */
+    @PostMapping("/{id}/sensor")
+    public CapabilityDTO installSensor(@PathVariable String name, @PathVariable String id) {
+        return service.installSensor(name, id);
+    }
+
+    /** S3 on-demand readings pull from the runner → {outcome: PULLED|SKIPPED_OFFLINE|NOT_RUNNABLE|FAILED, stored}. */
+    @PostMapping("/pull")
+    public RunnerCollectorProvider.PullResult pull(@PathVariable String name) {
+        KPI kpi = kpiRepository.findByNameAndUserId(name, currentUser())
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + name + "' does not exist"));
+        return runnerPull.pull(kpi);
     }
 
     // Manual "fix it" (M12): same pipeline as the automatic repair trigger.

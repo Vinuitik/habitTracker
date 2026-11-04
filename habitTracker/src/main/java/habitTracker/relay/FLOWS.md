@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,shell,claim,install,chat}.js, static/styles/organisms/relay-shell.css, static/styles/atoms/lamp.css, static/js/molecules/folder-picker.js (FolderPicker.pick), static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, RunnerCollectorClient.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,shell,claim,install,chat}.js, static/styles/organisms/relay-shell.css, static/styles/atoms/lamp.css, static/js/molecules/folder-picker.js (FolderPicker.pick), static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -72,6 +72,15 @@ Hub feature (e.g. Project/ProjectRunnerService) → RunnerJobService.startJob/po
 - Token usage of finished jobs: each poller calls `aiusage/AiUsageService.record()` (see `aiusage/FLOWS.md`); RunnerJobService itself records nothing.
 - UI mapping: RunnerUnavailableException.code() = `runner_not_found` / `runner_offline` / `runner_timeout`; callers answer with `message: "Connect a runner"` (see Project/ProjectRunnerController.unavailable()).
 To change: timeout `relay.proxy.timeout-ms`; error codes RunnerUnavailableException.code().
+
+### Runner collectors + sensors (KPI S3)
+KPI/RunnerCollectorPipeline, KPI/RunnerCollectorProvider → RunnerCollectorClient.<call>(userId, deviceId, …) → RunnerJobService.send() → RunnerClient.call() (same ownership / offline / timeout path as jobs)
+- Routes (Relay repo `runner/internal/api/collectors.go`, contract `docs/designs/kpi-sensors.md` "Iteration 1"): `GET /v1/sensors` · `POST /v1/sensors/install {name}` (202) · `GET /v1/collectors` · `POST /v1/collectors {id, kpiName, manifest, files}` → `{id, version, contractHash, approved}` · `POST /v1/collectors/{id}/test` · `/approve {contractHash}` · `/run {from, to}` · `/activate` · `GET /v1/collectors/{id}/readings?since=` (runner filters on `recordedAt`) · `DELETE /v1/collectors/{id}`.
+- Status codes the KPI side maps: 400 bad bundle (fed back to the AI), 403 not approved, 409 hash mismatch / busy, 422 collector crashed (counts as an attempt), 501 sensor install unsupported on that OS, 503 sandbox or source unavailable (never counted, actionable message).
+- `/test` and `/run` use RunnerClient.call(..., waitMs) with `kpi.runner.long-call-timeout-ms` (180000) instead of `relay.proxy.timeout-ms`.
+- Collector id must match `[A-Za-z0-9_-]{1,64}` (RunnerCollectorClient.checkId, same as the runner's idRe) since it goes into the path.
+- No presence hook: "pull when the runner comes back online" = the KPI side's hourly pull (relay stays free of KPI deps).
+To change: routes/bodies RunnerCollectorClient; KPI usage see `KPI/FLOWS.md` "RUNNER platform (S3)".
 
 ### Devices
 GET /relay/api/devices → `[{id, name, online, lastSeenAt}]` (current user only; online = live socket in UplinkRegistry)
@@ -183,6 +192,7 @@ Not in the UI (API.md has them, proxy would carry them): mode/config switch, age
 | Server-initiated runner call (ownership + offline/timeout) | RunnerClient.call(), exchange() |
 | Runner job start/poll/cancel, job id check | RunnerJobService.startJob(), pollJob(), cancelJob(), checkId() |
 | Which online runner gets a server-chosen job | OnlineRunnerSelector.pick(), markUsed() |
+| Runner collector / sensor calls (KPI S3), collector id check | RunnerCollectorClient (sensors, installSensor, install, test, approve, run, activate, readings, list, delete, checkId) |
 | "Connect a runner" error codes | RunnerUnavailableException.code() |
 | Close codes | UplinkRegistry.REPLACED (4000), REVOKED (4001) |
 | Verification lifetime | `RELAY_2FA_TTL_HOURS` / `relay.2fa.ttl-hours` |
