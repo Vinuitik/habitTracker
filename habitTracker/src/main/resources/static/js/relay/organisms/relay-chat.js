@@ -1,5 +1,10 @@
 // #/d/<dev>/s/<sid> chat: message list, blocking cards (permission / quota / login), Cancel / Stop,
 // model+effort chip and permission-mode select above the composer, per-session draft; polls the session.
+// Prefs: the last mode / config the user picked (Relay.store 'chatPrefs', per user) are applied once to a
+// freshly opened session that is idle with no messages yet (the runner starts new sessions in its static
+// default mode). Sessions with messages are never touched.
+// Composer: polling renders never replace #chat-input and only write its disabled/placeholder on a change,
+// so a re-render can't drop focus or the IME (keyboard language switch).
 // #chat-agents is an empty slot above the messages: relay-agents.js mounts into it.
 // RelayChat.mount(el, {dev, sid}) → unmount (contract: js/relay/router.js). unmount stops polling.
 window.RelayChat = (() => {
@@ -11,6 +16,7 @@ window.RelayChat = (() => {
   const POLL_IDLE_MS = 10000;    // idle / error
   const CHIP_CATEGORIES = ['model', 'thought_level'];   // shown in the chip label, in this order
   const draftKey = (sid) => `relay.draft.${sid}`;
+  const PREFS = 'chatPrefs';   // {mode?: modeId, config?: {configId: value}}
   let chat = null;      // open chat: {dev, sid, state, sig, notice}; null once unmounted
   let pollTimer = null;
   let agentsOff = null;    // unmounts the subagents panel (relay-agents.js)
@@ -36,6 +42,7 @@ window.RelayChat = (() => {
       const s = await R.call(sessionUrl(c));
       if (chat !== c) return;
       render(s);
+      if (!c.prefsDone) { c.prefsDone = true; applyPrefs(c, s); }
       if (c.notice === 'error' || (c.notice === 'busy' && s.state !== 'busy')) notice('');
     } catch (e) {
       if (chat !== c) return;
@@ -113,8 +120,13 @@ window.RelayChat = (() => {
     renderConfig(s, working || s.state === 'finished');
     $('chat-cancel').hidden = !working;
     $('chat-stop').hidden = s.state === 'finished';
-    $('chat-input').disabled = $('chat-send').disabled = s.state === 'finished';
-    if (s.state === 'finished') $('chat-input').placeholder = 'Session finished';
+    const done = s.state === 'finished';
+    $('chat-send').disabled = done;
+    const input = $('chat-input');
+    if (input.disabled !== done) {
+      input.disabled = done;
+      input.placeholder = done ? 'Session finished' : 'Message…';
+    }
 
     const p = s.state === 'waiting' && s.pendingPermission;
     const box = $('chat-perm');
@@ -178,8 +190,36 @@ window.RelayChat = (() => {
     try { return localStorage.getItem(draftKey(sid)) || ''; } catch (_) { return ''; }
   }
 
+  async function savePrefs(update) {
+    const p = (await R.store.get(PREFS)) || {};
+    update(p);
+    R.store.set(PREFS, p);
+  }
+
+  // A new, idle, empty session that differs from the remembered choices → POST /mode, /config (once per open).
+  async function applyPrefs(c, s) {
+    if (s.state !== 'idle' || (s.messages || []).length) return;
+    const p = (await R.store.get(PREFS)) || {};
+    if (chat !== c) return;
+    if (p.mode && p.mode !== s.mode && (s.modes || []).some((m) => m.id === p.mode)) {
+      await act('/mode', { modeId: p.mode }, () => {});
+    }
+    for (const [configId, value] of Object.entries(p.config || {})) {
+      if (chat !== c || c.state !== 'idle') return;
+      const o = (c.configOptions || []).find((x) => x.id === configId && x.category !== 'mode');
+      if (o && o.currentValue !== value && (o.options || []).some((x) => x.value === value)) {
+        await act('/config', { configId, value }, () => {});
+      }
+    }
+  }
+
   async function setMode(modeId) {
     if (await act('/mode', { modeId }) === false) refresh();
+    else savePrefs((p) => { p.mode = modeId; });
+  }
+
+  async function setConfig(configId, value) {
+    if (await act('/config', { configId, value })) savePrefs((p) => { p.config = { ...(p.config || {}), [configId]: value }; });
   }
 
   async function send() {
@@ -219,7 +259,7 @@ window.RelayChat = (() => {
           <button class="btn btn--primary" type="submit" id="chat-send">Send</button>
         </form>
       </div>`;
-    chat = { dev, sid, state: '', sig: null, notice: '', configOptions: [] };
+    chat = { dev, sid, state: '', sig: null, notice: '', configOptions: [], prefsDone: false };
     agentsOff = RelayAgents.mount($('chat-agents'), { dev, sid });
     const input = $('chat-input');
     input.value = loadDraft(sid);
@@ -233,7 +273,7 @@ window.RelayChat = (() => {
     const off = R.onAct(el, {
       perm: (b) => act('/permission', { optionId: b.dataset.option }),
       'config-open': () => ($('chat-config-pop').hidden ? openPopover() : closePopover()),
-      config: (b) => { closePopover(); act('/config', { configId: b.dataset.config, value: b.dataset.value }); },
+      config: (b) => { closePopover(); setConfig(b.dataset.config, b.dataset.value); },
       cancel: () => act('/cancel'),
       stop: () => { if (confirm('End this session? The agent process is stopped.')) act('/stop'); },
     });

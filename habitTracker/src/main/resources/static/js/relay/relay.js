@@ -30,6 +30,21 @@ window.Relay = (() => {
   };
   const deviceNames = new Map();   // device id → name, filled by the devices list, read by the sessions header
 
+  // Per-user localStorage (last route, chat mode/config prefs): key relay.<k>.<userId from /auth/me>.
+  // JSON values; null removes. Storage blocked / /auth/me down → get() is null, set() a no-op.
+  let uidP = null;
+  const userId = () => (uidP = uidP || Api.request(EP.AUTH_ME).then((r) => (r && r.userId) || '', () => ''));
+  const store = {
+    async get(k) {
+      const key = `relay.${k}.${await userId()}`;
+      try { return JSON.parse(localStorage.getItem(key)); } catch (_) { return null; }
+    },
+    async set(k, v) {
+      const key = `relay.${k}.${await userId()}`;
+      try { if (v == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(v)); } catch (_) { /* storage blocked */ }
+    },
+  };
+
   // Api.raw + hub status mapping. 401 = 2FA expired (or logged out) → verify, then come back here.
   async function call(url, method, body) {
     try {
@@ -115,7 +130,7 @@ window.Relay = (() => {
   }
 
   return {
-    enc, OS, INSTALL_CMD, PAIR_CMD, LINUX_AS_USER, ownHub, pairCmd, deviceNames,
+    enc, OS, INSTALL_CMD, PAIR_CMD, LINUX_AS_USER, ownHub, pairCmd, deviceNames, store,
     call, errorHtml, stateBadge, header, md, cmdBlock, codeBox, getCode, copyCommand, onAct,
   };
 })();

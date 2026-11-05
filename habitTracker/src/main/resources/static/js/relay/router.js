@@ -18,6 +18,11 @@
 //   optional unmount.update(params): the next route resolves to the same organism → re-route in place
 //          instead of remounting (the shell keeps its rail); return false to get a normal remount.
 // The router calls the previous unmount before every mount, so leaving a chat stops its polling.
+//
+// Last route (PWA: Relay → Today → Relay lands back where you were): route() stores location.hash
+// (Relay.store 'lastRoute', per user; devices list / unknown hash → cleared). Opening /relay with an
+// empty hash → restore() puts it back, unless its runner is no longer in GET devices (→ devices list).
+// The claim page (/relay/claim/<id>) is never stored nor restored over.
 (() => {
   const { $ } = Dom;
   const dec = decodeURIComponent;
@@ -41,7 +46,28 @@
     return [RelayDevices, {}];
   }
 
+  const LAST = 'lastRoute';
+  const onRelay = () => location.pathname === ENV.ROUTES.RELAY;
+  const known = (h) => HASH_ROUTES.some(([re]) => re.test(h.replace(/^#/, '')));
+
+  function remember() {
+    if (onRelay()) Relay.store.set(LAST, known(location.hash) ? location.hash : null);
+  }
+
+  async function restore() {
+    if (!onRelay() || location.hash.replace(/^#\/?/, '')) return;
+    const h = await Relay.store.get(LAST);
+    if (typeof h !== 'string' || !known(h)) return;
+    const m = h.match(/^#\/d\/([^/]+)/);
+    if (m) {
+      const list = await Relay.call(ENV.ENDPOINTS.RELAY_DEVICES).catch(() => null);
+      if (!Array.isArray(list) || !list.some((d) => d.id === dec(m[1]))) return;
+    }
+    if (onRelay() && !location.hash.replace(/^#\/?/, '')) history.replaceState(null, '', h);
+  }
+
   function route() {
+    remember();
     const [organism, params] = resolve();
     const u = current && current.unmount;
     if (current && current.organism === organism && u && u.update && u.update(params) !== false) return;
@@ -52,7 +78,9 @@
     current = { organism, unmount: organism.mount($('relay-view'), { ...params, refresh: route }) || null };
   }
 
-  window.addEventListener('hashchange', route);
   initTopbar(ENV.ROUTES.RELAY);
-  route();
+  restore().catch(() => {}).then(() => {
+    window.addEventListener('hashchange', route);
+    route();
+  });
 })();
