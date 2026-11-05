@@ -169,13 +169,6 @@
 }
 
 /* ── Automate (M8) modal ── */
-.automate__meta {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-mono);
-  color: var(--color-text-muted);
-}
-
 .automate__text {
   font-size: var(--text-base);
   color: var(--color-text-primary);

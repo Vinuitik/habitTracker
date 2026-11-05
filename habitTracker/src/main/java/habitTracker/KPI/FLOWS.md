@@ -75,7 +75,7 @@ A capability row can still be inserted by hand (`status` must be `ACTIVE`; `_cla
 
 ## Capability agent loop (M8, stages 1-4) + repair (M12)
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`) + shared `static/js/molecules/step-list.js`; prompts `resources/prompts/kpi-capability-{propose,generate,previous-failure,sandbox-facts}.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`) + `styles/organisms/automate-dialog.css` + shared `static/js/molecules/step-list.js`; prompts `resources/prompts/kpi-capability-{propose,generate,previous-failure,sandbox-facts}.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
 
 Async UI wrapper (the UI never calls the blocking endpoints below):
 ```
@@ -130,7 +130,8 @@ RETRY         POST .../capability/{id}/regenerate  (only TEST_FAILED, attempts <
               → same attempt(), previousCode + failureReason fed into the prompt
               runner offline/busy/failed/timeout/bad-JSON → TEST_FAILED "Code generation failed: ..." but do NOT count as an attempt
               (no runner → failureReason "Code generation failed: Connect a runner to generate this capability"; regenerate once connected)
-REJECT        POST .../capability/{id}/reject (PROPOSED or TEST_FAILED → REJECTED; UI "Start over")
+REJECT        POST .../capability/{id}/reject (PROPOSED / TEST_FAILED / AWAITING_CONFIRM / AWAITING_SENSOR / AWAITING_CONTRACT → REJECTED; UI footer "Discard setup" → inline confirm → describe form prefilled = start over)
+              Dialog close (✕ / Esc / backdrop) never changes state; a running job has no cancel endpoint, so Discard is disabled until it finishes [NOT IMPLEMENTED: job cancel, "Resume setup" hint on the KPI card]
 REPAIR (M12)  proxy breaker trips → ProxyHealthService.recordFailure()/flagAnomaly() → CapabilityRepairTrigger.attemptRepair(kpi)
               → AgentCapabilityRepairTrigger (single background thread; non-SANDBOX_CAPABILITY KPIs only logged)
               → CapabilityGenerator.runnerAvailable(owner)? no → parked in in-memory `waiting` (kpiId→userId), nothing counted
@@ -206,7 +207,7 @@ REPAIR    breaker trip → AgentCapabilityRepairTrigger (now also RUNNER_COLLECT
           runnerDeviceId, collectorId, bundle, contractHash, approvedContractHash → same pipeline, same collector id
           → unchanged contract: runner keeps the approval → dry run → live (skipConfirm) → activate
           → changed contract: AWAITING_CONTRACT (UI: "The fix needs to read different data …"), never auto-approved
-REJECT    "Start over"/"Cancel" on a first build → DELETE /v1/collectors/{id} (best effort; not for repair versions)
+REJECT    "Discard setup" on a first build → DELETE /v1/collectors/{id} (best effort; not for repair versions)
 ```
 KPIProxyFillService skips `RUNNER_COLLECTOR` KPIs (they are pulled, not fetched per night).
 Mongo (additive, all nullable on `kpi_proxy_capabilities`): `runnerDeviceId`, `collectorId`, `collectorBundle` (JSON string: file paths contain dots), `contractHash`, `approvedContractHash`, `collectorTests`, `readingsSince`, `lastPulledOn`, `collectorActivated`. New enum values: `CapabilityPlatform.RUNNER`, `CapabilityStatus.AWAITING_SENSOR/AWAITING_CONTRACT`, `ProxyType.RUNNER_COLLECTOR`.
@@ -289,7 +290,7 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Plausibility rules | `ReadingPlausibility.check()` (5× median, ≥5 readings, window 14, non-negative units), `ProxyHealthService.plausibilityReason()` | |
 | Flagged readings | `KPIService.addFlaggedProxyDataForUser()`, `KPIData.flag/flagReason` | `SHADOW` / `IMPLAUSIBLE`, forced `pending` |
 | Confirm UI | `kpi-list.js renderAutomateConfirm()` / `automateConfirm()`, `.automate__sample/__evidence*` in `kpi.css`, `ENV.ENDPOINTS.KPI_CAP_CONFIRM` | |
-| Automate UI | `static/kpi-list.html` `#automateModal`, `static/js/kpi-list.js` `openAutomateModal()` / `renderAutomate()` | styles in `styles/pages/kpi.css` `.automate__*` |
+| Automate UI | `static/kpi-list.html` `#automateModal`, `static/js/kpi-list.js` `openAutomateModal()` / `renderAutomate()` | chrome (head/foot, stage rail, breakpoints 900/640) in `styles/organisms/automate-dialog.css`; content styles in `styles/pages/kpi.css` `.automate__*` |
 | Automate plain-language facts / failure sentences | `kpi-list.js` `renderAutomateSummary()`, `describeFailure()` | "Updates" text is fixed (nightly fill) |
 | Automate job polling | `kpi-list.js` `automateStart()` / `automatePoll()`, `ENV.TIMING.KPI_CAP_POLL_MS`, `ENV.ENDPOINTS.KPI_CAP_*` | |
 | Step rows (shared with planner) | `static/js/molecules/step-list.js`, `styles/molecules/step-list.css` | |

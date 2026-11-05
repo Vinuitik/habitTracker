@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/styles/molecules/form-group.css">
   <link rel="stylesheet" href="/styles/molecules/modal.css">
   <link rel="stylesheet" href="/styles/molecules/step-list.css">
+  <link rel="stylesheet" href="/styles/organisms/automate-dialog.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
@@ -200,16 +201,25 @@
   </div>
 
   <!-- Automate (agent-generated capability) Modal -->
-  <div class="modal-overlay" id="automateModal">
-    <div class="modal-box">
-      <div class="modal-box__header">
-        <span class="modal-box__title">Automate this KPI</span>
-        <button class="modal-box__close" onclick="closeAutomateModal()">&#x2715;</button>
+  <!-- Layout + discard: styles/organisms/automate-dialog.css, js/kpi-list.js renderAutomate() -->
+  <div class="modal-overlay modal-overlay--dialog" id="automateModal">
+    <div class="automate-dialog" role="dialog" aria-modal="true" aria-labelledby="automateTitle">
+      <header class="automate-dialog__head">
+        <div class="automate-dialog__heading">
+          <h2 class="automate-dialog__title" id="automateTitle">Automate</h2>
+          <p class="automate-dialog__status" id="automateStatus" aria-live="polite"></p>
+        </div>
+        <button type="button" class="modal-box__close" id="automateClose" aria-label="Close" onclick="closeAutomateModal()">&#x2715;</button>
+      </header>
+      <div class="automate-dialog__main">
+        <aside class="automate-dialog__rail" id="automateRail" aria-label="Setup progress"></aside>
+        <section class="automate-dialog__panel" id="automateBody"></section>
       </div>
-      <div class="modal-box__fields">
-        <div id="automateBody" class="modal-box__fields"></div>
-        <div id="automateError" class="automate__error" hidden></div>
-      </div>
+      <footer class="automate-dialog__foot" id="automateFoot">
+        <div id="automateError" class="automate__error" role="alert" hidden></div>
+        <div class="automate-dialog__discard" id="automateDiscard"></div>
+        <div class="automate-dialog__actions" id="automateActions"></div>
+      </footer>
     </div>
   </div>
 

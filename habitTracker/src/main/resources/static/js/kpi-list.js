@@ -165,7 +165,13 @@ const AUTOMATE = {
     kpiName: null, needsRepair: false, current: null, reloadOnClose: false,
     job: null,          // {id, state, events: [{seq,kind,text,t}], nextSeq, error, usage, startedAt}
     pollTimer: null, tickTimer: null, gen: 0,
+    confirming: false,  // footer shows the inline "Discard this automation?" confirm
+    notice: null,       // one-shot line at the top of the panel ("Setup discarded...")
+    returnFocus: null,  // element focused before the dialog opened
 };
+// Drafts the reject endpoint accepts (CapabilityAgentService.reject). ACTIVE / SHADOW / NEEDS_REPAIR are never
+// discarded from here; PENDING_TEST is in flight.
+const AUTOMATE_DRAFT = new Set(['PROPOSED', 'TEST_FAILED', 'AWAITING_CONFIRM', 'AWAITING_SENSOR', 'AWAITING_CONTRACT']);
 const E_KPI = ENV.ENDPOINTS;
 
 function automateEl(tag, className, text) {
@@ -201,9 +207,14 @@ async function automateFetch(url, method, body) {
 async function openAutomateModal(kpiName, needsRepair) {
     automateStopPolling();
     const gen = ++AUTOMATE.gen;
-    Object.assign(AUTOMATE, { kpiName, needsRepair: !!needsRepair, reloadOnClose: false, job: null, current: null });
-    document.getElementById('automateModal').classList.add('open');
+    const modal = document.getElementById('automateModal');
+    if (!modal.classList.contains('open')) AUTOMATE.returnFocus = document.activeElement;
+    Object.assign(AUTOMATE, { kpiName, needsRepair: !!needsRepair, reloadOnClose: false, job: null, current: null,
+        confirming: false, notice: null });
+    document.getElementById('automateTitle').textContent = `Automate · ${kpiName}`;
+    modal.classList.add('open');
     renderAutomate(null);
+    document.getElementById('automateClose').focus();
     try {
         const [cap, active] = await Promise.all([
             automateFetch(E_KPI.KPI_CAP(kpiName)),
@@ -221,13 +232,29 @@ function closeAutomateModal() {
     document.getElementById('automateModal').classList.remove('open');
     automateStopPolling();   // the server job keeps running; reopening resumes it via KPI_CAP_ACTIVE
     AUTOMATE.gen++;
-    if (AUTOMATE.reloadOnClose) window.location.reload();
+    AUTOMATE.confirming = false;
+    if (AUTOMATE.reloadOnClose) { window.location.reload(); return; }
+    const back = AUTOMATE.returnFocus;
+    AUTOMATE.returnFocus = null;
+    if (back && document.contains(back)) back.focus();
 }
+
+// Esc: first backs out of the discard confirm, then closes. (✕ and backdrop click: kpi-list.html.)
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const modal = document.getElementById('automateModal');
+    if (!modal || !modal.classList.contains('open')) return;
+    e.preventDefault();
+    if (AUTOMATE.confirming) { AUTOMATE.confirming = false; renderAutomateDiscard(AUTOMATE.current); return; }
+    closeAutomateModal();
+});
 
 // action: propose | approve | regenerate | repair
 async function automateStart(action, extra) {
     if (automateRunning()) return;
     const gen = AUTOMATE.gen;
+    AUTOMATE.notice = null;
+    AUTOMATE.confirming = false;
     AUTOMATE.job = { id: null, state: 'running', events: [], nextSeq: 0, error: null, usage: null, startedAt: Date.now() };
     renderAutomate(AUTOMATE.current);
     try {
@@ -256,13 +283,57 @@ async function automateConfirm(capId) {
     }
 }
 
-// Rejecting is instant, no job.
+// "Discard setup" (footer, after the inline confirm): reject the draft, instant, no job. The document stays in
+// Mongo as REJECTED; the panel then shows the describe form again, prefilled, so it doubles as "start over".
 async function automateReject(capId) {
+    AUTOMATE.confirming = false;
     try {
-        renderAutomate(await automateFetch(E_KPI.KPI_CAP_REJECT(AUTOMATE.kpiName, capId), 'POST'));
+        const cap = await automateFetch(E_KPI.KPI_CAP_REJECT(AUTOMATE.kpiName, capId), 'POST');
+        AUTOMATE.job = null;
+        AUTOMATE.notice = cap && cap.repair
+            ? 'Fix discarded. The version you already use is unchanged.'
+            : 'Setup discarded. The KPI stays manual. Describe it again to start over, or close this.';
+        renderAutomate(cap);
     } catch (e) {
         renderAutomate(AUTOMATE.current, e.message);
     }
+}
+
+// Footer left: "Discard setup" whenever a draft exists → inline confirm (same swap pattern as atoms/menu.js).
+function renderAutomateDiscard(cap) {
+    const zone = document.getElementById('automateDiscard');
+    const foot = document.getElementById('automateFoot');
+    zone.replaceChildren();
+    const draft = !!cap && AUTOMATE_DRAFT.has(cap.status);
+    if (!draft) AUTOMATE.confirming = false;
+    foot.classList.toggle('automate-dialog__foot--confirming', AUTOMATE.confirming);
+    if (!draft) return;
+    if (automateRunning()) {   // no cancel endpoint for a running job: wait for it, or close (it keeps running)
+        const b = automateButton('Discard setup', 'btn--ghost automate-dialog__discard-btn', () => {});
+        b.disabled = true;
+        zone.append(b, automateEl('span', 'automate-dialog__hint', 'Available when this step finishes.'));
+        return;
+    }
+    if (AUTOMATE.confirming) {
+        const keep = automateButton('Keep it', 'btn--ghost', () => { AUTOMATE.confirming = false; renderAutomateDiscard(cap); });
+        zone.append(
+            automateEl('span', 'automate-dialog__confirm-text', cap.repair
+                ? 'Discard this fix? The version you already use stays as it is.'
+                : 'Discard this automation? The KPI stays manual.'),
+            automateButton('Discard', 'btn--danger', () => automateReject(cap.id)),
+            keep);
+        keep.focus();
+        return;
+    }
+    zone.append(automateButton('Discard setup', 'btn--ghost automate-dialog__discard-btn', () => {
+        AUTOMATE.confirming = true;
+        renderAutomateDiscard(cap);
+    }));
+}
+
+// Primary/secondary actions of the current step live in the sticky footer (right side); primary goes last.
+function automateFoot(...buttons) {
+    document.getElementById('automateActions').append(...buttons);
 }
 
 function automateRunning() {
@@ -321,17 +392,20 @@ function automateStopPolling() {
 
 // Steps of the current/last job + token usage. Error events of a failed job are left out: its single
 // sentence shows in #automateError instead.
-function renderAutomateJob(body) {
+function renderAutomateJob(rail) {
     const job = AUTOMATE.job;
     if (!job) return;
     const live = job.state === 'running';
     const events = job.state === 'failed' ? job.events.filter(ev => ev.kind !== 'error') : job.events;
+    const log = automateEl('section', 'automate-dialog__log');
+    log.append(automateEl('h3', 'automate-dialog__log-title', live ? 'Working now' : 'Last run'));
     const box = automateEl('div', 'automate__steps');
     // StepList escapes all text; usage is numbers only
     box.innerHTML = StepList.html(events, live, 'Waiting for your runner', job.startedAt) + StepList.usage(job.usage);
-    body.append(box);
+    log.append(box);
+    rail.append(log);
     if (live && !AUTOMATE.tickTimer) {
-        AUTOMATE.tickTimer = setInterval(() => StepList.tick(document.getElementById('automateBody')), 1000);
+        AUTOMATE.tickTimer = setInterval(() => StepList.tick(document.getElementById('automateRail')), 1000);
     } else if (!live) {
         clearInterval(AUTOMATE.tickTimer);
         AUTOMATE.tickTimer = null;
@@ -368,7 +442,6 @@ function renderAutomateConfirm(body, cap) {
     ta.placeholder = 'e.g. I watched about 2 hours, and Shorts were not counted';
     group.append(label, ta, automateEl('span', 'form-group__hint',
         `The AI will rewrite the script using your answer. You have ${left} ${left === 1 ? 'try' : 'tries'} left.`));
-    const actions = automateEl('div', 'modal-box__actions');
     const send = automateButton('Send and rebuild', 'btn--primary', () => {
         const reason = ta.value.trim();
         if (!reason) { renderAutomate(cap, 'Say what is wrong first.'); return; }
@@ -378,11 +451,10 @@ function renderAutomateConfirm(body, cap) {
     const wrong = automateButton('Wrong, because…', 'btn--ghost', () => {
         group.hidden = false; send.hidden = false; wrong.hidden = true; ta.focus();
     });
-    actions.append(
-        automateButton('Looks right', 'btn--primary', () => automateConfirm(cap.id)),
-        wrong, send,
-        automateButton('Start over', 'btn--ghost', () => automateReject(cap.id)));
-    body.append(group, actions);
+    const right = automateButton('Looks right', 'btn--primary', () => automateConfirm(cap.id));
+    wrong.addEventListener('click', () => { right.className = 'btn btn--ghost'; });   // one primary at a time
+    automateFoot(wrong, right, send);
+    body.append(group);
 }
 
 // Plain-language summary of a capability: what / where from / how often / what it needs.
@@ -580,11 +652,7 @@ function renderAutomateContract(body, cap) {
     renderAutomateTests(body, cap);
     renderAutomateSummary(body, cap);
     renderAutomateCode(body, cap);
-    const actions = automateEl('div', 'modal-box__actions');
-    actions.append(
-        automateButton('Approve', 'btn--primary', () => automateStart('contract', { id: cap.id })),
-        automateButton('Cancel', 'btn--ghost', () => automateReject(cap.id)));
-    body.append(actions);
+    automateFoot(automateButton('Approve', 'btn--primary', () => automateStart('contract', { id: cap.id })));
 }
 
 // S3 RUNNER: ActivityWatch missing / stopped on the runner. "Install it" checks first, installs if needed, then continues.
@@ -595,11 +663,7 @@ function renderAutomateSensor(body, cap) {
         ? 'Start ActivityWatch on that computer, then press Check again.'
         : 'ActivityWatch records which apps and sites you use, only on that computer. Install it lets your runner set it up; this can take a few minutes.'));
     renderAutomateSummary(body, cap);
-    const actions = automateEl('div', 'modal-box__actions');
-    actions.append(
-        automateButton(installed ? 'Check again' : 'Install it', 'btn--primary', () => automateStart('sensor', { id: cap.id })),
-        automateButton('Start over', 'btn--ghost', () => automateReject(cap.id)));
-    body.append(actions);
+    automateFoot(automateButton(installed ? 'Check again' : 'Install it', 'btn--primary', () => automateStart('sensor', { id: cap.id })));
 }
 
 // S3 RUNNER: fetch the runner's stored readings now instead of waiting for the hourly pull.
@@ -612,8 +676,7 @@ function renderAutomatePull(body, cap) {
         FAILED: () => 'The collector failed on your runner. It will be repaired automatically.',
     };
     const note = automateEl('div', 'form-group__hint', '');
-    const actions = automateEl('div', 'modal-box__actions');
-    actions.append(automateButton('Fetch values now', 'btn--ghost', async () => {
+    automateFoot(automateButton('Fetch values now', 'btn--ghost', async () => {
         note.textContent = 'Fetching...';
         try {
             const r = await automateFetch(E_KPI.KPI_CAP_PULL(AUTOMATE.kpiName), 'POST');
@@ -623,28 +686,114 @@ function renderAutomatePull(body, cap) {
             note.textContent = e.message;
         }
     }));
-    body.append(actions, note);
+    body.append(note);
+}
+
+// Left rail: the setup as a sequence (where am I, what is left) + the live step log of the current/last job.
+// RUNNER collectors have one extra stage (approve what it reads).
+const AUTOMATE_STAGES = [
+    ['describe', 'Describe it'], ['plan', 'Review the plan'], ['build', 'Build and test'],
+    ['access', 'Approve what it reads'], ['check', 'Check the number'], ['trial', 'Trial run'], ['active', 'Fills itself'],
+];
+// Stage a stored status sits at, and the stage a running job works on from that status.
+const AUTOMATE_STAGE_AT = {
+    PROPOSED: 'plan', PENDING_TEST: 'build', TEST_FAILED: 'build', AWAITING_SENSOR: 'build',
+    AWAITING_CONTRACT: 'access', AWAITING_CONFIRM: 'check', SHADOW: 'trial', ACTIVE: 'active', NEEDS_REPAIR: 'active',
+};
+const AUTOMATE_STAGE_WORKING = {
+    PROPOSED: 'build', TEST_FAILED: 'build', AWAITING_SENSOR: 'build', AWAITING_CONTRACT: 'access',
+    AWAITING_CONFIRM: 'build', SHADOW: 'build', ACTIVE: 'build', NEEDS_REPAIR: 'build', PENDING_TEST: 'build',
+};
+const AUTOMATE_STAGE_BLOCKED = {
+    TEST_FAILED: 'Test did not pass', AWAITING_SENSOR: 'Needs ActivityWatch', NEEDS_REPAIR: 'Needs a fix',
+};
+
+function renderAutomateRail(cap) {
+    const rail = document.getElementById('automateRail');
+    rail.replaceChildren();
+    const status = cap ? cap.status : null;
+    const fresh = !cap || status === 'REJECTED' || status === 'DISABLED';
+    const running = automateRunning();
+    const stages = AUTOMATE_STAGES.filter(([key]) => key !== 'access' || (cap && cap.platform === 'RUNNER'));
+    let currentKey = fresh ? (running ? 'plan' : 'describe') : (running ? AUTOMATE_STAGE_WORKING[status] : AUTOMATE_STAGE_AT[status]);
+    if (!currentKey) currentKey = 'describe';
+    const cur = Math.max(0, stages.findIndex(([key]) => key === currentKey));
+    const allDone = !running && status === 'ACTIVE';
+    const blocked = !running && AUTOMATE_STAGE_BLOCKED[status];
+
+    const list = automateEl('ol', 'stage-rail');
+    stages.forEach(([key, label], i) => {
+        let state = i < cur || allDone ? 'done' : i === cur ? 'current' : 'todo';
+        let note = null;
+        if (state === 'current' && running) { state = 'current stage-rail__item--working'; note = 'Working on it now'; }
+        else if (state === 'current' && blocked) { state = 'blocked'; note = blocked; }
+        else if (state === 'current' && key === 'trial' && cap.shadowUntil) note = `Until ${cap.shadowUntil}`;
+        const item = automateEl('li', `stage-rail__item stage-rail__item--${state}`);
+        if (i === cur) item.setAttribute('aria-current', 'step');
+        const mark = automateEl('span', 'stage-rail__mark', state === 'done' ? '✓' : state === 'blocked' ? '!' : '');
+        mark.setAttribute('aria-hidden', 'true');
+        const text = automateEl('span', 'stage-rail__label', label);
+        if (note) text.append(automateEl('span', 'stage-rail__note', note));
+        item.append(mark, text);
+        list.append(item);
+    });
+
+    // One-line form of the same thing, shown instead of the list below 900px
+    const compact = automateEl('p', 'stage-rail__compact', `Step ${cur + 1} of ${stages.length}: `);
+    compact.append(automateEl('strong', null, stages[cur][1]));
+    if (allDone) compact.textContent = 'All steps done: this KPI fills itself.';
+    else if (running) compact.append(' (working on it now)');
+    else if (blocked) compact.append(` (${blocked.toLowerCase()})`);
+
+    rail.append(list, compact);
+    renderAutomateJob(rail);
+}
+
+const AUTOMATE_STATUS_TEXT = {
+    PROPOSED: 'Waiting for your approval', TEST_FAILED: 'The test did not pass', ACTIVE: 'Active',
+    PENDING_TEST: 'In progress', NEEDS_REPAIR: 'Needs a fix',
+    AWAITING_CONFIRM: 'Check the number', SHADOW: 'Trial run',
+    AWAITING_SENSOR: 'Needs ActivityWatch', AWAITING_CONTRACT: 'Approve what it reads'
+};
+
+function renderAutomateStatus(cap, fresh) {
+    const el = document.getElementById('automateStatus');
+    if (automateRunning()) el.textContent = 'Your runner is working on it. You can close this; it keeps going.';
+    else if (fresh) el.textContent = 'Describe what to capture. Nothing runs until you approve a plan.';
+    else el.textContent = `${AUTOMATE_STATUS_TEXT[cap.status] || cap.status} (version ${cap.version})`;
+}
+
+// Fix it: the AI repairs a live script that stopped producing valid values.
+function automateFixIt(body, hint) {
+    if (!AUTOMATE.needsRepair) return;
+    if (hint) body.append(automateEl('div', 'form-group__hint', hint));
+    automateFoot(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
 }
 
 function renderAutomate(cap, error) {
     AUTOMATE.current = cap;
     const body = document.getElementById('automateBody');
     body.replaceChildren();
+    document.getElementById('automateActions').replaceChildren();
     const job = AUTOMATE.job;
     const errText = error || (job && job.state === 'failed' ? job.error : '');
     const errEl = document.getElementById('automateError');
     errEl.textContent = errText || '';
     errEl.hidden = !errText;
 
-    renderAutomateJob(body);
-    if (automateRunning()) {
-        body.append(automateEl('div', 'form-group__hint',
-            'Your runner is working on it. You can close this dialog; reopen it to check progress.'));
-        return;
-    }
-
     const status = cap ? cap.status : null;
     const fresh = !cap || status === 'REJECTED' || status === 'DISABLED';
+    renderAutomateStatus(cap, fresh);
+    renderAutomateRail(cap);
+    renderAutomateDiscard(cap);
+    if (AUTOMATE.notice) body.append(automateEl('div', 'automate-dialog__notice', AUTOMATE.notice));
+
+    if (automateRunning()) {
+        body.append(automateEl('div', 'automate__text',
+            'Progress shows step by step as your runner finishes each one. You can close this dialog; reopen it to check on it.'));
+        if (cap && !fresh) renderAutomateSummary(body, cap);
+        return;
+    }
 
     if (fresh) {
         const group = automateEl('div', 'form-group');
@@ -652,59 +801,39 @@ function renderAutomate(cap, error) {
         label.htmlFor = 'automateDescription';
         const ta = automateEl('textarea', 'input');
         ta.id = 'automateDescription';
-        ta.rows = 4;
+        ta.rows = 5;
         ta.maxLength = 2000;
         ta.placeholder = 'e.g. Count the lines of code in my project folder each day';
         if (cap && cap.description && status === 'REJECTED') ta.value = cap.description;
         group.append(label, ta,
             automateEl('span', 'form-group__hint',
                 'The AI proposes a plan first. Nothing runs until you approve it. Scripts run in a sandbox, with internet access only to sites you approve.'));
-        const actions = automateEl('div', 'modal-box__actions');
-        actions.append(automateButton('Propose', 'btn--primary', () => {
+        automateFoot(automateButton('Propose a plan', 'btn--primary', () => {
             const description = ta.value.trim();
             if (!description) { renderAutomate(cap, 'Describe what to capture first.'); return; }
             automateStart('propose', { description });
         }));
-        body.append(group, actions);
+        body.append(group);
         return;
     }
-
-    const STATUS_TEXT = {
-        PROPOSED: 'Waiting for your approval', TEST_FAILED: 'Test did not pass', ACTIVE: 'Active',
-        PENDING_TEST: 'In progress', NEEDS_REPAIR: 'Needs a fix',
-        AWAITING_CONFIRM: 'Check the number', SHADOW: 'Trial run',
-        AWAITING_SENSOR: 'Needs ActivityWatch', AWAITING_CONTRACT: 'Approve what it reads'
-    };
-    body.append(automateEl('div', 'automate__meta', `Version ${cap.version} · ${STATUS_TEXT[status] || status}`));
 
     if (status === 'AWAITING_CONTRACT') {
         renderAutomateContract(body, cap);
-        return;
-    }
-    if (status === 'AWAITING_SENSOR') {
+    } else if (status === 'AWAITING_SENSOR') {
         renderAutomateSensor(body, cap);
-        return;
-    }
-    if (status === 'PROPOSED') {
+    } else if (status === 'PROPOSED') {
         renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
-        const actions = automateEl('div', 'modal-box__actions');
-        actions.append(
-            automateButton('Approve and build', 'btn--primary', () => automateStart('approve', { id: cap.id })),
-            automateButton('Reject', 'btn--ghost', () => automateReject(cap.id)));
-        body.append(actions);
+        automateFoot(automateButton('Approve and build', 'btn--primary', () => automateStart('approve', { id: cap.id })));
     } else if (status === 'TEST_FAILED') {
         renderAutomateFailure(body, cap);
         renderAutomateTests(body, cap);
         renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
         renderAutomateCode(body, cap);
-        const actions = automateEl('div', 'modal-box__actions');
         if (cap.attempts < cap.maxAttempts) {
-            actions.append(automateButton('Regenerate', 'btn--primary', () => automateStart('regenerate', { id: cap.id })));
+            automateFoot(automateButton('Regenerate', 'btn--primary', () => automateStart('regenerate', { id: cap.id })));
         }
-        actions.append(automateButton('Start over', 'btn--ghost', () => automateReject(cap.id)));
-        body.append(actions);
     } else if (status === 'AWAITING_CONFIRM') {
         renderAutomateConfirm(body, cap);
     } else if (status === 'SHADOW') {
@@ -715,32 +844,20 @@ function renderAutomate(cap, error) {
         if (cap.lastResult) body.append(automateEl('div', 'form-group__hint', `Last run: ${cap.lastResult}`));
         renderAutomatePull(body, cap);
         renderAutomateCode(body, cap);
-        if (AUTOMATE.needsRepair) {
-            const actions = automateEl('div', 'modal-box__actions');
-            actions.append(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
-            body.append(automateEl('div', 'form-group__hint', 'This KPI stopped producing valid values. Fix it lets the AI repair the script.'), actions);
-        }
+        automateFixIt(body, 'This KPI stopped producing valid values. Fix it lets the AI repair the script.');
     } else if (status === 'ACTIVE') {
         body.append(automateEl('div', 'automate__ok', 'Active. This KPI now fills itself every night.'));
         renderAutomateSummary(body, cap);
         if (cap.lastResult) body.append(automateEl('div', 'form-group__hint', `Last run: ${cap.lastResult}`));
         renderAutomatePull(body, cap);
         renderAutomateCode(body, cap);
-        if (AUTOMATE.needsRepair) {
-            const actions = automateEl('div', 'modal-box__actions');
-            actions.append(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
-            body.append(automateEl('div', 'form-group__hint', 'This KPI stopped producing valid values. Fix it lets the AI repair the script.'), actions);
-        }
+        automateFixIt(body, 'This KPI stopped producing valid values. Fix it lets the AI repair the script.');
     } else {
         // PENDING_TEST / NEEDS_REPAIR with no job running here
         body.append(automateEl('div', 'automate__text', status === 'NEEDS_REPAIR'
             ? 'This script stopped producing valid values.'
             : 'Work on this script is in progress or was interrupted. Reopen this dialog in a minute.'));
         renderAutomateSummary(body, cap);
-        if (AUTOMATE.needsRepair) {
-            const actions = automateEl('div', 'modal-box__actions');
-            actions.append(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
-            body.append(actions);
-        }
+        automateFixIt(body, null);
     }
 }

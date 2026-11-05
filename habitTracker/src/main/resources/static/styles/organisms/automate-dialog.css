@@ -1,0 +1,366 @@
+/* KPI "Automate" dialog: sticky head + foot, scrolling body, stage rail | decision panel.
+   Markup: kpi-list.html #automateModal. Behaviour: js/kpi-list.js (renderAutomate, automateDiscard*).
+   ≥900px two columns · 640–900px one column, same chrome · <640px full-height sheet. */
+
+/* Keep the overlay centred on tablets (modal.css turns every overlay into a bottom sheet at ≤768px) */
+@media (max-width: 768px) {
+  .modal-overlay.modal-overlay--dialog {
+    align-items: center;
+    padding: var(--space-4);
+  }
+}
+
+.automate-dialog {
+  width: min(1040px, 100vw - 64px);
+  max-height: 85vh;
+  max-height: 85dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* ── Head ── */
+.automate-dialog__head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.automate-dialog__heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.automate-dialog__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.automate-dialog__status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Body: rail | panel, each scrolls on its own ── */
+.automate-dialog__main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+}
+
+.automate-dialog__rail {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-6);
+  background: var(--color-bg-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.automate-dialog__panel {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ── Stage rail: the setup as a sequence ── */
+.stage-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stage-rail__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  font-size: var(--text-base);
+  color: var(--color-text-muted);
+}
+
+.stage-rail__item:last-child {
+  padding-bottom: 0;
+}
+
+/* connector line between markers */
+.stage-rail__item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 20px;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-border-hover);
+}
+
+.stage-rail__mark {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.stage-rail__label {
+  line-height: 1.5;
+}
+
+.stage-rail__note {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.stage-rail__item--done {
+  color: var(--color-text-secondary);
+}
+
+.stage-rail__item--done .stage-rail__mark {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.stage-rail__item--current {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.stage-rail__item--current .stage-rail__mark {
+  border: 4px solid var(--color-accent);
+  background: var(--color-bg-surface);
+}
+
+.stage-rail__item--working .stage-rail__mark {
+  border: none;
+  background: var(--color-accent);
+}
+
+.stage-rail__item--blocked {
+  color: var(--color-text-primary);
+}
+
+.stage-rail__item--blocked .stage-rail__mark {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* "Step 3 of 6: Build and test" — replaces the full rail below 900px */
+.stage-rail__compact {
+  display: none;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.stage-rail__compact strong {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.automate-dialog__log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.automate-dialog__log-title {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ── Foot: discard left, the step's actions right ── */
+.automate-dialog__foot {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+}
+
+.automate-dialog__foot .automate__error {
+  flex-basis: 100%;
+}
+
+.automate-dialog__discard,
+.automate-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.automate-dialog__actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.automate-dialog__actions:empty,
+.automate-dialog__discard:empty {
+  display: none;
+}
+
+/* Inline "Discard this automation?" confirm takes the whole foot */
+.automate-dialog__foot--confirming .automate-dialog__actions {
+  display: none;
+}
+
+.automate-dialog__confirm-text {
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+}
+
+.automate-dialog__hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* Quiet danger: reads as an exit, not a call to action */
+.automate-dialog__discard-btn {
+  color: var(--color-text-secondary);
+}
+
+.automate-dialog__discard-btn:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: var(--color-danger-dim);
+}
+
+/* Notice after a discard ("Setup discarded…") */
+.automate-dialog__notice {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+}
+
+/* ── Tablet: one column, same chrome; the rail shrinks to one line + the live log ── */
+@media (max-width: 899px) {
+  .automate-dialog__main {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .automate-dialog__rail,
+  .automate-dialog__panel {
+    overflow: visible;
+    flex-shrink: 0;
+  }
+
+  .automate-dialog__rail {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    padding: var(--space-3) var(--space-6);
+    gap: var(--space-3);
+  }
+
+  .stage-rail {
+    display: none;
+  }
+
+  .stage-rail__compact {
+    display: block;
+  }
+}
+
+/* ── Phone: full-height sheet ── */
+@media (max-width: 639px) {
+  .modal-overlay.modal-overlay--dialog {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .automate-dialog {
+    width: 100%;
+    height: calc(100dvh - var(--safe-top));
+    max-height: none;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+  }
+
+  .modal-overlay.open .automate-dialog {
+    animation: sheet-in 220ms ease-out;
+  }
+
+  .automate-dialog__head {
+    padding: var(--space-3) calc(var(--space-4) + var(--safe-right)) var(--space-3) calc(var(--space-4) + var(--safe-left));
+  }
+
+  .automate-dialog__rail {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .automate-dialog__panel {
+    padding: var(--space-4);
+  }
+
+  .automate-dialog__foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: var(--space-3) calc(var(--space-4) + var(--safe-right)) calc(var(--space-3) + var(--safe-bottom)) calc(var(--space-4) + var(--safe-left));
+  }
+
+  .automate-dialog__actions,
+  .automate-dialog__discard {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    margin-left: 0;
+  }
+
+  .automate-dialog__foot .automate__error,
+  .automate-dialog__confirm-text {
+    order: 1;
+  }
+}
+
+/* .form-group / .btn set display, which would otherwise beat the hidden attribute (e.g. "What is wrong" field) */
+.automate-dialog [hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay.open .automate-dialog {
+    animation: none;
+  }
+}
