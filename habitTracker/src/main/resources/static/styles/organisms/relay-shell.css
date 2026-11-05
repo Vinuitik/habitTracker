@@ -98,7 +98,7 @@
 .relay-prow__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .relay-prow__meta { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
 .relay-prow__meta--wait { color: var(--color-warning); }
-.relay-prow__meta--busy { color: var(--color-success); }
+.relay-prow__meta--busy, .relay-prow__meta--on { color: var(--color-success); }
 
 /* + Project */
 .relay-newproj { display: flex; flex-direction: column; gap: var(--space-2); }

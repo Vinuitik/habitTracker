@@ -7,6 +7,8 @@
 // RelayShell.mount(el, {dev, pid?, tab?, sid?}) → unmount; unmount.update(params) re-routes inside the
 // mounted shell (rail kept) and returns false when the runner changed (router then remounts).
 // Lamps: GET /v1/sessions?state=waiting,busy every ENV.TIMING.RELAY_RAIL_POLL_MS, paused while the tab is hidden.
+//        + GET /projects/<pid>/containers per project every ENV.TIMING.RELAY_CONTAINERS_LAMP_MS (web-only: the
+//        runner has no all-projects container summary). Priority: needs you (amber) > busy (green) > containers up (green).
 // Mobile (<900px, styles/organisms/relay-shell.css): .relay-shell--detail shows main only, else the rail is the list screen.
 window.RelayShell = (() => {
   const { $, esc, timeAgo } = Dom;
@@ -22,7 +24,8 @@ window.RelayShell = (() => {
   const hChat = (dev, sid) => `${hDev(dev)}/s/${R.enc(sid)}`;
   const lamp = (state, extra = '') => `<span class="lamp${state ? ` lamp--${state}` : ''}${extra}" aria-hidden="true"></span>`;
   // Session state → lamp: waiting = needs you (amber), busy = working (green), the rest = off (outline).
-  const lampOf = (state) => (state === 'waiting' ? 'wait' : state === 'busy' ? 'busy' : '');
+  const lampOf = (state) => (state === 'waiting' ? 'wait' : state === 'busy' ? 'busy' : state === 'up' ? 'on' : '');
+  const META = { waiting: 'needs you', busy: 'busy', up: 'running' };
 
   function mount(el, params) {
     const S = {
@@ -30,6 +33,7 @@ window.RelayShell = (() => {
       alive: true, devices: null, projects: null, projectsError: null,
       active: [], needsSig: '', sidProject: new Map(), all: null,
       inner: null, timer: null, pollSeq: 0, path: '',
+      up: new Set(), contTimer: null,   // project ids with a running container
     };
     const page = $('relay-page');
     page.classList.add('relay-page--shell');
@@ -109,7 +113,7 @@ window.RelayShell = (() => {
         if (s.state === 'waiting') return 'waiting';
         if (s.state === 'busy') st = 'busy';
       }
-      return st;
+      return st || (S.up.has(pid) ? 'up' : '');
     }
 
     function renderProjects() {
@@ -135,7 +139,7 @@ window.RelayShell = (() => {
         const st = projectState(a.dataset.pid);
         a.querySelector('.lamp').className = `lamp${st ? ` lamp--${lampOf(st)}` : ''}`;
         const meta = a.querySelector('.relay-prow__meta');
-        meta.textContent = st === 'waiting' ? 'needs you' : st === 'busy' ? 'busy' : '';
+        meta.textContent = META[st] || '';
         meta.className = `relay-prow__meta${st ? ` relay-prow__meta--${lampOf(st)}` : ''}`;
       });
       const pl = $('shell-plamp');
@@ -201,7 +205,22 @@ window.RelayShell = (() => {
       } catch (_) { /* keep the last lamps; an offline runner already shows in the rail */ }
       if (S.alive && my === S.pollSeq && !document.hidden) S.timer = setTimeout(poll, ENV.TIMING.RELAY_RAIL_POLL_MS);
     }
-    const onVisibility = () => { if (document.hidden) { clearTimeout(S.timer); S.pollSeq++; } else poll(); };
+    async function pollContainers() {
+      clearTimeout(S.contTimer);
+      if (!S.alive || document.hidden || !S.projects) return;
+      const ids = S.projects.map((p) => p.id);
+      const res = await Promise.allSettled(ids.map((id) => R.call(EP.RELAY_V1(S.dev, `/projects/${R.enc(id)}/containers`))));
+      if (!S.alive) return;
+      res.forEach((r, i) => {
+        if (r.status !== 'fulfilled') return;   // keep the last known state on a blip
+        if ((r.value.containers || []).some((c) => c.state === 'running')) S.up.add(ids[i]); else S.up.delete(ids[i]);
+      });
+      paintLamps();
+      if (!document.hidden) S.contTimer = setTimeout(pollContainers, ENV.TIMING.RELAY_CONTAINERS_LAMP_MS);
+    }
+    const onVisibility = () => {
+      if (document.hidden) { clearTimeout(S.timer); clearTimeout(S.contTimer); S.pollSeq++; } else { poll(); pollContainers(); }
+    };
 
     // Every session on the runner (recent list + chat → project lookup); cached per mount, refetched on a miss.
     async function allSessions(force) {
@@ -357,6 +376,7 @@ window.RelayShell = (() => {
     document.addEventListener('visibilitychange', onVisibility);
 
     S.projectsReady = loadProjects();   // the empty state's recent list waits for it (project names)
+    S.projectsReady.then(pollContainers);
     apply(params);
     loadDevices();
     poll();
@@ -364,6 +384,7 @@ window.RelayShell = (() => {
     const unmount = () => {
       S.alive = false;
       clearTimeout(S.timer);
+      clearTimeout(S.contTimer);
       unmountInner();
       offActs();
       document.removeEventListener('visibilitychange', onVisibility);

@@ -1,0 +1,4 @@
+/* Relay Chats tab (js/relay/organisms/relay-chats.js): one newest-first list; VS Code chats are button rows. */
+.relay-chats__agent { width: 100%; text-align: left; font: inherit; cursor: pointer; }
+.relay-chats__more { width: 100%; margin-top: var(--space-2); }
+.relay-chats__note { margin-top: var(--space-2); }

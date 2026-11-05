@@ -1,4 +1,4 @@
-/* Relay Files tab (js/relay/organisms/relay-files.js): list + mono viewer, side by side on desktop, stacked on phones. */
+/* Relay Files tab (js/relay/organisms/relay-files.js): list + mono viewer / editor (textarea), side by side on desktop, stacked on phones. */
 .relay-files__crumbs {
   display: flex;
   flex-wrap: wrap;
@@ -45,7 +45,31 @@
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
+.relay-files__pathtext { flex: 1; min-width: 0; }
+.relay-files__acts { display: flex; gap: var(--space-2); flex-shrink: 0; }
+.relay-files__note { padding: var(--space-2) var(--space-4); }
+.relay-files__edit {
+  display: block;
+  width: 100%;
+  min-height: 50dvh;
+  max-height: 70dvh;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-card);
+  border: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 4;
+  resize: vertical;
+}
+.relay-files__edit:focus { outline: 1px solid var(--color-accent); outline-offset: -1px; }
 .relay-files__pre {
   margin: 0;
   padding: var(--space-3) var(--space-4);

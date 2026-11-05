@@ -92,6 +92,7 @@ window.ENV = {
   },
   TIMING: {
     RELAY_RAIL_POLL_MS: 10000, // relay shell: waiting/busy sessions poll for the rail lamps + Needs-you strip
+    RELAY_CONTAINERS_LAMP_MS: 30000, // relay shell: per-project GET /containers for the rail lamps (one call per project)
     VIEW_FADE_MS: 180,
     DRAG_HOLD_MS: 250,        // touch long-press before a card drag starts
     UNDO_TOAST_MS: 6000,
@@ -102,6 +103,9 @@ window.ENV = {
     // containers
     CONTAINERS_POLL_BUSY_MS: 2000,   // Relay Containers tab poll while start/stop runs
     CONTAINERS_POLL_IDLE_MS: 10000,  // ...and otherwise (containers can die on their own)
+  },
+  LIMITS: {
+    RELAY_CHATS_PAGE: 10,     // Relay Chats tab: rows shown per "Show older" step
   },
   BOARD: {
     POS_STEP: 65536,          // Trello pos spacing for append / empty list

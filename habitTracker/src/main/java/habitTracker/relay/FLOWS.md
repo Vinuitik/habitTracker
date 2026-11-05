@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, RunnerCollectorClient.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,shell,claim,install,chat}.js, static/styles/organisms/relay-shell.css, static/styles/atoms/lamp.css, static/js/molecules/folder-picker.js (FolderPicker.pick), static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, RunnerCollectorClient.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,shell,claim,install,chat,chats,files,git,containers}.js, static/styles/organisms/relay-shell.css, static/styles/atoms/lamp.css, static/js/molecules/folder-picker.js (FolderPicker.pick), static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -111,11 +111,14 @@ To change commands: relay.js INSTALL_CMD, PAIR_CMD, LINUX_AS_USER. Guide text pe
 ### Shell `#/d/<id>[/p/<pid>[/<tab>] | /s/<sid>]` (layout A)
 router.js → RelayShell.mount() once per runner; later routes on the same runner → unmount.update(params) (rail kept, only the work area re-routes); another runner → full remount
 Rail: brand (→ `#/`) · runner switcher (GET RELAY_DEVICES, online lamp; click → Menu of runners + "Manage devices…") · GET `…/v1/projects` rows with lamps · "+ Project"
-Lamps + Needs-you strip: poll GET `…/v1/sessions?state=waiting,busy` every ENV.TIMING.RELAY_RAIL_POLL_MS (10s), stopped while the tab is hidden and on unmount. Project lamp: any waiting → amber (needs you), else any busy → green, else outline. Strip cards → `#/d/<id>/s/<sid>`.
-To change the poll: env.js TIMING.RELAY_RAIL_POLL_MS. Lamp look: styles/atoms/lamp.css.
+Lamps + Needs-you strip: poll GET `…/v1/sessions?state=waiting,busy` every ENV.TIMING.RELAY_RAIL_POLL_MS (10s), stopped while the tab is hidden and on unmount. Project lamp: any waiting → amber (needs you), else any busy → green, else containers running → green ("running"), else outline. Containers: `pollContainers()` GETs `…/v1/projects/<pid>/containers` for every project every ENV.TIMING.RELAY_CONTAINERS_LAMP_MS (30s), web-only — the runner has no all-projects summary. Strip cards → `#/d/<id>/s/<sid>`.
+To change the poll: env.js TIMING.RELAY_RAIL_POLL_MS / RELAY_CONTAINERS_LAMP_MS. Lamp look: styles/atoms/lamp.css.
 "+ Project" → inline form: name and/or "Folder…" → FolderPicker.pick({id,name}, cb) (browse only, no PROJECT_LINK) → POST `…/v1/projects {name?, path?}` → 201 → appended to the rail → `#/d/<id>/p/<new>/chats`
 No project (`#/d/<id>`): "Pick a project" + recent sessions (GET `…/v1/sessions`, newest 8).
 Project (`/p/<pid>/<tab>`, default chats): header (name, path) + seg-tabs Chats · Git · Containers · Files → mounts RelayChats / RelayGit / RelayContainers / RelayFiles into #shell-content (previous one unmounted). Their own back link + title are hidden by relay-shell.css.
+Chats tab: one newest-first list = `…/projects/<pid>/sessions` + `…/agent-chats` not yet linked (VS Code / laptop chats; tap row = Resume → POST sessions {agentSessionId}), ENV.LIMITS.RELAY_CHATS_PAGE rows then "Show older".
+Files tab: browse + view; Edit → textarea → Save = PUT `…/files/content {path, content, baseHash}` (hash from GET); 409 = changed on the machine since opened. Existing text files ≤1MiB only (Relay shared/API.md). Leaving with unsaved edits needs a second tap.
+Git tab: Push is one tap (plain push, never --force). Containers tab: Start/Restart + Take down (two taps on the same button) sit in the status card at the top.
 Chat (`/s/<sid>`): RelayChat in #shell-content; crumb "← <project> · Chats" from the sid → projectId map (filled by the polls, else one GET `…/v1/sessions`).
 Mobile (<900px): drill-down — no project = rail is the list screen (Needs-you cards inside it); project/chat = work area only, back arrow → `#/d/<id>`, tabs scroll horizontally at the top (bottom bar = app tabbar).
 To change tabs: relay-shell.js TABS + router.js HASH_ROUTES regex. New-chat provider: relay-chats.js PROVIDER.
@@ -143,7 +146,7 @@ Not in the UI (API.md has them, proxy would carry them): agent-chats (open a VS 
 ## Technology Notes
 - **Key:** `KPI_SECRETS_KEY` (base64, 32 bytes), shared with KPI capability secrets via VaultEncryptionService.serverKey(). Unset (true in prod today) → derived from `JWT_SECRET`, so rotating JWT_SECRET makes every stored TOTP secret undecryptable (users must re-enrol). Setting KPI_SECRETS_KEY later has the same effect on existing rows.
 - **Why encrypted, not hashed:** the server must recompute codes from the secret. Mongo dumps go to Drive; ciphertext there is useless without the key, which lives only in `.env`.
-- **Relay shell state is per page load:** project list, lamps and the sid → project map live in the RelayShell closure; a reload refetches. Lamps lag real state by up to 10s (poll), and pause entirely while the tab is hidden. Each open tab polls the runner on its own (20 users × tabs → that many proxy calls per 10s).
+- **Relay shell state is per page load:** project list, lamps and the sid → project map live in the RelayShell closure; a reload refetches. Lamps lag real state by up to 10s (sessions) / 30s (containers), and pause entirely while the tab is hidden. Each open tab polls the runner on its own (20 users × tabs → that many proxy calls per 10s, plus one per project per 30s for container lamps — each may run `docker compose ps` on the runner).
 - **Lockout state is in-memory** (ConcurrentHashMap in TwoFactorService): a restart clears it; single JVM only. `synchronized` verify/confirm also assumes one JVM.
 - **Verified flag is a session attribute:** sessions are the default in-memory Tomcat store, so a restart forces password + code again. Bound to the user id, so a reused session for another user doesn't inherit it.
 - **Enrolment is trust-on-first-use:** whoever first holds a logged-in session for an account without 2FA can enrol their own authenticator. Enrol right after creating the account.
@@ -233,7 +236,9 @@ Not in the UI (API.md has them, proxy would carry them): agent-chats (open a VS 
 | QR confirm page | relay-claim.js mount(), claimAction(); route RelayController `/relay/claim/{id}` |
 | QR runner endpoints (permitAll, CSRF-ignored, 2FA-excluded) | SecurityConfig, WebConfig (`/relay/pair/start`, `/relay/pair/poll`) |
 | New-session provider | relay-chats.js PROVIDER |
-| Shell layout / tabs / lamps poll | relay-shell.js (TABS, poll), relay-shell.css, env.js TIMING.RELAY_RAIL_POLL_MS |
+| Shell layout / tabs / lamps poll | relay-shell.js (TABS, poll, pollContainers), relay-shell.css, env.js TIMING.RELAY_RAIL_POLL_MS / RELAY_CONTAINERS_LAMP_MS |
+| Chats list order / page size | relay-chats.js (`when`, paint), env.js LIMITS.RELAY_CHATS_PAGE |
+| File editing | relay-files.js (save, confirmLeave), runner `handleWriteFile` |
 | Poll rates | relay-chat.js POLL_ACTIVE_MS, POLL_IDLE_MS, schedule() |
 | State labels / badge colours | relay.js STATES |
 | Markdown subset | relay.js md(), inline() |
