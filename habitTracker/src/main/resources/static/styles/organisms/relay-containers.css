@@ -1,4 +1,4 @@
-/* Relay Containers tab (js/relay/organisms/relay-containers.js): state lamp, status card, danger zone */
+/* Relay Containers tab (js/relay/organisms/relay-containers.js): state lamp, status card with the action row (start / restart / take down) */
 /* state lamp: styles/atoms/lamp.css (.lamp, .lamp--on) */
 
 .cont-status { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
@@ -9,5 +9,5 @@
 
 .cont-file, .cont-service { align-items: center; gap: var(--space-3); }
 
-.cont-danger { margin-top: var(--space-8); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
-.cont-danger__btn { color: var(--color-danger); }
+.cont-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.cont-actions__stop { color: var(--color-danger); }

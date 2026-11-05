@@ -15,7 +15,7 @@ Relay never had a web UI. Containers, git, model and effort selection, and subag
   - success green means running or done.
   - Status lamps are 8px dots: filled when lit, outline when off. A 4px amber left bar marks cards that block the agent (permission, quota, login).
 - `sw.js` must **never cache** `/relay/api/**` polls. There is precedent: decision 38 in `DECISIONS-relay-ai.md`.
-- Destructive actions (git push, compose down, branch switch with a dirty tree) need an inline confirm. Reuse the confirm in `js/atoms/menu.js`.
+- Destructive actions need one inline confirm, never a popover menu: compose down = two taps on the same button; branch switch with a dirty tree reuses the confirm in `js/atoms/menu.js`. A plain git push (never --force) is one tap, no confirm (decided 2026-11-05).
 - Runner API contract: `~/Documents/Relay/shared/API.md`. The Android screens are behavior reference only. Don't copy their look.
 
 ## Reuse

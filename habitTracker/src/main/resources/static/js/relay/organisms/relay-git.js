@@ -36,7 +36,7 @@ window.RelayGit = (() => {
       refresh: () => loadAll(),
       fetch: () => startOp('fetch'),
       pull: () => startOp('pull'),
-      push: (b) => Menu.open(b, [{ label: 'Push', confirm: `Push ${st.branch || 'HEAD'} to ${st.upstream || 'origin'}?`, onClick: () => startOp('push') }]),
+      push: () => startOp('push'),   // one tap: a plain push (never --force) is safe to run straight away
       stage: (b) => change('/stage', { paths: [b.dataset.path] }),
       unstage: (b) => change('/unstage', { paths: [b.dataset.path] }),
       'stage-all': () => change('/stage', { all: true }),

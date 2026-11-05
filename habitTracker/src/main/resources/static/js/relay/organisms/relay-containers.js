@@ -1,5 +1,5 @@
 // #/d/<dev>/p/<pid>/containers: docker compose control for one project (shared/API.md "ContainersStatus").
-// RelayContainers.mount(el, {dev, pid}) → unmount (contract: js/relay/router.js). Needs atoms/menu.js, molecules/step-list.js.
+// RelayContainers.mount(el, {dev, pid}) → unmount (contract: js/relay/router.js). Needs molecules/step-list.js.
 // Start / stop run in the background on the runner: poll fast while `operation` is set, slowly otherwise.
 // Logs: not in the runner API [NOT IMPLEMENTED].
 window.RelayContainers = (() => {
@@ -8,6 +8,7 @@ window.RelayContainers = (() => {
   const EP = ENV.ENDPOINTS;
   const POLL_BUSY_MS = ENV.TIMING.CONTAINERS_POLL_BUSY_MS;
   const POLL_IDLE_MS = ENV.TIMING.CONTAINERS_POLL_IDLE_MS;
+  const ARM_MS = 4000;
   const OP_LABEL = { starting: 'Starting', switching: 'Switching', stopping: 'Stopping' };
 
   function mount(el, { dev, pid }) {
@@ -19,6 +20,8 @@ window.RelayContainers = (() => {
     let pollTimer = 0;
     let tickTimer = 0;
     let sig = '';
+    let armedUntil = 0;     // "Take down" armed until this client ms
+    let armTimer = 0;
 
     const running = () => (st ? st.containers.filter((c) => c.state === 'running') : []);
     // Containers carry the file they came from: truer than activeFile if someone ran compose by hand.
@@ -56,6 +59,21 @@ window.RelayContainers = (() => {
       </div>`;
     }
 
+    // Actions live in the status card at the top: no scrolling past the service list to reach them.
+    // "Take down" is two taps on the same button (arms for ARM_MS), no popover menu.
+    function primaryAction(upFile, busy) {
+      const target = upFile || st.activeFile || (st.composeFiles.length === 1 ? st.composeFiles[0] : '');
+      if (!target) return '';
+      return `<button class="btn ${upFile ? 'btn--ghost' : 'btn--primary'}" data-act="start" data-file="${esc(target)}"${busy ? ' disabled' : ''}>
+        ${upFile ? 'Restart' : 'Start'}${st.composeFiles.length > 1 ? ` ${esc(target)}` : ''}</button>`;
+    }
+
+    function stopAction(busy) {
+      const armed = armedUntil > Date.now();
+      return `<button class="btn ${armed ? 'btn--danger' : 'btn--ghost cont-actions__stop'}" data-act="stop"${busy || !st.containers.length ? ' disabled' : ''}>
+        ${armed ? 'Tap again to take down' : 'Take down'}</button>`;
+    }
+
     function render() {
       const head = R.header('Containers', [`#/d/${R.enc(dev)}`, 'Sessions'],
         '<button class="btn btn--ghost" data-act="refresh">Refresh</button>');
@@ -68,6 +86,8 @@ window.RelayContainers = (() => {
       const upFile = runningFile();
       const title = busy ? `${OP_LABEL[st.operation] || st.operation}…`
         : up.length ? `Up · ${up.length} of ${st.containers.length} running` : 'Everything is down';
+      const actions = st.composeFiles.length
+        ? `<div class="cont-actions">${primaryAction(upFile, busy)}${stopAction(busy)}</div>` : '';
 
       let body = `<div class="relay-card cont-status">
         <div class="cont-status__line">${lamp(up.length > 0 && !busy)}<span class="cont-status__title">${esc(title)}</span>
@@ -77,6 +97,7 @@ window.RelayContainers = (() => {
         ${st.dockerError ? `<div class="relay-empty--error cont-status__msg">Docker unavailable: ${esc(st.dockerError)}</div>` : ''}
         ${!busy && st.lastError ? `<div class="relay-empty--error cont-status__msg">Last operation failed: ${esc(st.lastError)}</div>` : ''}
         ${err ? `<div class="relay-empty--error cont-status__msg">${esc(err)}</div>` : ''}
+        ${actions}
       </div>`;
 
       if (!st.composeFiles.length) {
@@ -84,12 +105,14 @@ window.RelayContainers = (() => {
           ? "Add a docker-compose.yml next to this project's Dockerfile to run it from here."
           : "Add a docker-compose.yml to this project's top-level folder to run it from here."}</div>`;
       } else {
-        body += `<h2 class="relay-section">${st.composeFiles.length > 1 ? 'Compose files' : 'Compose file'}</h2>
-          <div class="relay-list">${st.composeFiles.map((f) => fileCard(f, upFile, busy)).join('')}</div>`;
+        // One compose file: the status card's button covers it. Several: pick / switch here.
+        if (st.composeFiles.length > 1) {
+          body += `<h2 class="relay-section">Compose files</h2>
+            <div class="relay-list">${st.composeFiles.map((f) => fileCard(f, upFile, busy)).join('')}</div>`;
+        }
         if (st.containers.length) {
           body += `<h2 class="relay-section">Services</h2><div class="relay-list">${st.containers.map(serviceRow).join('')}</div>`;
         }
-        body += `<div class="cont-danger"><button class="btn btn--ghost cont-danger__btn" data-act="stop"${busy || !st.containers.length ? ' disabled' : ''}>Take everything down</button></div>`;
       }
       body += '<p class="relay-hint">Logs: not available yet (the runner API has no logs endpoint).</p>';
       el.innerHTML = head + body;
@@ -149,11 +172,13 @@ window.RelayContainers = (() => {
     const offClick = R.onAct(el, {
       refresh,
       start: (b) => act('/start', { file: b.dataset.file }, 'Start'),
-      stop: (b) => Menu.open(b, [{
-        label: 'Take down', danger: true,
-        confirm: "Stops and removes every container this project's compose files started.",
-        onClick: () => act('/stop', undefined, 'Stop'),
-      }]),
+      stop: () => {
+        clearTimeout(armTimer);
+        if (armedUntil > Date.now()) { armedUntil = 0; act('/stop', undefined, 'Stop'); return; }
+        armedUntil = Date.now() + ARM_MS;
+        render();
+        armTimer = setTimeout(() => { if (!dead) render(); }, ARM_MS);
+      },
     });
 
     render();
@@ -163,8 +188,8 @@ window.RelayContainers = (() => {
       dead = true;
       clearTimeout(pollTimer);
       clearInterval(tickTimer);
+      clearTimeout(armTimer);
       offClick();
-      Menu.close();
     };
   }
 
