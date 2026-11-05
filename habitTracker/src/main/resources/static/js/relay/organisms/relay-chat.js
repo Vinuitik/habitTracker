@@ -116,6 +116,7 @@ window.RelayChat = (() => {
     c.state = s.state;
     $('chat-title').textContent = s.title || 'New session';
     $('chat-state').innerHTML = R.stateBadge(s.state);
+    $('chat-ctx').innerHTML = R.ctxTag(s.contextTokens);
     const working = s.state === 'busy' || s.state === 'waiting';
     renderConfig(s, working || s.state === 'finished');
     $('chat-cancel').hidden = !working;
@@ -241,6 +242,7 @@ window.RelayChat = (() => {
         <div class="relay-chat__head">
           <a class="relay-back relay-back--inline" href="#/d/${R.enc(dev)}">←</a>
           <span class="relay-chat__title" id="chat-title">Loading…</span>
+          <span id="chat-ctx"></span>
           <span id="chat-state"></span>
           <button class="btn btn--ghost btn--sm" data-act="cancel" id="chat-cancel" title="Stop the current turn, keep the session" hidden>Cancel</button>
           <button class="btn btn--danger btn--sm" data-act="stop" id="chat-stop" title="End the session (kills the agent process)" hidden>Stop</button>

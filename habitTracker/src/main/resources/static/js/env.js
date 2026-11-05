@@ -106,6 +106,8 @@ window.ENV = {
   },
   LIMITS: {
     RELAY_CHATS_PAGE: 10,     // Relay Chats tab: rows shown per "Show older" step
+    RELAY_CTX_WARN: 80000,    // chat context (tokens re-sent per message) shown amber from here...
+    RELAY_CTX_HIGH: 150000,   // ...red from here, and resuming such a chat needs a second tap
   },
   BOARD: {
     POS_STEP: 65536,          // Trello pos spacing for append / empty list

@@ -119,6 +119,15 @@ window.Relay = (() => {
     setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
   }
 
+  // Context-size tag (Session/AgentChat.contextTokens, runner context.go): tokens every next message
+  // re-sends, so cost per message grows with it. '' when unknown (older runner, no transcript).
+  const ctxLevel = (n) => (n >= ENV.LIMITS.RELAY_CTX_HIGH ? 'high' : n >= ENV.LIMITS.RELAY_CTX_WARN ? 'warn' : 'ok');
+  const ctxText = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.max(1, Math.round(n / 1000))}k`);
+  const ctxTag = (n) => (n > 0
+    ? `<span class="ctx-tag ctx-tag--${ctxLevel(n)}" title="Each message re-sends about ${ctxText(n)} tokens. ${
+      ctxLevel(n) === 'high' ? 'That is ~2× a fresh chat: /compact it or start a new chat.' : 'Cost per message grows with this.'}">${ctxText(n)}</span>`
+    : '');
+
   // Click delegation helper for organisms: handlers = {act: (button) => …}; returns the remover.
   function onAct(el, handlers) {
     const listener = (e) => {
@@ -131,6 +140,6 @@ window.Relay = (() => {
 
   return {
     enc, OS, INSTALL_CMD, PAIR_CMD, LINUX_AS_USER, ownHub, pairCmd, deviceNames, store,
-    call, errorHtml, stateBadge, header, md, cmdBlock, codeBox, getCode, copyCommand, onAct,
+    call, errorHtml, stateBadge, ctxTag, ctxLevel, ctxText, header, md, cmdBlock, codeBox, getCode, copyCommand, onAct,
   };
 })();

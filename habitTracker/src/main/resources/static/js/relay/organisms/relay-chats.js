@@ -18,16 +18,16 @@ window.RelayChats = (() => {
         <span class="relay-row__name">${esc(s.title || 'New session')}</span>
         <span class="relay-row__meta">${esc(timeAgo(s.lastActiveAt || s.createdAt))}${s.preview ? ' · ' + esc(s.preview) : ''}</span>
       </span>
-      ${R.stateBadge(s.state)}
+      ${R.ctxTag(s.contextTokens)}${R.stateBadge(s.state)}
     </a>`;
 
   const agentRow = (c) => `
-    <button type="button" class="relay-row relay-row__main relay-chats__agent" data-act="resume" data-agent="${esc(c.agentSessionId)}">
+    <button type="button" class="relay-row relay-row__main relay-chats__agent" data-act="resume" data-agent="${esc(c.agentSessionId)}" data-ctx="${c.contextTokens || 0}">
       <span class="relay-row__body">
         <span class="relay-row__name">${esc(c.title || 'Untitled chat')}</span>
         <span class="relay-row__meta">${esc(timeAgo(c.updatedAt))} · from VS Code / laptop</span>
       </span>
-      <span class="badge badge--muted">Resume</span>
+      ${R.ctxTag(c.contextTokens)}<span class="badge badge--muted">Resume</span>
     </button>`;
 
   const when = (r) => String((r.kind === 's' ? (r.v.lastActiveAt || r.v.createdAt) : r.v.updatedAt) || '');
@@ -96,7 +96,17 @@ window.RelayChats = (() => {
       more: () => view.more(),
       refresh: () => ctx.refresh(),
       new: (b) => open(ctx, { provider: PROVIDER }, b),
-      resume: (b) => open(ctx, { provider: PROVIDER, agentSessionId: b.dataset.agent }, b),
+      resume: (b) => {
+        // Big chat: first tap only warns (resuming re-sends all of it, then every message does again).
+        const n = Number(b.dataset.ctx) || 0;
+        if (R.ctxLevel(n) === 'high' && b.dataset.armed !== '1') {
+          b.dataset.armed = '1';
+          b.querySelector('.badge').textContent = 'Tap again';
+          Toast.show(`This chat re-sends ~${R.ctxText(n)} tokens per message (~2× a fresh chat). New chat is cheaper.`, 6000);
+          return;
+        }
+        open(ctx, { provider: PROVIDER, agentSessionId: b.dataset.agent }, b);
+      },
     });
     load(el, ctx, () => mounted, view);
     return () => { mounted = false; off(); };

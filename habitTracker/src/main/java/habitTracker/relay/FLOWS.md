@@ -117,6 +117,7 @@ To change the poll: env.js TIMING.RELAY_RAIL_POLL_MS / RELAY_CONTAINERS_LAMP_MS.
 No project (`#/d/<id>`): "Pick a project" + recent sessions (GET `…/v1/sessions`, newest 8).
 Project (`/p/<pid>/<tab>`, default chats): header (name, path) + seg-tabs Chats · Git · Containers · Files → mounts RelayChats / RelayGit / RelayContainers / RelayFiles into #shell-content (previous one unmounted). Their own back link + title are hidden by relay-shell.css.
 Chats tab: one newest-first list = `…/projects/<pid>/sessions` + `…/agent-chats` not yet linked (VS Code / laptop chats; tap row = Resume → POST sessions {agentSessionId}), ENV.LIMITS.RELAY_CHATS_PAGE rows then "Show older".
+Cost tags: `Relay.ctxTag(contextTokens)` (relay.js, styles/atoms/ctx-tag.css) on every chat row and in the chat header — tokens each next message re-sends (runner context.go). Muted < ENV.LIMITS.RELAY_CTX_WARN (80k) ≤ amber < RELAY_CTX_HIGH (150k) ≤ red; resuming a red VS Code chat needs a second tap + toast. Older runner → no tag.
 Files tab: browse + view; Edit → textarea → Save = PUT `…/files/content {path, content, baseHash}` (hash from GET); 409 = changed on the machine since opened. Existing text files ≤1MiB only (Relay shared/API.md). Leaving with unsaved edits needs a second tap.
 Git tab: Push is one tap (plain push, never --force). Containers tab: Start/Restart + Take down (two taps on the same button) sit in the status card at the top.
 Chat (`/s/<sid>`): RelayChat in #shell-content; crumb "← <project> · Chats" from the sid → projectId map (filled by the polls, else one GET `…/v1/sessions`).
@@ -238,6 +239,7 @@ Not in the UI (API.md has them, proxy would carry them): agent-chats (open a VS 
 | New-session provider | relay-chats.js PROVIDER |
 | Shell layout / tabs / lamps poll | relay-shell.js (TABS, poll, pollContainers), relay-shell.css, env.js TIMING.RELAY_RAIL_POLL_MS / RELAY_CONTAINERS_LAMP_MS |
 | Chats list order / page size | relay-chats.js (`when`, paint), env.js LIMITS.RELAY_CHATS_PAGE |
+| Cost tags / resume warning | relay.js ctxTag/ctxLevel, relay-chats.js resume, env.js LIMITS.RELAY_CTX_WARN / RELAY_CTX_HIGH |
 | File editing | relay-files.js (save, confirmLeave), runner `handleWriteFile` |
 | Poll rates | relay-chat.js POLL_ACTIVE_MS, POLL_IDLE_MS, schedule() |
 | State labels / badge colours | relay.js STATES |
