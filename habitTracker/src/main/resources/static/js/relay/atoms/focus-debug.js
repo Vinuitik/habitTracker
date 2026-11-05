@@ -1,10 +1,23 @@
-// Focus debug log (off by default). Open /relay?debugfocus=1 to turn on, ?debugfocus=0 to turn off (remembered).
+// Focus debug log (off by default). Toggle: tap the chat title (#chat-title) 5 times within 2s — the page reloads
+// with the log on/off (remembered in localStorage). /relay?debugfocus=1|0 also works in a browser tab.
 // Shows the last events that can drop the keyboard: focus moves, window blur, visibility, viewport resize,
 // keys, IME composition, and #chat-input being removed / disabled. For diagnosing the keyboard-language bug.
 (function () {
   const KEY = 'relay.debugFocus';
   const q = new URLSearchParams(location.search).get('debugfocus');
-  try { if (q !== null) localStorage.setItem(KEY, q); if (localStorage.getItem(KEY) !== '1') return; } catch (_) { return; }
+  let on = false;
+  try { if (q !== null) localStorage.setItem(KEY, q); on = localStorage.getItem(KEY) === '1'; } catch (_) { return; }
+
+  let taps = [];
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest || !e.target.closest('#chat-title')) return;
+    const now = Date.now();
+    taps = taps.filter((t) => now - t < 2000).concat(now);
+    if (taps.length < 5) return;
+    try { localStorage.setItem(KEY, on ? '0' : '1'); } catch (_) { return; }
+    location.reload();
+  }, true);
+  if (!on) return;
 
   const lines = [];
   let box = null;
@@ -41,7 +54,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     box = document.createElement('pre');
     box.className = 'focus-debug';
-    box.textContent = 'focus debug on — ?debugfocus=0 to turn off';
+    box.textContent = 'focus debug on — tap the chat title 5× to turn off';
     document.body.appendChild(box);
   });
   log('debug start');
