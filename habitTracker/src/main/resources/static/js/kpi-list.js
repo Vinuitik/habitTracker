@@ -168,7 +168,7 @@ const AUTOMATE = {
     confirming: false,  // footer shows the inline "Discard this automation?" confirm
     notice: null,       // one-shot line at the top of the panel ("Setup discarded...")
     returnFocus: null,  // element focused before the dialog opened
-    refineDraft: '',    // typed refine feedback; survives re-renders and a failed refine
+    refineDraft: '',    // typed refine feedback; survives re-renders, cleared once a refine job is accepted
     runnerOnline: null, // GET KPI_CAP_RUNNER at open: false → "Connect a runner" (null = unknown, not blocking)
 };
 // CapabilityGeneratorException.NO_RUNNER_MESSAGE: a job that failed for it also gets the Relay link.
@@ -261,11 +261,12 @@ async function automateStart(action, extra) {
     const gen = AUTOMATE.gen;
     AUTOMATE.notice = null;
     AUTOMATE.confirming = false;
-    AUTOMATE.job = { id: null, state: 'running', events: [], nextSeq: 0, error: null, usage: null, startedAt: Date.now(), refining: action === 'refine' };
+    AUTOMATE.job = { id: null, state: 'running', events: [], nextSeq: 0, error: null, usage: null, startedAt: Date.now() };
     renderAutomate(AUTOMATE.current);
     try {
         const data = await automateFetch(E_KPI.KPI_CAP_JOBS(AUTOMATE.kpiName), 'POST', { action, ...extra });
         if (gen !== AUTOMATE.gen) return;
+        if (action === 'refine') AUTOMATE.refineDraft = '';   // accepted: feedback consumed (kept if the POST fails)
         automateWatch(data.jobId);
     } catch (e) {
         if (gen !== AUTOMATE.gen) return;
@@ -368,7 +369,6 @@ async function automatePoll(gen) {
         if (snap.state === 'done') {
             const cap = snap.result;
             if (cap && (cap.status === 'ACTIVE' || cap.status === 'SHADOW')) AUTOMATE.reloadOnClose = true;
-            if (job.refining) AUTOMATE.refineDraft = '';   // refined plan arrived: feedback consumed
             renderAutomate(cap);
             return;
         }
