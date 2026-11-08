@@ -20,8 +20,9 @@
 // The router calls the previous unmount before every mount, so leaving a chat stops its polling.
 //
 // Last route (PWA: Relay → Today → Relay lands back where you were): route() stores location.hash
-// (Relay.store 'lastRoute', per user; devices list / unknown hash → cleared). Opening /relay with an
-// empty hash → restore() puts it back, unless its runner is no longer in GET devices (→ devices list).
+// (Relay.store 'lastRoute', per user; devices list / #/install / unknown hash → cleared). Opening a
+// bare /relay (no hash; an explicit #/ is not restored over) → restore() puts it back, unless its
+// runner is no longer in GET devices (→ devices list).
 // The claim page (/relay/claim/<id>) is never stored nor restored over.
 (() => {
   const { $ } = Dom;
@@ -50,20 +51,26 @@
   const onRelay = () => location.pathname === ENV.ROUTES.RELAY;
   const known = (h) => HASH_ROUTES.some(([re]) => re.test(h.replace(/^#/, '')));
 
+  // One-off flows: never stored, so they can't come back on their own after they're done.
+  const TRANSIENT = /^#\/install$/;
+  const remembered = (h) => known(h) && !TRANSIENT.test(h);
+
   function remember() {
-    if (onRelay()) Relay.store.set(LAST, known(location.hash) ? location.hash : null);
+    if (onRelay()) Relay.store.set(LAST, remembered(location.hash) ? location.hash : null);
   }
 
+  // Only a bare /relay (no hash at all) restores; an explicit #/ (e.g. the claim page's
+  // "Open devices") means the devices list and wins.
   async function restore() {
-    if (!onRelay() || location.hash.replace(/^#\/?/, '')) return;
+    if (!onRelay() || location.hash !== '') return;
     const h = await Relay.store.get(LAST);
-    if (typeof h !== 'string' || !known(h)) return;
+    if (typeof h !== 'string' || !remembered(h)) return;
     const m = h.match(/^#\/d\/([^/]+)/);
     if (m) {
       const list = await Relay.call(ENV.ENDPOINTS.RELAY_DEVICES).catch(() => null);
       if (!Array.isArray(list) || !list.some((d) => d.id === dec(m[1]))) return;
     }
-    if (onRelay() && !location.hash.replace(/^#\/?/, '')) history.replaceState(null, '', h);
+    if (onRelay() && location.hash === '') history.replaceState(null, '', h);
   }
 
   function route() {
