@@ -53,6 +53,12 @@ public class KPIProxyCapability {
     // Optional plain-language summaries from the proposal (what is counted / where it comes from); UI only.
     private String measures;
     private String dataSource;
+    // Refine loop (additive, nullable: older documents read back unchanged). planRevision 1 = a fresh propose.
+    // assumptions = assumptions + open questions the AI wants confirmed; changeSummary / refineFeedback are null on revision 1.
+    private Integer planRevision;
+    private List<String> assumptions;
+    private String changeSummary;
+    private String refineFeedback;
     // Generation attempts that produced code for this version (cap: CapabilityAgentService.MAX_ATTEMPTS).
     @Builder.Default
     private Integer attempts = 0;

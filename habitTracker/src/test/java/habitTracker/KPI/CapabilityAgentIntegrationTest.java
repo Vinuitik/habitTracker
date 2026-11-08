@@ -172,6 +172,87 @@ class CapabilityAgentIntegrationTest {
         call(auth.session(alice), "GET", "/api/kpis/Widgets/capability/jobs/active", null, 204);
     }
 
+    // ── refine loop ──────────────────────────────────────────────────────────
+
+    @Test
+    void refine_createsNewRevision_supersedesOld_keepsDescription() throws Exception {
+        kpi(alice, "Widgets");
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Plan A", "m", "d", AW, List.of(), List.of("Weekends count?"), null));
+        JsonNode first = propose(alice, "Widgets", 200);
+        assertEquals(1, first.get("planRevision").asInt());
+        assertEquals("Weekends count?", first.at("/assumptions/0").asText());
+        assertTrue(first.get("changeSummary").isNull());
+        String id = first.get("id").asText();
+
+        when(generator.refine(anyString(), anyString(), any(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Plan B", "m2", "d2", AW, List.of(), List.of(), "Weekends are now included."));
+        JsonNode second = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/refine",
+                "{\"feedback\":\"yes include weekends\"}", 200);
+        assertEquals("PROPOSED", second.get("status").asText());
+        assertEquals(2, second.get("version").asInt());
+        assertEquals(2, second.get("planRevision").asInt());
+        assertEquals("Plan B", second.get("proposal").asText());
+        assertEquals("count my widgets", second.get("description").asText());
+        assertEquals("Weekends are now included.", second.get("changeSummary").asText());
+        assertEquals("yes include weekends", second.get("refineFeedback").asText());
+        assertEquals(0, second.get("assumptions").size());
+        assertEquals(CapabilityStatus.REJECTED, capabilityRepository.findById(id).orElseThrow().getStatus());
+
+        // a refined plan can be refined again (revision 3) and the superseded one is no longer refinable
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/refine", "{\"feedback\":\"x\"}", 409);
+        JsonNode third = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + second.get("id").asText() + "/refine",
+                "{\"feedback\":\"again\"}", 200);
+        assertEquals(3, third.get("planRevision").asInt());
+    }
+
+    @Test
+    void refine_fromTestFailed_passesFailureToGenerator_andValidatesFeedback() throws Exception {
+        kpi(alice, "Widgets");
+        generatorProposes(AW);
+        builds("boom");
+        String id = propose(alice, "Widgets", 200).get("id").asText();
+        assertEquals("TEST_FAILED", act(alice, "Widgets", id, "approve", 200).get("status").asText());
+        String path = "/api/kpis/Widgets/capability/" + id + "/refine";
+        call(auth.session(alice), "POST", path, "{\"feedback\":\"   \"}", 400);
+        call(auth.session(alice), "POST", path, "{\"feedback\":\"" + "x".repeat(2001) + "\"}", 400);
+        when(generator.refine(anyString(), anyString(), any(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Plan B", AW));
+        JsonNode r = call(auth.session(alice), "POST", path, "{\"feedback\":\"try another way\"}", 200);
+        assertEquals("PROPOSED", r.get("status").asText());
+        assertEquals("Plan updated from your feedback.", r.get("changeSummary").asText());
+        org.mockito.ArgumentCaptor<KPIProxyCapability> prev = org.mockito.ArgumentCaptor.forClass(KPIProxyCapability.class);
+        org.mockito.Mockito.verify(generator).refine(anyString(), anyString(), prev.capture(), anyString(), any());
+        assertEquals(CapabilityStatus.TEST_FAILED, prev.getValue().getStatus());
+        assertTrue(prev.getValue().getFailureReason().contains("boom"));
+    }
+
+    @Test
+    void refine_isRefusedOutsideProposedOrTestFailed_andForOtherUsers() throws Exception {
+        kpi(alice, "Widgets");
+        String id = builtAwaitingConfirm(value(3));
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/refine", "{\"feedback\":\"f\"}", 409);
+        kpi(bob, "Widgets");
+        call(auth.session(bob), "POST", "/api/kpis/Widgets/capability/" + id + "/refine", "{\"feedback\":\"f\"}", 400);
+    }
+
+    @Test
+    void asyncJobs_refine_streamsReviseStep() throws Exception {
+        kpi(alice, "Widgets");
+        generatorProposes(AW);
+        String id = propose(alice, "Widgets", 200).get("id").asText();
+        when(generator.refine(anyString(), anyString(), any(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Plan B", "m", "d", AW, List.of(), List.of("Q?"), "Changed."));
+        String jobId = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
+                "{\"action\":\"refine\",\"id\":\"" + id + "\",\"feedback\":\"tweak\"}", 202).get("jobId").asText();
+        JsonNode done = waitJob(alice, "Widgets", jobId);
+        assertEquals("done", done.get("state").asText());
+        assertEquals(2, done.at("/result/planRevision").asInt());
+        assertEquals("Revising the plan on your runner", done.at("/events/0/text").asText());
+        call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
+                "{\"action\":\"refine\",\"id\":\"" + id + "\",\"feedback\":\"\"}", 400);
+    }
+
     // ── S1 confirm gate / shadow ─────────────────────────────────────────────
 
     private String builtAwaitingConfirm(CapabilityOutput out) throws Exception {

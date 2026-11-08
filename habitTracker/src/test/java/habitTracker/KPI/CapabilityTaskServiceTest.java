@@ -61,6 +61,16 @@ class CapabilityTaskServiceTest {
     }
 
     @Test
+    void refine_runsAction_andValidatesFeedbackUpFront() throws Exception {
+        when(agent.refineAs("u", "K", "c1", "use Firefox")).thenReturn(dto(CapabilityStatus.PROPOSED));
+        String id = tasks.start("u", "K", "refine", "c1", "use Firefox");
+        assertEquals("done", waitDone("u", "K", id).get("state"));
+        assertThrows(IllegalArgumentException.class, () -> tasks.start("u", "K", "refine", "c1", "  "));
+        assertThrows(IllegalArgumentException.class, () -> tasks.start("u", "K", "refine", "c1", "x".repeat(2001)));
+        assertThrows(IllegalArgumentException.class, () -> tasks.start("u", "K", "refine", null, "ok"));
+    }
+
+    @Test
     void noRunner_failsWithActionableSentenceAndCode() throws Exception {
         when(agent.approveAs(any(), any(), any())).thenThrow(CapabilityGeneratorException.noRunner(null));
         String id = tasks.start("u", "K", "approve", "c1", null);

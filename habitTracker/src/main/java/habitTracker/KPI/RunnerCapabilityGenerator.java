@@ -69,6 +69,13 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
     }
 
     @Override
+    public Proposal refine(String userId, String kpiName, KPIProxyCapability previous, String feedback,
+                           List<CredentialRef> available) {
+        return prompts.parseProposal(run(userId, AiUsageService.Source.kpi(AiUsage.KPI_PROPOSE, kpiName),
+                prompts.refinePrompt(kpiName, previous, feedback, available)));
+    }
+
+    @Override
     public CollectorBundle generateCollector(String userId, String kpiName, String description, String proposal,
                                              List<String> sources, List<CredentialRef> credentials,
                                              String previousBundleJson, String previousError) {

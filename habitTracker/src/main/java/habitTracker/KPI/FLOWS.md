@@ -72,12 +72,12 @@ To change: `RunnerOnlyKpiMigration` (bump `MIGRATION_ID` to re-run a changed mig
 
 ## Capability agent loop (M8, stages 1-4) + repair (M12)
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`) + `styles/organisms/automate-dialog.css` + shared `static/js/molecules/step-list.js`; prompts `resources/prompts/kpi-capability-{propose,previous-failure}.md` + `kpi-collector-generate.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`) + `styles/organisms/automate-dialog.css` + shared `static/js/molecules/step-list.js`; prompts `resources/prompts/kpi-capability-{propose,refine,previous-failure}.md` + `kpi-collector-generate.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
 
 Async UI wrapper (the UI never calls the blocking endpoints below):
 ```
 UI action (Propose / Approve and build / Regenerate / Fix it)
-  → POST /api/kpis/{name}/capability/jobs {action: propose|approve|regenerate|repair, id?, description?}
+  → POST /api/kpis/{name}/capability/jobs {action: propose|approve|regenerate|repair|wrong|contract|sensor|refine, id?, description? (refine: feedback, 1..2000 chars)}
   → CapabilityAgentController.startJob() (userId captured on the request thread) → CapabilityTaskService.start()
       bad action / missing id → 400; a job already running for (user, KPI) → 409 (UI then resumes it via /jobs/active)
   → 202 {jobId}; worker pool (4 daemon threads) → CapabilityProgress.with(sink) → CapabilityAgentService.proposeAs/approveAs/regenerateAs/repairAs(userId, ...)
@@ -95,7 +95,7 @@ To change stage texts: `CapabilityAgentService` `CapabilityProgress.step()` call
 
 Blocking endpoints (`/propose`, `/{id}/approve`, `/{id}/regenerate`, `/repair`) are kept unchanged for API callers and the integration tests; the nightly repair (`AgentCapabilityRepairTrigger`) calls `repairFor()` directly and never binds a progress sink (all `CapabilityProgress` calls are no-ops there).
 
-Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → AWAITING_CONFIRM → SHADOW → ACTIVE | TEST_FAILED` (S1; see "Confirm gate + shadow" below); `REJECTED` (user said no / superseded); `RETIRED` (ex-SERVER/WINDOWS version, see above); `AWAITING_SENSOR` / `AWAITING_CONTRACT` (RUNNER); `NEEDS_REPAIR` (old version while a repair version is built) → `DISABLED` once the new one is ACTIVE.
+Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → AWAITING_CONFIRM → SHADOW → ACTIVE | TEST_FAILED` (S1; see "Confirm gate + shadow" below); `REJECTED` (user said no / superseded); `RETIRED` (ex-SERVER/WINDOWS version, see above); `AWAITING_SENSOR` / `AWAITING_CONTRACT` (RUNNER); `NEEDS_REPAIR` (old version while a repair version is built) → `DISABLED` once the new one is ACTIVE. Refine (below) is not a status: from `PROPOSED` / `TEST_FAILED` it creates a NEW `PROPOSED` version and rejects the old one.
 
 ```
 1-2 PROPOSE   POST /api/kpis/{name}/capability/propose {description}
@@ -118,6 +118,8 @@ Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → AWAITING_CON
               → older PROPOSED/TEST_FAILED rows → REJECTED; new KPIProxyCapability v(latest+1) platform=RUNNER status=PROPOSED,
                 declaredCapabilities {sources: [...], credentials?: ["name@host"]}; an http plan pins runnerDeviceId to the
                 runner whose list it was checked against (credentials are per runner)
+              → also parsed/stored: assumptions (0-5 short items, assumptions + open questions ending "?"; missing/garbled → empty list, never an error);
+                planRevision = 1, changeSummary / refineFeedback null
               → UI shows plain-language facts (Measures / Data comes from / Updates / Needs from you), the full plan collapsed,
                 and what the collector may read
 3-4 APPROVE   POST .../capability/{id}/approve
@@ -132,6 +134,17 @@ RETRY         POST .../capability/{id}/regenerate  (only TEST_FAILED, attempts <
               → same attempt(), previous bundle + failureReason fed into the prompt
               runner offline/busy/failed/timeout/bad-JSON → TEST_FAILED "Code generation failed: ..." but do NOT count as an attempt
               (no runner → failureReason "Code generation failed: Connect a runner to generate this capability"; regenerate once connected)
+REFINE        job action "refine" {id, feedback} (blocking twin POST .../capability/{id}/refine {feedback}); jobs endpoint → 202 {jobId}
+              → CapabilityAgentService.refineAs(): capability must be PROPOSED or TEST_FAILED else 409 "conflict"; feedback blank / >2000 → 400 "invalid"
+                (job start validates feedback up front → 400, no job); latest ACTIVE/SHADOW → 409; step "Revising the plan on your runner"
+              → CapabilityGenerator.refine() → RunnerCapabilityGenerator → CapabilityPrompts.refinePrompt() (previous plan in full + original description
+                + feedback, both inside <<<...>>> delimiters with those chars stripped, + failureReason when TEST_FAILED) → same parseProposal() (+ changeSummary)
+                → same checkSources() gate and runner-credential pinning as propose; usage recorded as ai_usage kind kpi_propose
+              → saveProposed(): older PROPOSED/TEST_FAILED/... → REJECTED; new version v(latest+1) PROPOSED, description copied from the old one,
+                planRevision = old+1, changeSummary (fallback "Plan updated from your feedback."), refineFeedback = the user's text, assumptions
+              → CapabilityDTO gains planRevision (int, 1 for legacy), assumptions (List), changeSummary, refineFeedback (nullable)
+              UI (kpi-list.js openAutomateModal()): Refine box under the plan, assumptions list, "Plan vN · what changed" line, then Approve as before
+              To change limits/wording: CapabilityAgentService.refineAs(); the prompt: resources/prompts/kpi-capability-refine.md
 REJECT        POST .../capability/{id}/reject (PROPOSED / TEST_FAILED / AWAITING_CONFIRM / AWAITING_SENSOR / AWAITING_CONTRACT → REJECTED; UI footer "Discard setup" → inline confirm → describe form prefilled = start over)
               Dialog close (✕ / Esc / backdrop) never changes state; a running job has no cancel endpoint, so Discard is disabled until it finishes [NOT IMPLEMENTED: job cancel, "Resume setup" hint on the KPI card]
 REPAIR (M12)  proxy breaker trips → ProxyHealthService.recordFailure()/flagAnomaly() → CapabilityRepairTrigger.attemptRepair(kpi)
@@ -220,7 +233,7 @@ Errors: 400 bad input/not found, 409 conflict (wrong status, attempt cap, alread
 
 To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what is grantable: `CapabilityAgentService.checkSources()`. To change the build / dry run: `RunnerCollectorPipeline`. To change prompts: `resources/prompts/kpi-capability-*.md` (`{{PLACEHOLDER}}`s, filled once by `CapabilityPrompts.fill()`); JSON contract: `CapabilityPrompts.parseProposal()` / `parseCollectorBundle()`. To change runner choice: `OnlineRunnerSelector.pick()`. To change job timing: `kpi.capability.job-timeout-ms`, `kpi.capability.poll-ms`; repair wake-up: `kpi.repair.runner-check-ms`. To change repair behaviour: `AgentCapabilityRepairTrigger` / `CapabilityAgentService.repairFor()`.
 
-[NOT IMPLEMENTED] Intake as a multi-turn conversation (today: one free-text description → one proposal; reject + re-describe to iterate). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. More than one page per http source (no pagination), POST APIs, OAuth flows (the user pastes a token).
+Intake: one description → one proposal, then a refine loop (feedback → revised plan, above); a full multi-turn chat is [NOT IMPLEMENTED] (each refine is stateless: previous plan + one feedback text, no history beyond the last revision). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. More than one page per http source (no pagination), POST APIs, OAuth flows (the user pastes a token).
 
 ## Technology Notes
 
@@ -292,6 +305,8 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Static check rules (imports allowlist, deny-list globs, fixtures ≥2 incl. 0) | `CollectorStaticCheck.check()`, `ALLOWED_MODULES`, `DENIED_DIRS/FILES` | keep deny-list in sync with Relay `sources.go` |
 | Contract sentence | `CollectorStaticCheck.contractText()` | shown at AWAITING_CONTRACT |
 | Collector generation prompt | `resources/prompts/kpi-collector-generate.md`, `CapabilityPrompts.collectorPrompt()` / `parseCollectorBundle()` | `{{SOURCES}}`, `{{CREDENTIALS}}` (approved name + host) |
+| Refine loop (feedback → new PROPOSED revision) | `CapabilityAgentService.refineAs()`, `CapabilityTaskService.Action.REFINE`, `CapabilityAgentController.refine()` | feedback cap `MAX_DESCRIPTION_CHARS` (2000) |
+| Refine prompt / revision fields | `resources/prompts/kpi-capability-refine.md`, `CapabilityPrompts.refinePrompt()`, `KPIProxyCapability.planRevision/assumptions/changeSummary/refineFeedback` | `CapabilityPrompts.MAX_ASSUMPTIONS` (5) |
 | Propose prompt (runner only, no platform choice) | `resources/prompts/kpi-capability-propose.md` | `sources` field |
 | Collector id on the runner | `RunnerCollectorPipeline.attempt()` (`"kpi-" + kpiId`) | stable across versions |
 | Readings pull schedule / on-demand | `kpi.runner.pull-cron` (hourly :40), `RunnerCollectorProvider.pullDue()/pull()`, `POST .../capability/pull` | offline = skip |

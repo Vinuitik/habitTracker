@@ -32,7 +32,13 @@ public record CapabilityDTO(
         // S3 RUNNER: the data-access contract in plain language + per-case fixture results (null / empty when none)
         String contractText,
         List<KPIProxyCapability.CollectorTestCase> collectorTests,
-        boolean repair) {
+        boolean repair,
+        // Refine loop (nullable/additive): plan revision (1 = fresh propose), the AI's assumptions + open questions,
+        // one sentence on what changed vs the previous plan, and the feedback that produced this revision.
+        int planRevision,
+        List<String> assumptions,
+        String changeSummary,
+        String refineFeedback) {
 
     /** Pre-S1 shape (no sample / confirm fields). */
     public CapabilityDTO(String id, String kpiId, int version, CapabilityStatus status, String description,
@@ -41,7 +47,7 @@ public record CapabilityDTO(
                          int maxAttempts, String failureReason, String lastResult) {
         this(id, kpiId, version, status, description, proposal, measures, dataSource, platform, declaredCapabilities,
                 sourceCode, attempts, maxAttempts, failureReason, lastResult,
-                null, null, null, null, List.of(), 0, CapabilityAgentService.MAX_CONFIRM_ROUNDS, null, null, List.of(), false);
+                null, null, null, null, List.of(), 0, CapabilityAgentService.MAX_CONFIRM_ROUNDS, null, null, List.of(), false, 1, List.of(), null, null);
     }
 
     static CapabilityDTO from(KPIProxyCapability c) {
@@ -57,7 +63,9 @@ public record CapabilityDTO(
                 c.getShadowUntil() == null ? null : c.getShadowUntil().toString(),
                 contractText(c),
                 c.getCollectorTests() == null ? List.of() : c.getCollectorTests(),
-                Boolean.TRUE.equals(c.getRepair()));
+                Boolean.TRUE.equals(c.getRepair()),
+                c.getPlanRevision() == null ? 1 : c.getPlanRevision(), c.getAssumptions() == null ? List.of() : c.getAssumptions(),
+                c.getChangeSummary(), c.getRefineFeedback());
     }
 
     private static String contractText(KPIProxyCapability c) {

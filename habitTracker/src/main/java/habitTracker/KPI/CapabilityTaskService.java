@@ -37,7 +37,7 @@ public class CapabilityTaskService {
     static final int MAX_EVENTS = 200;
     static final int WORKERS = 4;
 
-    enum Action { PROPOSE, APPROVE, REGENERATE, REPAIR, WRONG, CONTRACT, SENSOR }
+    enum Action { PROPOSE, APPROVE, REGENERATE, REPAIR, WRONG, CONTRACT, SENSOR, REFINE }
 
     record Event(long seq, String kind, String text) {}
 
@@ -128,8 +128,11 @@ public class CapabilityTaskService {
     /** userId must be captured on the request thread. → jobId. */
     public String start(String userId, String kpiName, String action, String capabilityId, String description) {
         Action a = parse(action);
-        if ((a == Action.APPROVE || a == Action.REGENERATE || a == Action.WRONG || a == Action.CONTRACT || a == Action.SENSOR) && (capabilityId == null || capabilityId.isBlank())) {
+        if ((a == Action.APPROVE || a == Action.REGENERATE || a == Action.WRONG || a == Action.CONTRACT || a == Action.SENSOR || a == Action.REFINE) && (capabilityId == null || capabilityId.isBlank())) {
             throw new IllegalArgumentException("Missing capability id");
+        }
+        if (a == Action.REFINE && (description == null || description.isBlank() || description.length() > 2000)) {
+            throw new IllegalArgumentException("Feedback must be 1 to 2000 characters");
         }
         evictFinished();
         Task task;
@@ -175,6 +178,7 @@ public class CapabilityTaskService {
                 case REPAIR -> agent.repairAs(task.userId, task.kpiName);
                 case WRONG -> agent.wrongAs(task.userId, task.kpiName, capabilityId, description); // description = the user's reason
                 case CONTRACT -> agent.approveContractAs(task.userId, task.kpiName, capabilityId); // S3 RUNNER contract approval
+                case REFINE -> agent.refineAs(task.userId, task.kpiName, capabilityId, description); // description = the user's feedback
                 case SENSOR -> agent.installSensorAs(task.userId, task.kpiName, capabilityId);      // S3 install/check ActivityWatch
             });
             if (dto.status() == CapabilityStatus.TEST_FAILED) task.add("error", "Did not pass");
@@ -212,7 +216,7 @@ public class CapabilityTaskService {
         try {
             return Action.valueOf(String.valueOf(action).trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown action (expected propose, approve, regenerate, repair, wrong, contract or sensor)");
+            throw new IllegalArgumentException("Unknown action (expected propose, approve, regenerate, repair, wrong, contract, sensor or refine)");
         }
     }
 }

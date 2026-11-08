@@ -31,11 +31,13 @@ public class CapabilityPrompts {
     private final ObjectMapper json;
     private final String proposeTemplate;
     private final String previousFailureTemplate;
+    private final String refineTemplate;
 
     public CapabilityPrompts(ObjectMapper json) {
         this.json = json;
         this.proposeTemplate = load("kpi-capability-propose.md").stripTrailing();
         this.previousFailureTemplate = load("kpi-capability-previous-failure.md");
+        this.refineTemplate = load("kpi-capability-refine.md").stripTrailing();
         this.collectorTemplate = load("kpi-collector-generate.md").stripTrailing();
     }
 
@@ -71,6 +73,40 @@ public class CapabilityPrompts {
     public String proposePrompt(String kpiName, String description, List<CredentialRef> available) {
         return fill(proposeTemplate, Map.of("KPI_NAME", kpiName, "DESCRIPTION", description,
                 "CREDENTIALS", credentialList(available, "(none yet)")));
+    }
+
+    /**
+     * Refine prompt: the previous plan in full, the original description and the user's feedback (both untrusted, so
+     * inside delimiters with the delimiter characters stripped), plus the failure reason when the version is TEST_FAILED.
+     */
+    public String refinePrompt(String kpiName, KPIProxyCapability prev, String feedback, List<CredentialRef> available) {
+        StringBuilder plan = new StringBuilder();
+        plan.append("Proposal: ").append(prev.getProposal()).append('\n');
+        if (prev.getMeasures() != null) plan.append("Measures: ").append(prev.getMeasures()).append('\n');
+        if (prev.getDataSource() != null) plan.append("Data source: ").append(prev.getDataSource()).append('\n');
+        List<String> sources = prev.getDeclaredCapabilities() == null ? null : prev.getDeclaredCapabilities().get("sources");
+        plan.append("Sources: ").append(sources == null || sources.isEmpty() ? "(none)" : String.join(", ", sources)).append('\n');
+        if (prev.getAssumptions() != null && !prev.getAssumptions().isEmpty()) {
+            plan.append("Assumptions and open questions the user was asked to confirm:\n");
+            prev.getAssumptions().forEach(a -> plan.append("- ").append(a).append('\n'));
+        }
+        String failure = prev.getStatus() == CapabilityStatus.TEST_FAILED && prev.getFailureReason() != null
+                && !prev.getFailureReason().isBlank()
+                ? "This plan was approved and built, but the build FAILED its test. Failure reason (from the system, may be technical):\n"
+                  + prev.getFailureReason() : "";
+        Map<String, String> vars = new HashMap<>();
+        vars.put("KPI_NAME", kpiName);
+        vars.put("DESCRIPTION", untrusted(prev.getDescription()));
+        vars.put("PREVIOUS_PLAN", plan.toString().stripTrailing());
+        vars.put("FEEDBACK", untrusted(feedback));
+        vars.put("FAILURE", failure);
+        vars.put("CREDENTIALS", credentialList(available, "(none yet)"));
+        return fill(refineTemplate, vars);
+    }
+
+    // Delimiter characters removed so user text cannot close its own <<< >>> block.
+    private static String untrusted(String s) {
+        return s == null ? "" : s.replace("<<<", "").replace(">>>", "").strip();
     }
 
     /** "- github (host api.github.com)" lines. Names/hosts come from the runner; re-filtered here anyway. */
@@ -110,7 +146,25 @@ public class CapabilityPrompts {
             });
         }
         return new CapabilityGenerator.Proposal(proposal.asText().strip(),
-                optionalText(out, "measures"), optionalText(out, "dataSource"), sources, credentials);
+                optionalText(out, "measures"), optionalText(out, "dataSource"), sources, credentials,
+                parseAssumptions(out.get("assumptions")), optionalText(out, "changeSummary"));
+    }
+
+    static final int MAX_ASSUMPTIONS = 5;
+
+    // Tolerant: missing / not an array / junk items → empty or skipped, never a failure.
+    private static List<String> parseAssumptions(JsonNode n) {
+        List<String> out = new ArrayList<>();
+        if (n == null || !n.isArray()) return out;
+        for (JsonNode v : n) {
+            if (out.size() >= MAX_ASSUMPTIONS) break;
+            if (!v.isTextual()) continue;
+            String s = v.asText().strip();
+            if (s.isEmpty()) continue;
+            if (s.length() > 200) s = s.substring(0, 200) + "...";
+            if (!out.contains(s)) out.add(s);
+        }
+        return out;
     }
 
     // Optional one-line summaries for the UI; absent / non-text / blank → null (the UI falls back).

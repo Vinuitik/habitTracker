@@ -87,7 +87,13 @@ public class CapabilityAgentService {
         // Credentials are per runner: build on the runner whose list the plan was checked against.
         String pinDevice = granted.containsKey("credentials") && onRunner != null ? onRunner.deviceId() : null;
 
-        // A newer proposal supersedes any unfinished older one.
+        return CapabilityDTO.from(saveProposed(userId, kpi, latest, description.trim(), p, granted, pinDevice, 1, null));
+    }
+
+    /** A newer proposal supersedes any unfinished older one; the new version is PROPOSED. */
+    private KPIProxyCapability saveProposed(String userId, KPI kpi, Optional<KPIProxyCapability> latest, String description,
+                                            CapabilityGenerator.Proposal p, Map<String, List<String>> granted,
+                                            String pinDevice, int planRevision, String refineFeedback) {
         for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
             if (old.getStatus() == CapabilityStatus.PROPOSED || old.getStatus() == CapabilityStatus.TEST_FAILED
                     || old.getStatus() == CapabilityStatus.PENDING_TEST || old.getStatus() == CapabilityStatus.AWAITING_CONFIRM
@@ -99,15 +105,58 @@ public class CapabilityAgentService {
         KPIProxyCapability cap = KPIProxyCapability.builder()
                 .userId(userId).kpiId(kpi.getId())
                 .platform(CapabilityPlatform.RUNNER).language("python")
-                .description(description.trim()).proposal(p.proposal())
+                .description(description).proposal(p.proposal())
                 .measures(p.measures()).dataSource(p.dataSource())
+                .assumptions(p.assumptions())
+                .planRevision(planRevision)
+                .changeSummary(refineFeedback == null ? null : p.changeSummary())
+                .refineFeedback(refineFeedback)
                 .declaredCapabilities(granted)
                 .runnerDeviceId(pinDevice)
                 .status(CapabilityStatus.PROPOSED)
                 .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
                 .createdAt(LocalDateTime.now())
                 .build();
-        return CapabilityDTO.from(repository.save(cap));
+        return repository.save(cap);
+    }
+
+    /**
+     * Refine loop: a PROPOSED or TEST_FAILED plan + the user's feedback → a NEW PROPOSED version (planRevision + 1)
+     * that supersedes the old one exactly like propose. Same checkSources gate and runner handling as propose.
+     */
+    public CapabilityDTO refine(String kpiName, String capabilityId, String feedback) {
+        return refineAs(currentUser(), kpiName, capabilityId, feedback);
+    }
+
+    CapabilityDTO refineAs(String userId, String kpiName, String capabilityId, String feedback) {
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability prev = requireCapability(userId, kpi, capabilityId);
+        if (prev.getStatus() != CapabilityStatus.PROPOSED && prev.getStatus() != CapabilityStatus.TEST_FAILED) {
+            throw new IllegalStateException("Only a proposed or failed plan can be refined (status " + prev.getStatus() + ")");
+        }
+        if (feedback == null || feedback.isBlank()) {
+            throw new IllegalArgumentException("Say what to change in the plan");
+        }
+        if (feedback.length() > MAX_DESCRIPTION_CHARS) {
+            throw new IllegalArgumentException("Feedback too long (max " + MAX_DESCRIPTION_CHARS + " chars)");
+        }
+        Optional<KPIProxyCapability> latest = repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), userId);
+        if (latest.isPresent() && (latest.get().getStatus() == CapabilityStatus.ACTIVE
+                || latest.get().getStatus() == CapabilityStatus.SHADOW)) {
+            throw new IllegalStateException("This KPI already has an active capability");
+        }
+
+        CapabilityProgress.step("Revising the plan on your runner");
+        RunnerCollectorPipeline.RunnerCredentials onRunner = runnerPipeline.runnerCredentials(userId);
+        List<CredentialRef> available = onRunner == null ? List.of() : onRunner.list();
+        CapabilityGenerator.Proposal p = generator.refine(userId, kpi.getName(), prev, feedback.trim(), available);
+        Map<String, List<String>> granted = checkSources(p.sources(), p.credentials(), available);
+        String pinDevice = granted.containsKey("credentials") && onRunner != null ? onRunner.deviceId() : null;
+        int revision = (prev.getPlanRevision() == null ? 1 : prev.getPlanRevision()) + 1;
+        String change = p.changeSummary() == null ? "Plan updated from your feedback." : p.changeSummary();
+        return CapabilityDTO.from(saveProposed(userId, kpi, latest, prev.getDescription(),
+                new CapabilityGenerator.Proposal(p.proposal(), p.measures(), p.dataSource(), p.sources(), p.credentials(),
+                        p.assumptions(), change), granted, pinDevice, revision, feedback.trim()));
     }
 
     /** Stages 3-4. Approval is the permission grant for exactly the stored declaredCapabilities. */

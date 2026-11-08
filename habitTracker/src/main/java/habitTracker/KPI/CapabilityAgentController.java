@@ -44,6 +44,12 @@ public class CapabilityAgentController {
         return service.propose(name, d == null ? null : d.toString());
     }
 
+    /** Refine loop (blocking twin of job action "refine"): body {feedback} → new PROPOSED version. */
+    @PostMapping("/{id}/refine")
+    public CapabilityDTO refine(@PathVariable String name, @PathVariable String id, @RequestBody Map<String, Object> body) {
+        return service.refine(name, id, str(body.get("feedback")));
+    }
+
     @PostMapping("/{id}/approve")
     public CapabilityDTO approve(@PathVariable String name, @PathVariable String id) {
         return service.approve(name, id);
@@ -99,11 +105,13 @@ public class CapabilityAgentController {
 
     // ── async (UI) ──────────────────────────────────────────────────────────
 
-    /** body: {action: propose|approve|regenerate|repair|wrong, id?, description? (= the reason for "wrong")} → 202 {jobId}. */
+    /** body: {action: propose|approve|regenerate|repair|wrong|refine, id?, description? (= the reason for "wrong"), feedback? (for "refine")} → 202 {jobId}. */
     @PostMapping("/jobs")
     public ResponseEntity<?> startJob(@PathVariable String name, @RequestBody Map<String, Object> body) {
-        String jobId = tasks.start(currentUser(), name, str(body.get("action")), str(body.get("id")),
-                str(body.get("description")));
+        String action = str(body.get("action"));
+        boolean refine = "refine".equalsIgnoreCase(action == null ? "" : action.trim());
+        String jobId = tasks.start(currentUser(), name, action, str(body.get("id")),
+                str(body.get(refine ? "feedback" : "description")));
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("jobId", jobId));
     }
 

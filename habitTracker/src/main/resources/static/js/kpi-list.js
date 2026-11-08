@@ -168,6 +168,7 @@ const AUTOMATE = {
     confirming: false,  // footer shows the inline "Discard this automation?" confirm
     notice: null,       // one-shot line at the top of the panel ("Setup discarded...")
     returnFocus: null,  // element focused before the dialog opened
+    refineDraft: '',    // typed refine feedback; survives re-renders and a failed refine
     runnerOnline: null, // GET KPI_CAP_RUNNER at open: false → "Connect a runner" (null = unknown, not blocking)
 };
 // CapabilityGeneratorException.NO_RUNNER_MESSAGE: a job that failed for it also gets the Relay link.
@@ -213,7 +214,7 @@ async function openAutomateModal(kpiName, needsRepair) {
     const modal = document.getElementById('automateModal');
     if (!modal.classList.contains('open')) AUTOMATE.returnFocus = document.activeElement;
     Object.assign(AUTOMATE, { kpiName, needsRepair: !!needsRepair, reloadOnClose: false, job: null, current: null,
-        confirming: false, notice: null, runnerOnline: null });
+        confirming: false, notice: null, runnerOnline: null, refineDraft: '' });
     document.getElementById('automateTitle').textContent = `Automate · ${kpiName}`;
     modal.classList.add('open');
     renderAutomate(null);
@@ -260,7 +261,7 @@ async function automateStart(action, extra) {
     const gen = AUTOMATE.gen;
     AUTOMATE.notice = null;
     AUTOMATE.confirming = false;
-    AUTOMATE.job = { id: null, state: 'running', events: [], nextSeq: 0, error: null, usage: null, startedAt: Date.now() };
+    AUTOMATE.job = { id: null, state: 'running', events: [], nextSeq: 0, error: null, usage: null, startedAt: Date.now(), refining: action === 'refine' };
     renderAutomate(AUTOMATE.current);
     try {
         const data = await automateFetch(E_KPI.KPI_CAP_JOBS(AUTOMATE.kpiName), 'POST', { action, ...extra });
@@ -367,6 +368,7 @@ async function automatePoll(gen) {
         if (snap.state === 'done') {
             const cap = snap.result;
             if (cap && (cap.status === 'ACTIVE' || cap.status === 'SHADOW')) AUTOMATE.reloadOnClose = true;
+            if (job.refining) AUTOMATE.refineDraft = '';   // refined plan arrived: feedback consumed
             renderAutomate(cap);
             return;
         }
@@ -464,6 +466,7 @@ function renderAutomateConfirm(body, cap) {
 
 // Plain-language summary of a capability: what / where from / how often / what it needs. Runner collectors only.
 function renderAutomateSummary(body, cap) {
+    renderAutomateAssumptions(body, cap);
     const facts = automateEl('dl', 'automate__facts');
     const fact = (label, value) => facts.append(automateEl('dt', null, label), automateEl('dd', null, value));
     fact('Measures', cap.measures || cap.description || 'See the plan below.');
@@ -476,6 +479,64 @@ function renderAutomateSummary(body, cap) {
         plan.append(automateEl('summary', null, 'Full plan'), automateEl('div', 'automate__text', cap.proposal));
         body.append(plan);
     }
+}
+
+// "Before I build, check these": assumptions ending in "?" are questions (badge), the rest are statements.
+// Plan v2+: revision line + the user's last feedback. All AI/user text via textContent.
+function renderAutomateAssumptions(body, cap) {
+    if (cap.status !== 'PROPOSED') return;
+    const items = (cap.assumptions || []).filter(a => typeof a === 'string' && a.trim());
+    if (items.length) {
+        const box = automateEl('section', 'automate__assume');
+        box.append(automateEl('h3', 'automate__assume-title', 'Before I build, check these'));
+        const list = automateEl('ul', 'automate__assume-list');
+        items.forEach(a => {
+            const q = a.trim().endsWith('?');
+            const li = automateEl('li', 'automate__assume-item' + (q ? ' automate__assume-item--question' : ''));
+            const mark = automateEl('span', 'automate__assume-mark', q ? '?' : '•');
+            mark.setAttribute('aria-label', q ? 'Question' : 'Assumption');
+            li.append(mark, automateEl('span', null, a.trim()));
+            list.append(li);
+        });
+        box.append(list);
+        body.append(box);
+    }
+    if (cap.planRevision > 1) {
+        const meta = automateEl('div', 'automate__revision');
+        meta.append(automateEl('div', 'automate__revision-line',
+            `Plan v${cap.planRevision}` + (cap.changeSummary ? ` · ${cap.changeSummary}` : '')));
+        if (cap.refineFeedback) meta.append(automateEl('div', 'automate__revision-ask', `You asked: ${cap.refineFeedback}`));
+        body.append(meta);
+    }
+}
+
+// Refine loop (PROPOSED / TEST_FAILED): free-text feedback → new PROPOSED plan. Returns the footer button.
+function renderAutomateRefine(body, cap, heading) {
+    const group = automateEl('div', 'form-group automate__refine');
+    const label = automateEl('label', 'form-group__label', heading);
+    label.htmlFor = 'automateRefineText';
+    const ta = automateEl('textarea', 'input');
+    ta.id = 'automateRefineText';
+    ta.rows = 3;
+    ta.maxLength = 2000;
+    ta.placeholder = 'e.g. Only count weekdays, or: Use my Toggl data instead';
+    ta.value = AUTOMATE.refineDraft;
+    const btn = automateButton('Refine plan', 'btn--ghost', () => submit());
+    const sync = () => { btn.disabled = !ta.value.trim(); };
+    const submit = () => {
+        const feedback = ta.value.trim();
+        if (!feedback || btn.disabled) return;
+        AUTOMATE.refineDraft = ta.value;
+        automateStart('refine', { id: cap.id, feedback });
+    };
+    ta.addEventListener('input', () => { AUTOMATE.refineDraft = ta.value; sync(); });
+    ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+    });
+    sync();
+    group.append(label, ta, automateEl('span', 'form-group__hint', 'Answer the questions above here too. Ctrl/Cmd+Enter to send.'));
+    body.append(group);
+    return btn;
 }
 
 // What the collector may read (declared local sources). All text via textContent (LLM output).
@@ -761,15 +822,19 @@ function renderAutomate(cap, error) {
     } else if (status === 'PROPOSED') {
         renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
-        automateFoot(automateButton('Approve and build', 'btn--primary', () => automateStart('approve', { id: cap.id })));
+        const refine = renderAutomateRefine(body, cap, 'What should change?');
+        automateFoot(refine, automateButton('Approve and build', 'btn--primary', () => automateStart('approve', { id: cap.id })));
     } else if (status === 'TEST_FAILED') {
         renderAutomateFailure(body, cap);
         renderAutomateTests(body, cap);
         renderAutomateSummary(body, cap);
         renderAutomateAccess(body, cap);
         renderAutomateCode(body, cap);
+        const refine = renderAutomateRefine(body, cap, 'Tell the AI what to try differently');
         if (cap.attempts < cap.maxAttempts) {
-            automateFoot(automateButton('Regenerate', 'btn--primary', () => automateStart('regenerate', { id: cap.id })));
+            automateFoot(refine, automateButton('Regenerate', 'btn--primary', () => automateStart('regenerate', { id: cap.id })));
+        } else {
+            automateFoot(refine);
         }
     } else if (status === 'AWAITING_CONFIRM') {
         renderAutomateConfirm(body, cap);

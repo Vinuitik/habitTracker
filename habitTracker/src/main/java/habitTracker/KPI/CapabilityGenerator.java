@@ -19,9 +19,16 @@ public interface CapabilityGenerator {
      * yet makes CapabilityAgentService reject the plan with "add a credential named X for host Y".
      */
     record Proposal(String proposal, String measures, String dataSource, List<String> sources,
-                    List<CredentialRef> credentials) {
+                    List<CredentialRef> credentials, List<String> assumptions, String changeSummary) {
         public Proposal {
             credentials = credentials == null ? List.of() : List.copyOf(credentials);
+            assumptions = assumptions == null ? List.of() : List.copyOf(assumptions);
+        }
+
+        /** Without assumptions / changeSummary (older callers, tests). */
+        public Proposal(String proposal, String measures, String dataSource, List<String> sources,
+                        List<CredentialRef> credentials) {
+            this(proposal, measures, dataSource, sources, credentials, List.of(), null);
         }
 
         public Proposal(String proposal, String measures, String dataSource, List<String> sources) {
@@ -38,6 +45,13 @@ public interface CapabilityGenerator {
 
     /** available = the credentials (name + host, never values) on the runner the collector will be installed on. */
     Proposal propose(String userId, String kpiName, String description, List<CredentialRef> available);
+
+    /**
+     * Refine loop: a revised plan from the previous version (its description, plan text, assumptions and, when it is
+     * TEST_FAILED, failureReason) plus the user's feedback. Same output as propose, with changeSummary set.
+     */
+    Proposal refine(String userId, String kpiName, KPIProxyCapability previous, String feedback,
+                    List<CredentialRef> available);
 
     /**
      * A collector bundle (manifest + collector.py + fixtures). previousBundleJson/previousError are non-null when
