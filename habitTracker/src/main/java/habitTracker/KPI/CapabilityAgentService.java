@@ -65,6 +65,11 @@ public class CapabilityAgentService {
     }
 
     CapabilityDTO proposeAs(String userId, String kpiName, String description) {
+        return proposeAs(userId, kpiName, description, null);
+    }
+
+    /** targetDeviceIds: the runners the user picked in the Automate dialog (already ownership-checked); null/empty = default. */
+    CapabilityDTO proposeAs(String userId, String kpiName, String description, List<String> targetDeviceIds) {
         KPI kpi = requireKpi(userId, kpiName);
         if (description == null || description.isBlank()) {
             throw new IllegalArgumentException("Describe what should be captured");
@@ -87,7 +92,12 @@ public class CapabilityAgentService {
         // Credentials are per runner: build on the runner whose list the plan was checked against.
         String pinDevice = granted.containsKey("credentials") && onRunner != null ? onRunner.deviceId() : null;
 
-        return CapabilityDTO.from(saveProposed(userId, kpi, latest, description.trim(), p, granted, pinDevice, 1, null));
+        KPIProxyCapability saved = saveProposed(userId, kpi, latest, description.trim(), p, granted, pinDevice, 1, null);
+        if (targetDeviceIds != null && !targetDeviceIds.isEmpty()) {
+            saved.setTargetDeviceIds(new java.util.ArrayList<>(targetDeviceIds));
+            saved = repository.save(saved);
+        }
+        return CapabilityDTO.from(saved);
     }
 
     /** A newer proposal supersedes any unfinished older one; the new version is PROPOSED. */

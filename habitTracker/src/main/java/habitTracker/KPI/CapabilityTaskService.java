@@ -127,6 +127,12 @@ public class CapabilityTaskService {
 
     /** userId must be captured on the request thread. → jobId. */
     public String start(String userId, String kpiName, String action, String capabilityId, String description) {
+        return start(userId, kpiName, action, capabilityId, description, null);
+    }
+
+    /** targetDeviceIds (propose only, already ownership-checked): the runners the user picked. */
+    public String start(String userId, String kpiName, String action, String capabilityId, String description,
+                        java.util.List<String> targetDeviceIds) {
         Action a = parse(action);
         if ((a == Action.APPROVE || a == Action.REGENERATE || a == Action.WRONG || a == Action.CONTRACT || a == Action.SENSOR || a == Action.REFINE) && (capabilityId == null || capabilityId.isBlank())) {
             throw new IllegalArgumentException("Missing capability id");
@@ -143,7 +149,7 @@ public class CapabilityTaskService {
             task = new Task(UUID.randomUUID().toString(), userId, kpiName);
             tasks.put(task.id, task);
         }
-        pool.submit(() -> run(task, a, capabilityId, description));
+        pool.submit(() -> run(task, a, capabilityId, description, targetDeviceIds));
         return task.id;
     }
 
@@ -164,7 +170,7 @@ public class CapabilityTaskService {
                 .filter(t -> t.running() && t.userId.equals(userId) && t.kpiName.equals(kpiName)).findFirst();
     }
 
-    private void run(Task task, Action a, String capabilityId, String description) {
+    private void run(Task task, Action a, String capabilityId, String description, java.util.List<String> targetDeviceIds) {
         CapabilityProgress.Sink sink = new CapabilityProgress.Sink() {
             public void step(String text) { task.add("step", text); }
             public void runnerEvent(String kind, String text) { task.add(kind, text); }
@@ -172,7 +178,9 @@ public class CapabilityTaskService {
         };
         try {
             CapabilityDTO dto = CapabilityProgress.with(sink, () -> switch (a) {
-                case PROPOSE -> agent.proposeAs(task.userId, task.kpiName, description);
+                case PROPOSE -> targetDeviceIds == null || targetDeviceIds.isEmpty()
+                        ? agent.proposeAs(task.userId, task.kpiName, description)
+                        : agent.proposeAs(task.userId, task.kpiName, description, targetDeviceIds);
                 case APPROVE -> agent.approveAs(task.userId, task.kpiName, capabilityId);
                 case REGENERATE -> agent.regenerateAs(task.userId, task.kpiName, capabilityId);
                 case REPAIR -> agent.repairAs(task.userId, task.kpiName);

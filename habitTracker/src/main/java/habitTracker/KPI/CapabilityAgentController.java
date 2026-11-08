@@ -25,6 +25,7 @@ public class CapabilityAgentController {
     private final KPIRepository kpiRepository;
     private final RunnerCollectorProvider runnerPull;
     private final CapabilityGenerator generator;
+    private final habitTracker.relay.DeviceService devices;
 
     @GetMapping
     public ResponseEntity<?> latest(@PathVariable String name) {
@@ -111,7 +112,7 @@ public class CapabilityAgentController {
         String action = str(body.get("action"));
         boolean refine = "refine".equalsIgnoreCase(action == null ? "" : action.trim());
         String jobId = tasks.start(currentUser(), name, action, str(body.get("id")),
-                str(body.get(refine ? "feedback" : "description")));
+                str(body.get(refine ? "feedback" : "description")), ownedTargets(body.get("targetDeviceIds")));
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("jobId", jobId));
     }
 
@@ -128,6 +129,14 @@ public class CapabilityAgentController {
         return tasks.poll(currentUser(), name, jobId, after).<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("error", "This job has expired. Reopen the dialog")));
+    }
+
+    /** Device ids from the request, kept only if the current user owns them (others silently dropped). */
+    private java.util.List<String> ownedTargets(Object raw) {
+        if (!(raw instanceof java.util.Collection<?> c)) return null;
+        String user = currentUser();
+        return c.stream().filter(java.util.Objects::nonNull).map(Object::toString).distinct()
+                .filter(id -> devices.owned(user, id).isPresent()).toList();
     }
 
     private static String str(Object o) {
