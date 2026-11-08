@@ -98,8 +98,9 @@ public class RunnerCollectorClient {
         return jobs.send(userId, deviceId, "POST", "/v1/collectors/" + checkId(id) + "/test", "{}", longCallMs);
     }
 
-    public void approve(String userId, String deviceId, String id, String contractHash) {
-        jobs.send(userId, deviceId, "POST", "/v1/collectors/" + checkId(id) + "/approve",
+    /** → {} (nothing to install) or {state:"installing"|"awaiting_confirm"} when the manifest's requires need installing. */
+    public JsonNode approve(String userId, String deviceId, String id, String contractHash) {
+        return jobs.send(userId, deviceId, "POST", "/v1/collectors/" + checkId(id) + "/approve",
                 json.createObjectNode().put("contractHash", contractHash).toString());
     }
 

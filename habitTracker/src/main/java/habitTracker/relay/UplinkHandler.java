@@ -1,6 +1,7 @@
 package habitTracker.relay;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
@@ -25,9 +26,11 @@ import java.util.Map;
 public class UplinkHandler extends TextWebSocketHandler implements HandshakeInterceptor {
 
     static final String DEVICE_ID = "relay.deviceId";
+    static final String USER_ID = "relay.userId";
 
     private final DeviceService devices;
     private final UplinkRegistry registry;
+    private final ApplicationEventPublisher events;
 
     @Override
     public boolean beforeHandshake(ServerHttpRequest req, ServerHttpResponse res, WebSocketHandler h,
@@ -40,6 +43,7 @@ public class UplinkHandler extends TextWebSocketHandler implements HandshakeInte
             return false;
         }
         attrs.put(DEVICE_ID, device.get().getId());
+        attrs.put(USER_ID, device.get().getUserId());
         return true;
     }
 
@@ -52,6 +56,8 @@ public class UplinkHandler extends TextWebSocketHandler implements HandshakeInte
         String id = deviceId(s);
         registry.register(id, s);
         devices.touch(id);
+        // Listeners must not block this thread: replies to their runner calls arrive on it.
+        events.publishEvent(new RunnerConnected((String) s.getAttributes().get(USER_ID), id));
     }
 
     @Override
