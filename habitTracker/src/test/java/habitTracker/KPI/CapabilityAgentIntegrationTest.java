@@ -267,6 +267,14 @@ class CapabilityAgentIntegrationTest {
     }
 
     @Test
+    void runnerStatus_reportsWhetherTheUsersRunnerIsOnline() throws Exception {
+        when(generator.runnerAvailable(alice.getId())).thenReturn(false);
+        when(generator.runnerAvailable(bob.getId())).thenReturn(true);
+        assertFalse(call(auth.session(alice), "GET", "/api/kpis/Widgets/capability/runner", null, 200).get("online").asBoolean());
+        assertTrue(call(auth.session(bob), "GET", "/api/kpis/Widgets/capability/runner", null, 200).get("online").asBoolean());
+    }
+
+    @Test
     void asyncJobs_noRunner_failsWithSentence() throws Exception {
         kpi(alice, "Widgets");
         when(generator.propose(anyString(), anyString(), anyString(), any())).thenThrow(CapabilityGeneratorException.noRunner(null));

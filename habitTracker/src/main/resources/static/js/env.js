@@ -22,6 +22,7 @@ window.ENV = {
     KPI_CAP:         (name) => `/api/kpis/${encodeURIComponent(name)}/capability`,
     KPI_CAP_REJECT:  (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/reject`,
     KPI_CAP_CONFIRM: (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/confirm`,
+    KPI_CAP_RUNNER:  (name) => `/api/kpis/${encodeURIComponent(name)}/capability/runner`,   // {online}
     KPI_CAP_JOBS:    (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs`,
     KPI_CAP_ACTIVE:  (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/active`,
     KPI_CAP_PULL:    (name) => `/api/kpis/${encodeURIComponent(name)}/capability/pull`,
@@ -63,6 +64,9 @@ window.ENV = {
     RELAY_V1:        relayV1,
     // path omitted/'' = filesystem roots, '~' = Documents (else home) on the runner
     RELAY_BROWSE:    (dev, path) => relayV1(dev, '/browse') + (path ? `?path=${encodeURIComponent(path)}` : ''),
+    // KPI credentials held on the runner (names + hosts only come back; the secret is PUT once, never read)
+    RELAY_CREDENTIALS: (dev) => relayV1(dev, '/credentials'),
+    RELAY_CREDENTIAL:  (dev, name) => relayV1(dev, `/credentials/${encodeURIComponent(name)}`),
   },
   ROUTES: {
     HOME:            '/today',

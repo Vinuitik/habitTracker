@@ -168,7 +168,10 @@ const AUTOMATE = {
     confirming: false,  // footer shows the inline "Discard this automation?" confirm
     notice: null,       // one-shot line at the top of the panel ("Setup discarded...")
     returnFocus: null,  // element focused before the dialog opened
+    runnerOnline: null, // GET KPI_CAP_RUNNER at open: false → "Connect a runner" (null = unknown, not blocking)
 };
+// CapabilityGeneratorException.NO_RUNNER_MESSAGE: a job that failed for it also gets the Relay link.
+const AUTOMATE_NO_RUNNER = 'Connect a runner to generate this capability';
 // Drafts the reject endpoint accepts (CapabilityAgentService.reject). ACTIVE / SHADOW / NEEDS_REPAIR are never
 // discarded from here; PENDING_TEST is in flight.
 const AUTOMATE_DRAFT = new Set(['PROPOSED', 'TEST_FAILED', 'AWAITING_CONFIRM', 'AWAITING_SENSOR', 'AWAITING_CONTRACT']);
@@ -210,17 +213,19 @@ async function openAutomateModal(kpiName, needsRepair) {
     const modal = document.getElementById('automateModal');
     if (!modal.classList.contains('open')) AUTOMATE.returnFocus = document.activeElement;
     Object.assign(AUTOMATE, { kpiName, needsRepair: !!needsRepair, reloadOnClose: false, job: null, current: null,
-        confirming: false, notice: null });
+        confirming: false, notice: null, runnerOnline: null });
     document.getElementById('automateTitle').textContent = `Automate · ${kpiName}`;
     modal.classList.add('open');
     renderAutomate(null);
     document.getElementById('automateClose').focus();
     try {
-        const [cap, active] = await Promise.all([
+        const [cap, active, runner] = await Promise.all([
             automateFetch(E_KPI.KPI_CAP(kpiName)),
-            automateFetch(E_KPI.KPI_CAP_ACTIVE(kpiName)).catch(() => null)
+            automateFetch(E_KPI.KPI_CAP_ACTIVE(kpiName)).catch(() => null),
+            automateFetch(E_KPI.KPI_CAP_RUNNER(kpiName)).catch(() => null)
         ]);
         if (gen !== AUTOMATE.gen) return;
+        AUTOMATE.runnerOnline = runner ? !!runner.online : null;
         renderAutomate(cap);
         if (active && active.jobId) automateWatch(active.jobId);   // a job started earlier is still running
     } catch (e) {
@@ -679,6 +684,25 @@ function automateFixIt(body, hint) {
     automateFoot(automateButton('Fix it', 'btn--primary', () => automateStart('repair')));
 }
 
+// No runner online: collectors (and the AI that writes them) run on the user's own computer → Relay to pair one.
+function automateConnectRunner() {
+    const box = automateEl('div', 'automate-dialog__notice automate-dialog__runner');
+    box.append(automateEl('span', null, 'No runner is online. Automated KPIs run on your own computer through a Relay runner.'));
+    const link = automateEl('a', 'btn btn--primary btn--sm', 'Connect a runner');
+    link.href = ENV.ROUTES.RELAY;
+    const recheck = automateButton('Check again', 'btn--ghost btn--sm', async () => {
+        const gen = AUTOMATE.gen;
+        const r = await automateFetch(E_KPI.KPI_CAP_RUNNER(AUTOMATE.kpiName)).catch(() => null);
+        if (gen !== AUTOMATE.gen) return;
+        AUTOMATE.runnerOnline = r ? !!r.online : null;
+        renderAutomate(AUTOMATE.current);
+    });
+    const actions = automateEl('div', 'automate-dialog__runner-actions');
+    actions.append(link, recheck);
+    box.append(actions);
+    return box;
+}
+
 function renderAutomate(cap, error) {
     AUTOMATE.current = cap;
     const body = document.getElementById('automateBody');
@@ -696,6 +720,8 @@ function renderAutomate(cap, error) {
     renderAutomateRail(cap);
     renderAutomateDiscard(cap);
     if (AUTOMATE.notice) body.append(automateEl('div', 'automate-dialog__notice', AUTOMATE.notice));
+    const noRunner = !automateRunning() && (AUTOMATE.runnerOnline === false || (errText || '').includes(AUTOMATE_NO_RUNNER));
+    if (noRunner) body.append(automateConnectRunner());
 
     if (automateRunning()) {
         body.append(automateEl('div', 'automate__text',
@@ -717,11 +743,13 @@ function renderAutomate(cap, error) {
         group.append(label, ta,
             automateEl('span', 'form-group__hint',
                 'The AI proposes a plan first. Nothing runs until you approve it. Collectors run on your own runner, in a sandbox with no internet, reading only what you approve.'));
-        automateFoot(automateButton('Propose a plan', 'btn--primary', () => {
+        const propose = automateButton('Propose a plan', 'btn--primary', () => {
             const description = ta.value.trim();
             if (!description) { renderAutomate(cap, 'Describe what to capture first.'); return; }
             automateStart('propose', { description });
-        }));
+        });
+        propose.disabled = AUTOMATE.runnerOnline === false;
+        automateFoot(propose);
         body.append(group);
         return;
     }

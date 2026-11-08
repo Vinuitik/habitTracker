@@ -13,7 +13,12 @@ import java.io.IOException;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-/** ANY /relay/api/devices/{id}/v1/** → RunnerClient.exchange() ("req" frame down the uplink) → its "res" frame back. */
+/**
+ * ANY /relay/api/devices/{id}/v1/** → RunnerClient.exchange() ("req" frame down the uplink) → its "res" frame back.
+ * Bodies are never logged, on any path: PUT /v1/credentials/{name} carries a KPI API secret in transit (HUB.md
+ * "KPI credentials"; RelayProxyCredentialLoggingTest). Keep it that way when adding logging here or in RunnerClient /
+ * UplinkRegistry.
+ */
 @RestController
 public class RelayProxyController {
 

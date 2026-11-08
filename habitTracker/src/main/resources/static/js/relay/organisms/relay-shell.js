@@ -1,7 +1,7 @@
 // Relay shell (layout A, docs/designs/relay-web-ui.md M1): everything under #/d/<dev>.
 //   rail   runner switcher (online lamp, Menu of devices) · project list with lamps · "+ Project"
 //   main   Needs-you strip · project header + tabs Chats · Git · Containers · Files · tab content
-// Routes (js/relay/router.js): #/d/<dev>                 no project: "Pick a project" + recent sessions
+// Routes (js/relay/router.js): #/d/<dev>                 no project: "Pick a project" + recent sessions + KPI credentials (RelayCredentials)
 //                              #/d/<dev>/p/<pid>/<tab>   tab content = RelayChats / RelayGit / RelayContainers / RelayFiles
 //                              #/d/<dev>/s/<sid>         RelayChat, back crumb to its project's Chats tab
 // RelayShell.mount(el, {dev, pid?, tab?, sid?}) → unmount; unmount.update(params) re-routes inside the
@@ -287,7 +287,9 @@ window.RelayShell = (() => {
           <p class="relay-hint">Choose one on the left, or add one with + Project.</p>
         </div>
         <div class="relay-section-label">Recent sessions</div>
-        <div class="relay-list relay-stagger" id="shell-recent"><div class="relay-empty">Loading…</div></div>`;
+        <div class="relay-list relay-stagger" id="shell-recent"><div class="relay-empty">Loading…</div></div>
+        <div id="shell-creds"></div>`;
+      const offCreds = RelayCredentials.mount($('shell-creds'), { dev: S.dev });
       Promise.all([allSessions(true), S.projectsReady]).then(([list]) => {
         if (!live) return;
         const recent = list.slice().sort((a, b) => String(b.lastActiveAt || b.createdAt || '')
@@ -302,7 +304,7 @@ window.RelayShell = (() => {
             ${R.stateBadge(s.state)}
           </a>`).join('') : '<div class="relay-empty">No sessions yet.</div>';
       }, (e) => { if (live) $('shell-recent').innerHTML = R.errorHtml(e); });
-      return () => { live = false; };
+      return () => { live = false; offCreds(); };
     }
 
     // ── + Project: name → scaffolded dir, or Folder… → register an existing one ─

@@ -140,7 +140,8 @@ public class UplinkRegistry {
             }
             p.future().complete(new Response(n.path("status").asInt(502), n.path("contentType").asText(""), body));
         } catch (Exception e) {
-            log.warn("[relay] bad frame from device {}: {}", deviceId, e.toString());
+            // Class name only: a parser message can quote frame content (e.g. a /v1/credentials body).
+            log.warn("[relay] bad frame from device {}: {}", deviceId, e.getClass().getSimpleName());
         }
     }
 

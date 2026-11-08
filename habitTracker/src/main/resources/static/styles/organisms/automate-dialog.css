@@ -273,6 +273,14 @@
   background: var(--color-bg-surface);
 }
 
+/* No runner online: notice + "Connect a runner" (kpi-list.js automateConnectRunner) */
+.automate-dialog__runner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.automate-dialog__runner-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+
 /* ── Tablet: one column, same chrome; the rail shrinks to one line + the live log ── */
 @media (max-width: 899px) {
   .automate-dialog__main {

@@ -24,11 +24,18 @@ public class CapabilityAgentController {
     private final CapabilityTaskService tasks;
     private final KPIRepository kpiRepository;
     private final RunnerCollectorProvider runnerPull;
+    private final CapabilityGenerator generator;
 
     @GetMapping
     public ResponseEntity<?> latest(@PathVariable String name) {
         return service.latest(name).<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /** {online}: has the current user a runner online now? The Automate dialog shows "Connect a runner" when not. */
+    @GetMapping("/runner")
+    public Map<String, Boolean> runner(@PathVariable String name) {
+        return Map.of("online", generator.runnerAvailable(currentUser()));
     }
 
     @PostMapping("/propose")
