@@ -1,6 +1,6 @@
 # Runner-only KPIs + runner-held KPI credentials
 
-Status: IN PROGRESS. H1 + H2 DONE (2026-11-08); R1, R2, H3-H5 not started. Supersedes the SERVER platform + egress allowlist parts of `kpi-tracking-agent.md`.
+Status: IN PROGRESS. H1 + H2 + H3 + H4 DONE (2026-11-08; R1/R2 merged in the Relay repo); H5 not started. Supersedes the SERVER platform + egress allowlist parts of `kpi-tracking-agent.md`.
 Scope: **KPIs only.** Trello (Projects/planner/board sync + the Trello card-count KPI), Drive sync and Relay chat/files/git stay as they are and must keep working.
 
 ## Goal
@@ -50,8 +50,8 @@ The script never sees the token.
 | R2 | Relay runner | `http` source type (manifest validation, `sources.go` fetch, included in the contract hash). |
 | H1 | Hub | **DONE** (`RunnerOnlyKpiMigration` also sets SANDBOX_CAPABILITY KPIs to manual). **Remove server KPIs completely**: `SandboxCapabilityProvider`, `SandboxClient`, `HttpSandboxClient`, `CapabilitySecret*`, egress token code, `ProxyType.SANDBOX_CAPABILITY`, `CapabilityPlatform.SERVER/WINDOWS` (the runner is OS-independent, so WINDOWS is redundant; ANDROID stays reserved, see "Phone"), the sandbox-facts prompt, the non-runner branches in `CapabilityAgentService`/`CapabilityLifecycleService.wire()`. Migration: existing SERVER capability docs → `RETIRED`; drop `kpi_capability_secrets` (0 rows). |
 | H2 | Infra | **DONE** (old containers need one manual `docker compose up -d --remove-orphans`, see FLOWS_infra.md). Delete `sandbox/` + `egress-proxy/` (containers, dirs, `SANDBOX_EGRESS_SECRET`): 7 → 5 containers. CLAUDE.md, FLOWS_infra.md. |
-| H3 | Hub | Agent prompt `kpi-collector-generate.md`: teach the `http` source + the user's credential names (fetched from the runner, names only). |
-| H4 | Hub UI | "KPI credentials" section on the Relay runner page. Automate dialog with no runner online → "Connect a runner". |
+| H3 | Hub | **DONE** (`CredentialRef`, `RunnerCollectorPipeline.runnerCredentials`, `checkSources` names the missing credential, `CollectorStaticCheck.httpProblem`). Agent prompt `kpi-collector-generate.md`: teach the `http` source + the user's credential names (fetched from the runner, names only). |
+| H4 | Hub UI | **DONE** (`relay-credentials.js` on `#/d/<id>`; `GET .../capability/runner` + "Connect a runner" in Automate; `RelayProxyCredentialLoggingTest`). "KPI credentials" section on the Relay runner page. Automate dialog with no runner online → "Connect a runner". |
 | H5 | Both | Regression check: Trello (board sync, planner Add-to-board, Trello KPI), Relay chat/files/git, a full runner collector flow end to end. FLOWS + graphify update. |
 
 Order: H1+H2 (independent, can start now) → R1 → R2 → H3 → H4 → H5.

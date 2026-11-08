@@ -105,12 +105,19 @@ Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → AWAITING_CON
                 then lastSeenAt) → none → CapabilityGeneratorException.noRunner() → 503 {"error":"Connect a runner to generate this capability"}
               → CapabilityPrompts.proposePrompt() → RunnerJobService.startJob(kind "kpi", no project, maxTurns 3)
               → pollJob() every kpi.capability.poll-ms (2s) until state done/failed, or kpi.capability.job-timeout-ms (300s) → cancelJob() + 502
-              → CapabilityPrompts.parseProposal(result) → {proposal, sources, measures?, dataSource?} (a legacy "platform" key is ignored)
+              → (before the LLM) RunnerCollectorPipeline.runnerCredentials(userId): OnlineRunnerSelector.pick → RunnerCollectorClient.credentials()
+                = GET /v1/credentials → [CredentialRef{name, host}] (never values; 404 older runner / 503 store off → empty list)
+                → injected as {{CREDENTIALS}} into CapabilityPrompts.proposePrompt()
+              → CapabilityPrompts.parseProposal(result) → {proposal, sources, credentials?, measures?, dataSource?} (a legacy "platform" key is ignored)
                 (measures / dataSource = optional one-sentence summaries for the UI; stored on the version, copied on repair)
-              → checkSources(): sources empty → 422 "This can't be captured yet: ... ActivityWatch and local files ...";
-                anything outside {activitywatch, file} → 422; NOTHING stored
+              → checkSources(sources, credentials, onRunner): sources empty → 422 "This can't be captured yet: ...";
+                anything outside {activitywatch, file, http} → 422; http with no credential → 422;
+                http credential not on the runner → 422 "This needs an API credential on your runner. Add one named "github"
+                for api.github.com in Relay → your runner → KPI credentials ..."; same name, other host → 422; NOTHING stored
+                To change the wording: CapabilityAgentService.checkSources()
               → older PROPOSED/TEST_FAILED rows → REJECTED; new KPIProxyCapability v(latest+1) platform=RUNNER status=PROPOSED,
-                declaredCapabilities {sources: [...]}
+                declaredCapabilities {sources: [...], credentials?: ["name@host"]}; an http plan pins runnerDeviceId to the
+                runner whose list it was checked against (credentials are per runner)
               → UI shows plain-language facts (Measures / Data comes from / Updates / Needs from you), the full plan collapsed,
                 and what the collector may read
 3-4 APPROVE   POST .../capability/{id}/approve
@@ -143,7 +150,7 @@ REPAIR (M12)  proxy breaker trips → ProxyHealthService.recordFailure()/flagAno
 
 Auth/scoping: KPI resolved by `(name, currentUser)`, capability only via `KPIProxyCapabilityRepository.findByIdAndUserIdAndKpiId()` — never `findById`. Foreign id or KPI → 400 "not found" (no existence leak). Tested in `CapabilityAgentIntegrationTest.anotherUser_cannotSeeOrDriveMyCapability` (cf. commit `b8a1057`).
 
-Enforcement: the **gate** is `CapabilityAgentService.checkSources()` (propose, approve, retry): sources ⊆ {activitywatch, file}, at least one. A collector never gets network or secrets. The **boundary** is the runner's own OS sandbox (no network, read-only declared inputs) + the contract approval pinned to the runner-computed hash, not the hub's checks.
+Enforcement: the **gate** is `CapabilityAgentService.checkSources()` (propose, approve, retry): sources ⊆ {activitywatch, file, http}, at least one; http needs a named credential (name + host) the runner holds. The collector script never gets network or secrets: for http the RUNNER makes the GET with the credential and hands the response to the script as `/in/http/<i>.json`. The **boundary** is the runner's own OS sandbox (no network, read-only declared inputs) + the contract approval pinned to the runner-computed hash, not the hub's checks.
 
 UI Automate modal (kpi-list.js): while a job runs → StepList rows (● running + seconds, ✓ done) + "Used N tokens" when usage came back; result → `renderAutomateSummary()` facts + `renderAutomateAccess()` (what it may read) + `renderAutomateCode()`; TEST_FAILED → `describeFailure()` maps failureReason prefixes ("Code generation failed:", "Runner sandbox unavailable:", "Static check failed:", "Fixture test failed:" …) to one sentence + what to do. All text via textContent / Dom.esc.
 
@@ -213,7 +220,7 @@ Errors: 400 bad input/not found, 409 conflict (wrong status, attempt cap, alread
 
 To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what is grantable: `CapabilityAgentService.checkSources()`. To change the build / dry run: `RunnerCollectorPipeline`. To change prompts: `resources/prompts/kpi-capability-*.md` (`{{PLACEHOLDER}}`s, filled once by `CapabilityPrompts.fill()`); JSON contract: `CapabilityPrompts.parseProposal()` / `parseCollectorBundle()`. To change runner choice: `OnlineRunnerSelector.pick()`. To change job timing: `kpi.capability.job-timeout-ms`, `kpi.capability.poll-ms`; repair wake-up: `kpi.repair.runner-check-ms`. To change repair behaviour: `AgentCapabilityRepairTrigger` / `CapabilityAgentService.repairFor()`.
 
-[NOT IMPLEMENTED] Intake as a multi-turn conversation (today: one free-text description → one proposal; reject + re-describe to iterate). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. Internet-based KPIs (GitHub etc.): planned as runner-fetched `http` sources with runner-held credentials (runner-only-kpis.md R1/R2/H3/H4).
+[NOT IMPLEMENTED] Intake as a multi-turn conversation (today: one free-text description → one proposal; reject + re-describe to iterate). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. More than one page per http source (no pagination), POST APIs, OAuth flows (the user pastes a token).
 
 ## Technology Notes
 
@@ -231,12 +238,19 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 - **Legacy migration is flag-gated and one-shot** (`_migration` `runner-only-kpis-v1`): a SERVER doc restored from an older backup after the flag exists is not rewritten and will fail to map on read; delete the flag doc and restart to re-run. `retiredPlatform` is not a mapped field (raw Mongo only).
 - **Repairs waiting for a runner are in-memory only** (`AgentCapabilityRepairTrigger.waiting`): a javaapp restart forgets them; the KPI stays `NEEDS_REPAIR` (breaker open, nothing runs) until the next breaker trip re-fires the trigger or the user clicks "Fix it". Wake-up is a 60s poll, not a connect hook, so relay stays free of KPI dependencies; worst case a repair starts ~60s after the runner connects. Waiting never trips or resets the breaker and never consumes an attempt. A new repair version is non-ACTIVE until its test gate passes, so `RunnerCollectorProvider` (which pulls only for a SHADOW/ACTIVE latest version) pulls nothing for that KPI in the meantime; it was already skipped by the open breaker.
 
+- **Web-API KPIs (H3):** the hub sees credential names + hosts only (GET /v1/credentials). It checks host == credential host twice (`checkSources` at propose, `CollectorStaticCheck.httpProblem` on every bundle), but the runner's install-time URL check + fetch are authoritative. The list is fetched from the runner `OnlineRunnerSelector` picks at propose time: with two runners the other one's credentials are invisible, and the build is pinned to that runner. A credential removed after approval → the dry run / nightly run gets 503 → AWAITING_SENSOR "Add or fix the credential in Relay → <runner> → KPI credentials". A token's scope is the real limit: a collector can GET anything the token reads on its host.
+- **"Connect a runner" in the Automate dialog** is a snapshot at open (`GET .../capability/runner` → `RunnerCapabilityGenerator.runnerAvailable`, in-memory uplink registry of this JVM); "Check again" re-asks. A job that still fails with `NO_RUNNER_MESSAGE` shows the same link.
 - **RUNNER collectors (S3):** the runner sandbox (bwrap / AppContainer) is the boundary, not the hub's static check (regex over import lines, deny-list mirror). Approval binds to the runner-computed contract hash; the hub trusts the runner's `approved` flag + its own `approvedContractHash` to skip re-approval. Readings live on the runner until pulled (data-dir wipe = lost unpulled readings and lost approvals → collector 403 until re-approved; the pull then logs `PULL_ERROR`). The pull cursor is `recordedAt`, so a re-run of an old window re-writes that day (overwrites a value the user edited). `/test` and `/run` wait up to `kpi.runner.long-call-timeout-ms` (180s; other runner calls `relay.proxy.timeout-ms`, 30s): a runner slower than that is reported as offline (not an attempt) while it may still finish the run. Sensor install polling holds a capability worker thread up to 10 min.
 
 ## Change Index
 
 | What to change | Where | Note |
 |---|---|---|
+| Credentials offered to the agent (names + hosts) | `RunnerCollectorPipeline.runnerCredentials()` → `RunnerCollectorClient.credentials()` | GET /v1/credentials on the picked runner |
+| http source rules (host match, placeholders, GET only) | `CollectorStaticCheck.httpProblem()` | mirror of Relay API.md "http source"; runner is authoritative |
+| Credential ref format / name+host regex | `CredentialRef` (`NAME`, `HOST`, stored `name@host`) | same name rule as the runner |
+| Missing-credential message | `CapabilityAgentService.checkSources()` | names the credential + host + "Relay → your runner → KPI credentials" |
+| Runner-online check for the dialog | `CapabilityAgentController.runner()` (`GET /api/kpis/{name}/capability/runner`), `kpi-list.js automateConnectRunner()` | env.js `KPI_CAP_RUNNER` |
 | Collection naming scheme | `KPICollectionNameUtil.toCollectionName()` | currently `kpi_data_<kpiId>` |
 | EMA window / smoothing | `KPIService.calculateEMA()` | 30-point lookback, 14-day smoothing factor |
 | Default-fill opt-in validation | `KPIService.createKPI()` / `updateDefaultFillSettings()` | `defaultValue` required when `autoFillEnabled=true` |
@@ -264,7 +278,7 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Agent endpoints | `CapabilityAgentController` | `/api/kpis/{name}/capability/...` |
 | Pipeline (propose/approve/test gate/retry) | `CapabilityAgentService` | `propose()`, `approve()`, `attempt()`, `regenerate()` |
 | Attempt cap | `CapabilityAgentService.MAX_ATTEMPTS` | 3 |
-| What may be granted | `CapabilityAgentService.checkSources()` / `checkGrantable()` | sources ⊆ activitywatch/file, platform RUNNER only |
+| What may be granted | `CapabilityAgentService.checkSources()` / `checkGrantable()` | sources ⊆ activitywatch/file/http (+ credentials), platform RUNNER only |
 | Legacy SERVER/WINDOWS cleanup | `RunnerOnlyKpiMigration.migrate()` | `_migration` flag `runner-only-kpis-v1` |
 | LLM transport (Java) | `RunnerCapabilityGenerator` | `kpi.capability.job-timeout-ms` (300000), `kpi.capability.poll-ms` (2000); swap via `CapabilityGenerator` |
 | Which runner runs the job | `OnlineRunnerSelector.pick()` | online uplink, last job use, then `lastSeenAt` |
@@ -277,7 +291,7 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | RUNNER pipeline (sensors → generate → static → install → fixtures → contract → dry run) | `RunnerCollectorPipeline.attempt()` / `approveContract()` / `dryRun()` / `installSensor()` | S3 |
 | Static check rules (imports allowlist, deny-list globs, fixtures ≥2 incl. 0) | `CollectorStaticCheck.check()`, `ALLOWED_MODULES`, `DENIED_DIRS/FILES` | keep deny-list in sync with Relay `sources.go` |
 | Contract sentence | `CollectorStaticCheck.contractText()` | shown at AWAITING_CONTRACT |
-| Collector generation prompt | `resources/prompts/kpi-collector-generate.md`, `CapabilityPrompts.collectorPrompt()` / `parseCollectorBundle()` | `{{SOURCES}}` |
+| Collector generation prompt | `resources/prompts/kpi-collector-generate.md`, `CapabilityPrompts.collectorPrompt()` / `parseCollectorBundle()` | `{{SOURCES}}`, `{{CREDENTIALS}}` (approved name + host) |
 | Propose prompt (runner only, no platform choice) | `resources/prompts/kpi-capability-propose.md` | `sources` field |
 | Collector id on the runner | `RunnerCollectorPipeline.attempt()` (`"kpi-" + kpiId`) | stable across versions |
 | Readings pull schedule / on-demand | `kpi.runner.pull-cron` (hourly :40), `RunnerCollectorProvider.pullDue()/pull()`, `POST .../capability/pull` | offline = skip |

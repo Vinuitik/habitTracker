@@ -80,7 +80,19 @@ KPI/RunnerCollectorPipeline, KPI/RunnerCollectorProvider → RunnerCollectorClie
 - `/test` and `/run` use RunnerClient.call(..., waitMs) with `kpi.runner.long-call-timeout-ms` (180000) instead of `relay.proxy.timeout-ms`.
 - Collector id must match `[A-Za-z0-9_-]{1,64}` (RunnerCollectorClient.checkId, same as the runner's idRe) since it goes into the path.
 - No presence hook: "pull when the runner comes back online" = the KPI side's hourly pull (relay stays free of KPI deps).
+- `GET /v1/credentials` (RunnerCollectorClient.credentials) → names + hosts for the KPI agent prompt; never values.
 To change: routes/bodies RunnerCollectorClient; KPI usage see `KPI/FLOWS.md` "RUNNER platform (S3)".
+
+### KPI credentials (runner-held; Relay repo shared/HUB.md "KPI credentials")
+Files: relay-credentials.js, relay-credentials.css, RelayProxyController.java, UplinkRegistry.java, RelayProxyCredentialLoggingTest.java
+Runner home `#/d/<id>` → RelayShell.mountEmpty() → RelayCredentials.mount(#shell-creds, {dev})
+  → GET ENV.ENDPOINTS.RELAY_CREDENTIALS(dev) (= proxy `…/v1/credentials`) → rows {name, host, auth, updatedAt}; 404 → "runner too old"
+  → Add / Replace → form {name, host, auth bearer|header|query, headerName?, secret (type=password) | query param→value rows}
+  → PUT RELAY_CREDENTIAL(dev, name) {host, auth, secret: string | {param: value}, headerName?} → secret inputs cleared + form removed → reload
+  → Remove → confirm() → DELETE RELAY_CREDENTIAL(dev, name)
+Hub side = the generic Proxy above: the body passes through RunnerClient → UplinkRegistry frame untouched and is never logged
+(RelayProxyCredentialLoggingTest drives PUT/GET/DELETE with every logger at TRACE; UplinkRegistry bad-frame log = exception class only).
+To change fields/validation: relay-credentials.js read(). Hint text: formHtml(). Never add body logging in RelayProxyController / RunnerClient / UplinkRegistry.
 
 ### Devices
 GET /relay/api/devices → `[{id, name, online, lastSeenAt}]` (current user only; online = live socket in UplinkRegistry)
@@ -114,7 +126,7 @@ Rail: brand (→ `#/`) · runner switcher (GET RELAY_DEVICES, online lamp; click
 Lamps + Needs-you strip: poll GET `…/v1/sessions?state=waiting,busy` every ENV.TIMING.RELAY_RAIL_POLL_MS (10s), stopped while the tab is hidden and on unmount. Project lamp: any waiting → amber (needs you), else any busy → green, else containers running → green ("running"), else outline. Containers: `pollContainers()` GETs `…/v1/projects/<pid>/containers` for every project every ENV.TIMING.RELAY_CONTAINERS_LAMP_MS (30s), web-only — the runner has no all-projects summary. Strip cards → `#/d/<id>/s/<sid>`.
 To change the poll: env.js TIMING.RELAY_RAIL_POLL_MS / RELAY_CONTAINERS_LAMP_MS. Lamp look: styles/atoms/lamp.css.
 "+ Project" → inline form: name and/or "Folder…" → FolderPicker.pick({id,name}, cb) (browse only, no PROJECT_LINK) → POST `…/v1/projects {name?, path?}` → 201 → appended to the rail → `#/d/<id>/p/<new>/chats`
-No project (`#/d/<id>`): "Pick a project" + recent sessions (GET `…/v1/sessions`, newest 8).
+No project (`#/d/<id>`): "Pick a project" + recent sessions (GET `…/v1/sessions`, newest 8) + KPI credentials (RelayCredentials, see above).
 Project (`/p/<pid>/<tab>`, default chats): header (name, path) + seg-tabs Chats · Git · Containers · Files → mounts RelayChats / RelayGit / RelayContainers / RelayFiles into #shell-content (previous one unmounted). Their own back link + title are hidden by relay-shell.css.
 Chats tab: one newest-first list = `…/projects/<pid>/sessions` + `…/agent-chats` not yet linked (VS Code / laptop chats; tap row = Resume → POST sessions {agentSessionId}), ENV.LIMITS.RELAY_CHATS_PAGE rows then "Show older".
 Cost tags: `Relay.ctxTag(contextTokens)` (relay.js, styles/atoms/ctx-tag.css) on every chat row and in the chat header — tokens each next message re-sends (runner context.go). Muted < ENV.LIMITS.RELAY_CTX_WARN (80k) ≤ amber < RELAY_CTX_HIGH (150k) ≤ red; resuming a red VS Code chat needs a second tap + toast. Older runner → no tag.
@@ -183,6 +195,8 @@ Not in the UI (API.md has them, proxy would carry them): agent-chats (open a VS 
 - **OS guess is userAgent-only:** anything not matching `Windows` (macOS, ChromeOS, phones) defaults to the Linux tab; macOS has no runner build [NOT IMPLEMENTED].
 - **Clipboard:** navigator.clipboard needs a secure context (https / localhost); on plain http the Copy button only selects the command.
 
+- **KPI credentials pass through the hub in memory once** (browser → proxy → uplink frame); the hub stores none and logs no bodies. A compromised hub could read *new* entries in transit. Credentials are per runner: two runners = enter twice; a reinstalled runner = re-enter. The form never pre-fills a secret (Replace = paste a new one). The browser holds the secret only in the password inputs until Save/Cancel (no localStorage).
+
 ## Change Index
 | Thing | Where |
 |---|---|
@@ -246,4 +260,6 @@ Not in the UI (API.md has them, proxy would carry them): agent-chats (open a VS 
 | Markdown subset | relay.js md(), inline() |
 | Permission buttons | relay-chat.js render() (pendingPermission) |
 | Relay look | static/styles/pages/relay.css |
+| KPI credentials UI (fields, auth kinds, hint) | relay-credentials.js formHtml() / read(); styles/organisms/relay-credentials.css; env.js RELAY_CREDENTIALS / RELAY_CREDENTIAL |
+| No body logging on the proxy path | RelayProxyController (doc comment), UplinkRegistry.onFrame(); RelayProxyCredentialLoggingTest |
 | Nav entry | static/js/topbar.js NAV_ITEMS (Relay), env.js ROUTES.RELAY |
