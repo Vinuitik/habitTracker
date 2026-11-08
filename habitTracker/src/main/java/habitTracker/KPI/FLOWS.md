@@ -194,7 +194,7 @@ Files: `RunnerCollectorPipeline.java`, `RunnerCollectorProvider.java`, `Collecto
 PROPOSE   same job; the prompt describes ONLY the runner (local device data: ActivityWatch / app files; no network, stdlib only,
           declared sources only) → Proposal.sources → checkSources() → declaredCapabilities {sources: [...]}, platform RUNNER
 APPROVE   attempt() → RunnerCollectorPipeline.attempt():
-          runnerDeviceId = OnlineRunnerSelector.pick() (pinned on the version), collectorId = "kpi-<kpiId>" (same for every version)
+          runnerDeviceId = OnlineRunnerSelector.pick() (pinned on the version), collectorId = "kpi-<kpiId>-v<version>" (legacy migrated rows keep "kpi-<kpiId>")
           → GET /v1/sensors: sandbox.available=false → TEST_FAILED "Runner sandbox unavailable: ..." (no generation, not an attempt; never runs unsandboxed)
                              activitywatch declared but not installed+running → AWAITING_SENSOR "ActivityWatch isn't running on <runner>"
           → loop (≤ MAX_ATTEMPTS, each round = 1 attempt, failure text fed to the next generation):
@@ -348,7 +348,7 @@ To change the pace tolerance: `KPITargetStatus.PACE_BAND`. To change state prece
 | Refine loop (feedback → new PROPOSED revision) | `CapabilityAgentService.refineAs()`, `CapabilityTaskService.Action.REFINE`, `CapabilityAgentController.refine()` | feedback cap `MAX_DESCRIPTION_CHARS` (2000) |
 | Refine prompt / revision fields | `resources/prompts/kpi-capability-refine.md`, `CapabilityPrompts.refinePrompt()`, `KPIProxyCapability.planRevision/assumptions/changeSummary/refineFeedback` | `CapabilityPrompts.MAX_ASSUMPTIONS` (5) |
 | Propose prompt (runner only, no platform choice) | `resources/prompts/kpi-capability-propose.md` | `sources` field |
-| Collector id on the runner | `RunnerCollectorPipeline.attempt()` (`"kpi-" + kpiId`) | stable across versions |
+| Collector id on the runner | `RunnerCollectorPipeline.deployment()` (`"kpi-" + kpiId + "-v" + version`) | per version; legacy rows keep old id |
 | Readings pull schedule / on-demand | `kpi.runner.pull-cron` (hourly :40), `RunnerCollectorProvider.pullDue()/pull()`, `POST .../capability/pull` | offline = skip |
 | Shared reading guards (SHADOW / IMPLAUSIBLE / anomaly) | `ProxyReadingRecorder.record()` | used by the runner pull |
 | Activate on go-live | `CapabilityWentLive` event, `RunnerCollectorProvider.onLive()` | |

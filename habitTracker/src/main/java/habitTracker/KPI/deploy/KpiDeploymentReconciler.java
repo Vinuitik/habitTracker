@@ -227,6 +227,7 @@ public class KpiDeploymentReconciler {
     }
 
     private void remove(KpiDeployment dep) {
+        // only legacy rows share an id across versions; per-version ids (kpi-<id>-v<N>) are deleted for real
         boolean shared = deployments.findByKpiId(dep.getKpiId()).stream().anyMatch(o ->
                 !o.getId().equals(dep.getId()) && dep.getDeviceId().equals(o.getDeviceId())
                         && o.getTarget() == KpiDeploymentTarget.ACTIVE

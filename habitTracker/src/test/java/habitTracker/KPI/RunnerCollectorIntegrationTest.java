@@ -248,7 +248,7 @@ class RunnerCollectorIntegrationTest {
         KPIProxyCapability stored = capabilityRepository.findById(built.id()).orElseThrow();
         assertEquals(java.util.List.of(DEVICE), stored.getTargetDeviceIds());
         habitTracker.KPI.deploy.KpiDeployment storedDep = dep(kpi.getId(), stored.getVersion());
-        assertEquals("kpi-" + kpi.getId(), storedDep.getCollectorId());
+        assertEquals("kpi-" + kpi.getId() + "-v" + stored.getVersion(), storedDep.getCollectorId());
         assertEquals(runner.approvedHash, stored.getApprovedContractHash());
         assertTrue(storedDep.isActivated());
 

@@ -5,6 +5,7 @@ import habitTracker.KPI.deploy.KpiDeployment;
 import habitTracker.KPI.deploy.KpiDeploymentRepository;
 import habitTracker.KPI.deploy.DeviceCombiner;
 import habitTracker.KPI.deploy.KpiDeploymentTarget;
+import habitTracker.KPI.deploy.KpiDeploymentStatus;
 import habitTracker.KPI.deploy.KpiDeviceReading;
 import habitTracker.KPI.deploy.KpiDeviceReadingRepository;
 import habitTracker.relay.RunnerCallException;
@@ -87,7 +88,7 @@ public class RunnerCollectorProvider {
             if (kpi.getProxyType() != ProxyType.RUNNER_COLLECTOR || health.needsRepair(kpi)) continue;
             Optional<KPIProxyCapability> cap = live(kpi);
             if (cap.isEmpty()) continue;
-            List<KpiDeployment> due = pullable(cap.get());
+            List<KpiDeployment> due = pullRows(cap.get());
             if (due.isEmpty() || due.stream().allMatch(d -> today.equals(d.getLastPulledOn()))) continue;
             try {
                 pull(kpi);
@@ -106,7 +107,7 @@ public class RunnerCollectorProvider {
         Optional<KPIProxyCapability> found = live(kpi);
         if (found.isEmpty()) return new PullResult(Outcome.NOT_RUNNABLE, 0);
         KPIProxyCapability cap = found.get();
-        List<KpiDeployment> rows = pullable(cap);
+        List<KpiDeployment> rows = pullRows(cap);
         if (rows.isEmpty()) return new PullResult(Outcome.NOT_RUNNABLE, 0);
         Outcome overall = Outcome.SKIPPED_OFFLINE;
         int stored = 0;
@@ -201,14 +202,14 @@ public class RunnerCollectorProvider {
                 row = KpiDeviceReading.builder().userId(kpi.getUserId()).kpiId(kpi.getId())
                         .deviceId(dep.getDeviceId()).date(e.getKey()).build();
             }
-            row.setCapabilityVersion(cap.getVersion());
+            row.setCapabilityVersion(dep.getCapabilityVersion() != null ? dep.getCapabilityVersion() : cap.getVersion());
             row.setValue(r.path("value").asDouble());
             row.setUnit(unit);
             row.setRecordedAt(at);
             deviceReadings.save(row);
             touched.add(e.getKey());
         }
-        Set<String> expectedDevices = pullable(cap).stream().map(KpiDeployment::getDeviceId).collect(Collectors.toSet());
+        Set<String> expectedDevices = expectedRows(cap).stream().map(KpiDeployment::getDeviceId).collect(Collectors.toSet());
         int expected = expectedDevices.size();
         String collection = collectionNames.toCollectionName(kpi.getId());
         int stored = 0;
@@ -265,6 +266,31 @@ public class RunnerCollectorProvider {
     private void saveDeployment(KpiDeployment dep) {
         dep.setUpdatedAt(Instant.now());
         deployments.save(dep);
+    }
+
+    /**
+     * Rows to read this pull: per device the newest-version row that is target ACTIVE and running (status ACTIVE),
+     * any capability version of this KPI, so a device still on v1 keeps contributing while v2 rolls out.
+     */
+    private List<KpiDeployment> pullRows(KPIProxyCapability cap) {
+        Map<String, KpiDeployment> best = new java.util.LinkedHashMap<>();
+        for (KpiDeployment d : deployments.findByKpiId(cap.getKpiId())) {
+            if (d.getTarget() != KpiDeploymentTarget.ACTIVE) continue;
+            if (d.getStatus() != KpiDeploymentStatus.ACTIVE && !d.isActivated()) continue; // not running on that device yet
+            if (d.getDeviceId() == null || d.getCollectorId() == null) continue;
+            best.merge(d.getDeviceId(), d, (a, b) -> ver(b) > ver(a) ? b : a);
+        }
+        return List.copyOf(best.values());
+    }
+
+    /** Devices the combine waits for: any ACTIVE-target row in any non-removed version. */
+    private List<KpiDeployment> expectedRows(KPIProxyCapability cap) {
+        return deployments.findByKpiId(cap.getKpiId()).stream()
+                .filter(d -> d.getTarget() == KpiDeploymentTarget.ACTIVE && d.getDeviceId() != null).toList();
+    }
+
+    private static int ver(KpiDeployment d) {
+        return d.getCapabilityVersion() == null ? 0 : d.getCapabilityVersion();
     }
 
     /** Deployments of this capability version that should be running (target ACTIVE) and have a collector id. */

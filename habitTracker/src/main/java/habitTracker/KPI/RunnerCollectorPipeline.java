@@ -377,14 +377,14 @@ public class RunnerCollectorPipeline {
         return t == null || t.isEmpty() ? null : t.get(0);
     }
 
-    /** This version's deployment row on the proposing device; created on first use (collector id "kpi-<kpiId>"). */
+    /** This version's deployment row on the proposing device; created on first use (collector id "kpi-<kpiId>-v<version>"). */
     KpiDeployment deployment(KPIProxyCapability cap) {
         String device = device(cap);
         if (device == null) return null;
         return deployments.findByKpiIdAndDeviceIdAndCapabilityVersion(cap.getKpiId(), device, cap.getVersion())
                 .orElseGet(() -> deployments.save(KpiDeployment.builder()
                         .userId(cap.getUserId()).kpiId(cap.getKpiId()).capabilityId(cap.getId())
-                        .capabilityVersion(cap.getVersion()).deviceId(device).collectorId("kpi-" + cap.getKpiId())
+                        .capabilityVersion(cap.getVersion()).deviceId(device).collectorId("kpi-" + cap.getKpiId() + "-v" + cap.getVersion())
                         .createdAt(Instant.now()).updatedAt(Instant.now()).build()));
     }
 

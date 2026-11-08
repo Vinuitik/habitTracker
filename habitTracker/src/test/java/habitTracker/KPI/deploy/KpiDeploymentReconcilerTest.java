@@ -93,8 +93,12 @@ class KpiDeploymentReconcilerTest {
     }
 
     KpiDeployment dep(String capId, int version, String device) {
+        return dep(capId, version, device, "kpi-k1");
+    }
+
+    KpiDeployment dep(String capId, int version, String device, String collectorId) {
         return repo.save(KpiDeployment.builder().userId("u").kpiId("k1").capabilityId(capId).capabilityVersion(version)
-                .deviceId(device).os("linux").collectorId("kpi-k1").build());
+                .deviceId(device).os("linux").collectorId(collectorId).build());
     }
 
     void runnerAccepts(String state) throws Exception {
@@ -213,6 +217,29 @@ class KpiDeploymentReconcilerTest {
         rec.sweep();
         assertEquals(KpiDeploymentStatus.REMOVED, oldD.getStatus());
         verify(client, never()).delete(any(), any(), any()); // same collector id is now the new version's
+    }
+
+    @Test
+    void redefine_perVersionIds_oldCollectorDeletedOnlyAfterNewActive() throws Exception {
+        cap("c1", 1, CapabilityStatus.ACTIVE);
+        cap("c2", 2, CapabilityStatus.ACTIVE);
+        KpiDeployment oldD = dep("c1", 1, "dev", "kpi-k1-v1");
+        oldD.setStatus(KpiDeploymentStatus.ACTIVE);
+        KpiDeployment newD = dep("c2", 2, "dev", "kpi-k1-v2");
+
+        when(client.install(any(), any(), any(), any(), any(), any())).thenThrow(new RunnerCallException(400, "{\"error\":\"nope\"}"));
+        rec.sweep();
+        verify(client, never()).delete(any(), any(), any()); // new not running yet: old keeps collecting
+
+        clock.now = newD.getNextAttemptAt();
+        runnerAccepts(null);
+        rec.sweep();
+        assertEquals(KpiDeploymentStatus.ACTIVE, newD.getStatus());
+        verify(client, never()).delete(any(), any(), any());
+        rec.sweep();
+        assertEquals(KpiDeploymentStatus.REMOVED, oldD.getStatus());
+        verify(client).delete("u", "dev", "kpi-k1-v1");
+        verify(client, never()).delete("u", "dev", "kpi-k1-v2");
     }
 
     @Test
