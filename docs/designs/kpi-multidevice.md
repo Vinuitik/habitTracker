@@ -97,6 +97,14 @@ Unique `(kpiId, deviceId, date)` — newest `recordedAt` wins.
 ### Combine (A2) — `DeviceCombiner.combine(String rule, List<Double>) → Double`
 sum | max | avg | latest(by recordedAt). Combined value recorded through the existing `ProxyReadingRecorder` path (keeps SHADOW/plausibility/breaker).
 
+## Wave-1 hub state (① merged, b5aae41)
+- `CollectorBundle`: `resolve(os)`, `isLegacy()`, `variants()`, `combine()`, `withVariantFor(os, combine)`; legacy bundle resolves for any os (incl. null).
+- `RunnerCollectorClient.info()` → record `RunnerInfo(os, arch, managers)`; older runner → os null.
+- Pipeline builds on `targetDeviceIds.get(0)` (proposing device); deployment row found/created there, `collectorId = "kpi-<kpiId>"` (same id on every device and every version — runner versions live under that id).
+- `RunnerCollectorProvider.pull` iterates `target=ACTIVE` rows of the live version. **Seam for ⑤: `storeDeviceReadings(kpi, cap, dep, byDay)`** (package-private; today writes KPIData directly).
+- Migration: only latest live/in-flight version → `target=ACTIVE`; superseded versions → `REMOVED/REMOVED`. `dep.os` may be null after migration → whoever calls `info()` backfills it (④ reconciler on connect).
+- Repair versions get their deployment row only when the pipeline's `attempt()` runs.
+
 ## Hub ↔ runner client additions (`relay/RunnerCollectorClient`)
 `info(user, device) → {os, arch, managers}`, `packages(user, device)`, `uninstallPackage(user, device, manager, id)`.
 
