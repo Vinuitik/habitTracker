@@ -29,4 +29,7 @@ public class KPIDTO {
     private Double confirmSampleRate;
     private ProxyStatus proxyStatus;
     private Integer consecutiveProxyFailures;
+    private GoalType goalType;          // never null (derived from higherIsBetter for old KPIs)
+    private KPITarget target;           // value, deadline, baseline, setAt — null unless TARGET
+    private KPITargetStatus targetStatus; // null unless TARGET
 }

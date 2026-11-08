@@ -37,6 +37,29 @@ public class KPIService {
     public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds,
                              Boolean autoFillEnabled, Double defaultValue,
                              ProxyType proxyType, Map<String, String> proxyConfig, Double confirmSampleRate) {
+        return createKPI(name, description, higherIsBetter, habitIds, autoFillEnabled, defaultValue,
+                proxyType, proxyConfig, confirmSampleRate, null, null, null);
+    }
+
+    // Goal-aware overload. goalType null → derived from higherIsBetter (old clients). TARGET requires
+    // targetValue + targetDeadline; baseline stays null at creation (no readings yet) and is filled by
+    // the first reading (saveKPIDataPoint).
+    @Transactional
+    public KPIDTO createKPI(String name, String description, Boolean higherIsBetter, List<Integer> habitIds,
+                             Boolean autoFillEnabled, Double defaultValue,
+                             ProxyType proxyType, Map<String, String> proxyConfig, Double confirmSampleRate,
+                             GoalType goalType, Double targetValue, LocalDate targetDeadline) {
+        KPITarget target = null;
+        if (goalType == GoalType.TARGET) {
+            validateTarget(targetValue, targetDeadline);
+            target = KPITarget.builder().value(targetValue).deadline(targetDeadline)
+                    .setAt(LocalDate.now()).build();
+            higherIsBetter = null; // inferred once a baseline exists
+        } else if (goalType != null) {
+            higherIsBetter = goalType == GoalType.HIGHER;
+        } else if (higherIsBetter != null) {
+            goalType = GoalType.fromHigherIsBetter(higherIsBetter);
+        }
         String userId = SecurityUtils.getCurrentUserId();
         if (userId != null ? kpiRepository.existsByNameAndUserId(name, userId) : kpiRepository.existsByName(name)) {
             throw new IllegalArgumentException("KPI with name '" + name + "' already exists");
@@ -49,6 +72,8 @@ public class KPIService {
                 .name(name)
                 .description(description)
                 .higherIsBetter(higherIsBetter)
+                .goalType(goalType)
+                .target(target)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .active(true)
@@ -83,6 +108,40 @@ public class KPIService {
         return convertToDTO(savedKPI, habitIds);
     }
     
+    private static void validateTarget(Double value, LocalDate deadline) {
+        if (value == null || deadline == null) {
+            throw new IllegalArgumentException("TARGET KPIs require both targetValue and targetDeadline (yyyy-MM-dd)");
+        }
+        if (deadline.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("targetDeadline must not be in the past");
+        }
+    }
+
+    /**
+     * Sets (or resets) the target of the current user's KPI: baseline = latest reading (null if none yet),
+     * setAt = today. Switches the KPI to goalType TARGET if it was HIGHER/LOWER.
+     */
+    @Transactional
+    public KPIDTO updateTarget(String kpiName, Double value, LocalDate deadline) {
+        String userId = SecurityUtils.getCurrentUserId();
+        KPI kpi = kpiRepository.findByNameAndUserId(kpiName, userId)
+                .orElseThrow(() -> new IllegalArgumentException("KPI with name '" + kpiName + "' does not exist"));
+        validateTarget(value, deadline);
+        KPITarget target = KPITarget.builder().value(value).deadline(deadline)
+                .baseline(latestValue(kpi)).setAt(LocalDate.now()).build();
+        kpi.setGoalType(GoalType.TARGET);
+        kpi.setTarget(target);
+        kpi.setHigherIsBetter(target.inferredHigherIsBetter());
+        kpi.setUpdatedAt(LocalDateTime.now());
+        return convertToDTO(kpiRepository.save(kpi));
+    }
+
+    private Double latestValue(KPI kpi) {
+        List<KPIData> latest = dynamicKPIDataRepository.findTopNOrderByDateDesc(1,
+                collectionNameUtil.toCollectionName(kpi.getId()));
+        return latest == null || latest.isEmpty() ? null : latest.get(0).getValue();
+    }
+
     public List<KPIDTO> getAllActiveKPIs() {
         String userId = SecurityUtils.getCurrentUserId();
         if (userId == null) return List.of();
@@ -239,6 +298,15 @@ public class KPIService {
         kpiData.setExponentialMovingAverage(ema);
 
         dynamicKPIDataRepository.save(kpiData, collectionName);
+
+        // TARGET set before any reading existed: this first reading becomes the baseline.
+        KPITarget target = kpi.getTarget();
+        if (kpi.resolveGoalType() == GoalType.TARGET && target != null && target.getBaseline() == null
+                && value != null) {
+            target.setBaseline(value);
+            kpi.setHigherIsBetter(target.inferredHigherIsBetter());
+            kpiRepository.save(kpi);
+        }
     }
 
     /**
@@ -338,7 +406,7 @@ public class KPIService {
 
         String collectionName = collectionNameUtil.toCollectionName(kpi.get().getId());
         List<KPIData> data = dynamicKPIDataRepository.findByDateBetweenOrderByDateAsc(startDate, endDate, collectionName);
-        boolean higherIsBetter = kpi.get().getHigherIsBetter();
+        boolean higherIsBetter = Boolean.TRUE.equals(kpi.get().getHigherIsBetter());
 
         return data.stream()
                 .map(d -> convertToDataDTO(d, kpiName, higherIsBetter))
@@ -365,7 +433,7 @@ public class KPIService {
 
         String collectionName = collectionNameUtil.toCollectionName(kpi.get().getId());
         List<KPIData> data = dynamicKPIDataRepository.findAllOrderByDateAsc(collectionName);
-        boolean higherIsBetter = kpi.get().getHigherIsBetter();
+        boolean higherIsBetter = Boolean.TRUE.equals(kpi.get().getHigherIsBetter());
         return data.stream()
                 .map(d -> convertToDataDTO(d, kpiName, higherIsBetter))
                 .collect(Collectors.toList());
@@ -463,6 +531,7 @@ public class KPIService {
     }
     
     private KPIDTO convertToDTO(KPI kpi, List<Integer> habitIds) {
+        boolean isTarget = kpi.resolveGoalType() == GoalType.TARGET && kpi.getTarget() != null;
         return KPIDTO.builder()
                 .id(kpi.getId())
                 .name(kpi.getName())
@@ -479,6 +548,9 @@ public class KPIService {
                 .confirmSampleRate(kpi.getConfirmSampleRate() != null ? kpi.getConfirmSampleRate() : 0.2)
                 .proxyStatus(kpi.getProxyStatus() != null ? kpi.getProxyStatus() : ProxyStatus.ACTIVE)
                 .consecutiveProxyFailures(kpi.getConsecutiveProxyFailures() != null ? kpi.getConsecutiveProxyFailures() : 0)
+                .goalType(kpi.resolveGoalType())
+                .target(isTarget ? kpi.getTarget() : null)
+                .targetStatus(isTarget ? KPITargetStatus.of(kpi.getTarget(), latestValue(kpi), LocalDate.now()) : null)
                 .build();
     }
     

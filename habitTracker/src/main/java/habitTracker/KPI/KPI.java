@@ -27,6 +27,12 @@ public class KPI {
     private String description;
     
     private Boolean higherIsBetter; // true if higher values are better, false if lower is better
+
+    // Null on pre-goalType docs — always read via resolveGoalType(), never getGoalType() directly.
+    private GoalType goalType;
+
+    // Set only for goalType TARGET.
+    private KPITarget target;
     
     private LocalDateTime createdAt;
     
@@ -78,4 +84,8 @@ public class KPI {
     // touch this counter.
     @Builder.Default
     private Integer consecutiveProxyFailures = 0;
+
+    public GoalType resolveGoalType() {
+        return goalType != null ? goalType : GoalType.fromHigherIsBetter(higherIsBetter);
+    }
 }

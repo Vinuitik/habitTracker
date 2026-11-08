@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -54,9 +55,18 @@ public class KPIController {
             Map<String, String> proxyConfig = (Map<String, String>) body.get("proxyConfig");
             Double confirmSampleRate = body.get("confirmSampleRate") != null
                     ? ((Number) body.get("confirmSampleRate")).doubleValue() : null;
+            Double targetValue = body.get("targetValue") != null ? ((Number) body.get("targetValue")).doubleValue() : null;
+            LocalDate targetDeadline = body.get("targetDeadline") != null
+                    ? LocalDate.parse(((String) body.get("targetDeadline")).trim()) : null;
+            // goalType absent: TARGET if a targetValue was sent, else null → service derives from higherIsBetter.
+            GoalType goalType = body.get("goalType") != null
+                    ? GoalType.valueOf(((String) body.get("goalType")).trim().toUpperCase())
+                    : (targetValue != null ? GoalType.TARGET : null);
             kpiService.createKPI(name, description, higherIsBetter, habitIds, autoFillEnabled, defaultValue,
-                    proxyType, proxyConfig, confirmSampleRate);
+                    proxyType, proxyConfig, confirmSampleRate, goalType, targetValue, targetDeadline);
             return ResponseEntity.ok(Map.of("message", "KPI created successfully"));
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "targetDeadline must be an ISO date (yyyy-MM-dd)"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -71,6 +81,20 @@ public class KPIController {
                     : null;
             KPIDTO updated = kpiService.updateKPIHabitMappings(name, habitIds);
             return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Set/reset the target: body {value, deadline: "yyyy-MM-dd"}. baseline = latest reading, setAt = today.
+    @PutMapping("/{name}/target")
+    public ResponseEntity<?> updateTarget(@PathVariable String name, @RequestBody Map<String, Object> body) {
+        try {
+            Double value = body.get("value") != null ? ((Number) body.get("value")).doubleValue() : null;
+            LocalDate deadline = body.get("deadline") != null ? LocalDate.parse(((String) body.get("deadline")).trim()) : null;
+            return ResponseEntity.ok(kpiService.updateTarget(name, value, deadline));
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "deadline must be an ISO date (yyyy-MM-dd)"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
