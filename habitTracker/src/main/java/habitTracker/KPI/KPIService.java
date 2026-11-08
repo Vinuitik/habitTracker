@@ -591,6 +591,8 @@ public class KPIService {
                 .pending(Boolean.TRUE.equals(data.getPending()))
                 .flag(data.getFlag())
                 .flagReason(data.getFlagReason())
+                .devicesReported(data.getDevicesReported())
+                .devicesExpected(data.getDevicesExpected())
                 .build();
     }
 }

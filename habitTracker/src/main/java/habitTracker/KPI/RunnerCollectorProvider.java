@@ -3,7 +3,10 @@ package habitTracker.KPI;
 import com.fasterxml.jackson.databind.JsonNode;
 import habitTracker.KPI.deploy.KpiDeployment;
 import habitTracker.KPI.deploy.KpiDeploymentRepository;
+import habitTracker.KPI.deploy.DeviceCombiner;
 import habitTracker.KPI.deploy.KpiDeploymentTarget;
+import habitTracker.KPI.deploy.KpiDeviceReading;
+import habitTracker.KPI.deploy.KpiDeviceReadingRepository;
 import habitTracker.relay.RunnerCallException;
 import habitTracker.relay.RunnerCollectorClient;
 import habitTracker.relay.RunnerUnavailableException;
@@ -17,7 +20,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -54,16 +60,24 @@ public class RunnerCollectorProvider {
     private final RunnerCollectorClient client;
     private final ProxyHealthService health;
     private final ProxyReadingRecorder recorder;
+    private final KpiDeviceReadingRepository deviceReadings;
+    private final DynamicKPIDataRepository dataRepository;
+    private final KPICollectionNameUtil collectionNames;
 
     public RunnerCollectorProvider(KPIRepository kpiRepository, KPIProxyCapabilityRepository repository,
                                    KpiDeploymentRepository deployments, RunnerCollectorClient client,
-                                   ProxyHealthService health, ProxyReadingRecorder recorder) {
+                                   ProxyHealthService health, ProxyReadingRecorder recorder,
+                                   KpiDeviceReadingRepository deviceReadings, DynamicKPIDataRepository dataRepository,
+                                   KPICollectionNameUtil collectionNames) {
         this.kpiRepository = kpiRepository;
         this.repository = repository;
         this.deployments = deployments;
         this.client = client;
         this.health = health;
         this.recorder = recorder;
+        this.deviceReadings = deviceReadings;
+        this.dataRepository = dataRepository;
+        this.collectionNames = collectionNames;
     }
 
     @Scheduled(cron = "${kpi.runner.pull-cron:0 40 * * * ?}")
@@ -166,24 +180,68 @@ public class RunnerCollectorProvider {
     }
 
     /**
-     * SEAM for multi-device aggregation (agent 5): where one device's per-day readings (newest recordedAt per day,
-     * already deduped) land. Today a KPI has one device, so they go straight to KPIData through the recorder.
-     * Aggregation will replace this body with: write kpi_device_readings, then combine across devices.
+     * Aggregation seam: one device's per-day readings (newest recordedAt per day, already deduped) land in
+     * kpi_device_readings (unique kpiId+deviceId+date, newest recordedAt wins), then every touched date's combined
+     * value over the live version's ACTIVE-target devices is re-recorded through ProxyReadingRecorder (SHADOW /
+     * plausibility / breaker intact). devicesReported/devicesExpected are set only when expected > 1; a MANUAL point
+     * is never overwritten. A late backfill from any device simply re-records that date.
      * @return days stored
      */
     int storeDeviceReadings(KPI kpi, KPIProxyCapability cap, KpiDeployment dep, Map<LocalDate, JsonNode> byDay) {
-        int stored = 0;
+        List<LocalDate> touched = new java.util.ArrayList<>();
         for (Map.Entry<LocalDate, JsonNode> e : byDay.entrySet()) {
             JsonNode r = e.getValue();
             String unit = r.path("unit").asText(null);
             if (unit != null && !unit.isBlank()) cap.setLastUnit(unit);
+            String at = r.path("recordedAt").asText(null);
+            KpiDeviceReading row = deviceReadings.findByKpiIdAndDeviceIdAndDate(kpi.getId(), dep.getDeviceId(), e.getKey())
+                    .orElse(null);
+            if (row != null && orMin(parse(at)).isBefore(orMin(parse(row.getRecordedAt())))) continue; // stale re-delivery
+            if (row == null) {
+                row = KpiDeviceReading.builder().userId(kpi.getUserId()).kpiId(kpi.getId())
+                        .deviceId(dep.getDeviceId()).date(e.getKey()).build();
+            }
+            row.setCapabilityVersion(cap.getVersion());
+            row.setValue(r.path("value").asDouble());
+            row.setUnit(unit);
+            row.setRecordedAt(at);
+            deviceReadings.save(row);
+            touched.add(e.getKey());
+        }
+        Set<String> expectedDevices = pullable(cap).stream().map(KpiDeployment::getDeviceId).collect(Collectors.toSet());
+        int expected = expectedDevices.size();
+        String collection = collectionNames.toCollectionName(kpi.getId());
+        int stored = 0;
+        for (LocalDate day : touched) {
+            List<KpiDeviceReading> rows = deviceReadings.findByKpiIdAndDate(kpi.getId(), day).stream()
+                    .filter(x -> expectedDevices.contains(x.getDeviceId()))
+                    .sorted(Comparator.comparing(x -> orMin(parse(x.getRecordedAt()))))
+                    .toList();
+            if (rows.isEmpty()) continue;
+            KPIData existing = dataRepository.findByDate(day, collection).orElse(null);
+            if (existing != null && existing.getSource() == KPIDataSource.MANUAL) continue; // never overwrite a human
+            double combined = DeviceCombiner.combine(cap.getCombine(), rows.stream().map(KpiDeviceReading::getValue).toList());
+            String unit = rows.get(rows.size() - 1).getUnit();
             ProxyProvider.Context ctx = new ProxyProvider.Context(cap.getStatus() == CapabilityStatus.SHADOW, cap.getLastUnit());
-            recorder.record(kpi, e.getKey(), r.path("value").asDouble(), ctx, KPIDataSource.PROXY_CAPABILITY);
+            recorder.record(kpi, day, combined, ctx, KPIDataSource.PROXY_CAPABILITY);
             stored++;
-            cap.setLastResult("OK: " + CapabilityOutput.formatValue(r.path("value").asDouble(), unit) + " for " + e.getKey());
+            cap.setLastResult("OK: " + CapabilityOutput.formatValue(combined, unit) + " for " + day);
+            stampDevices(collection, day, existing, expected > 1 ? rows.size() : null, expected > 1 ? expected : null);
             if (health.needsRepair(kpi)) break; // anomaly tripped the breaker: stop storing; repair takes over
         }
         return stored;
+    }
+
+    /** Sets devicesReported/Expected on the day's point (null clears stale values). No write on the single-device path. */
+    private void stampDevices(String collection, LocalDate day, KPIData before, Integer reported, Integer expected) {
+        if (reported == null && (before == null || (before.getDevicesReported() == null && before.getDevicesExpected() == null))) {
+            return;
+        }
+        dataRepository.findByDate(day, collection).ifPresent(d -> {
+            d.setDevicesReported(reported);
+            d.setDevicesExpected(expected);
+            dataRepository.save(d, collection);
+        });
     }
 
     /** POST /activate on every device when a RUNNER version goes live (SHADOW or ACTIVE). Best effort: pull() retries. */
