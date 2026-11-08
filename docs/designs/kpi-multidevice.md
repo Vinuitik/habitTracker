@@ -105,6 +105,13 @@ sum | max | avg | latest(by recordedAt). Combined value recorded through the exi
 - Migration: only latest live/in-flight version → `target=ACTIVE`; superseded versions → `REMOVED/REMOVED`. `dep.os` may be null after migration → whoever calls `info()` backfills it (④ reconciler on connect).
 - Repair versions get their deployment row only when the pipeline's `attempt()` runs.
 
+## Wave-2 hub state (④ ⑤ merged, 714c72b)
+- Reconciler `KPI/deploy/KpiDeploymentReconciler`: event `relay/RunnerConnected(userId, deviceId)` (from `UplinkHandler`, handled on a single-thread executor) + sweep. Deploys a row only if its capability has `approvedContractHash` or is ACTIVE/SHADOW. 5th failure → FAILED (parked until retry).
+- API: `GET /api/kpi/{kpiId}/deployments` → rows {deviceId, deviceName, os, status, lastError, online}; `POST /api/kpi/{kpiId}/deployments/{id}/retry`.
+- Readings: `GET /api/kpi/{kpiId}/device-readings?from&to` → [{date, deviceId, deviceName, value, unit}]; KPIData DTO has `devicesReported`/`devicesExpected` (null unless >1 device). NOTE: new routes use `/api/kpi/{kpiId}` (id); older KPI routes are `/api/kpis/{name}`.
+- MANUAL points are never overwritten by runner readings (single-device too).
+- **Collector id per version (fix ④b):** `kpi-<kpiId>-v<N>` so old and new coexist on the runner during a redefine; migrated rows keep `kpi-<kpiId>`. Pull reads, per device, the newest row with status ACTIVE (any version). Reconciler removes the old version's collector only after the new row on that device is ACTIVE.
+
 ## Hub ↔ runner client additions (`relay/RunnerCollectorClient`)
 `info(user, device) → {os, arch, managers}`, `packages(user, device)`, `uninstallPackage(user, device, manager, id)`.
 
@@ -117,6 +124,7 @@ sum | max | avg | latest(by recordedAt). Combined value recorded through the exi
 | ④ reconciler | `KPI/deploy/KpiDeploymentReconciler` (+ uplink-connected event listener, 5-min sweep, backoff) | pull/readings |
 | ⑤ aggregation | `KpiDeviceReading*`, `DeviceCombiner`, pull→device reading→combine in `RunnerCollectorProvider` | reconciler |
 | ⑥ runner installs | winget/brew/flatpak/pip managers in `packages.go`, local confirm page, uplink context mark | manifest hash |
+| ④b collector-id fix | collectorId scheme, pull per-device row choice, reconciler removal path | UI, prompts |
 | ⑦ UI devices | Automate dialog device chips, approval screen "Runs on…", per-KPI deployment status row | U menu |
 | ⑧ UI uninstall + dashboard | retire dialog uninstall offer, "Installed by KPIs" on Relay device page, per-device breakdown | Automate dialog |
 | ⑨ prompt | `prompts/kpi-collector-generate.md` + `CollectorStaticCheck` (variants rule, requires allowlist) | UI |
