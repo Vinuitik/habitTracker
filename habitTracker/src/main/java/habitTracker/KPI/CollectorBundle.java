@@ -68,16 +68,73 @@ public record CollectorBundle(ObjectNode manifest, Map<String, String> files) {
         return out;
     }
 
-    /** Source types declared in the manifest ("activitywatch", "file"), in order, deduped. */
+    /** Source types declared in the manifest ("activitywatch", "file"), in order, deduped (union over variants). */
     public List<String> sourceTypes() {
         List<String> out = new ArrayList<>();
-        JsonNode s = manifest.get("sources");
-        if (s != null && s.isArray()) {
-            s.forEach(src -> {
+        collectTypes(manifest.get("sources"), out);
+        variants().values().forEach(v -> collectTypes(v.get("sources"), out));
+        return out;
+    }
+
+    private static void collectTypes(JsonNode sources, List<String> out) {
+        if (sources != null && sources.isArray()) {
+            sources.forEach(src -> {
                 String t = src.path("type").asText("");
                 if (!t.isEmpty() && !out.contains(t)) out.add(t);
             });
         }
+    }
+
+    // ── multi-device variants (kpi-multidevice.md "Hub bundle manifest") ──────
+
+    /** OS key (Go runtime.GOOS) → variant {requires, sources}; empty for a legacy bundle. */
+    public Map<String, JsonNode> variants() {
+        Map<String, JsonNode> out = new LinkedHashMap<>();
+        JsonNode v = manifest.get("variants");
+        if (v != null && v.isObject()) v.fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
         return out;
+    }
+
+    /** Legacy = top-level sources, no variants: one variant for the OS of the device it was installed on. */
+    public boolean isLegacy() {
+        return !manifest.path("variants").isObject();
+    }
+
+    /** Cross-device rule from the manifest; "sum" when absent. */
+    public String combine() {
+        return manifest.path("combine").asText("sum");
+    }
+
+    /**
+     * The manifest the hub sends ONE runner (POST /v1/collectors): {schedule, window, unit, aggregation, requires,
+     * sources} from that OS's variant; combine/variants never reach the runner. A legacy bundle is its own single
+     * variant, so any os resolves to the manifest as stored (minus combine). IllegalArgumentException when a
+     * variants bundle has no entry for os (null included).
+     */
+    public ObjectNode resolve(String os) {
+        ObjectNode out = manifest.deepCopy();
+        out.remove("combine");
+        if (isLegacy()) return out;
+        JsonNode v = os == null ? null : manifest.path("variants").get(os);
+        if (v == null || !v.isObject()) {
+            throw new IllegalArgumentException("This collector has no variant for " + (os == null ? "an unknown OS" : os));
+        }
+        out.remove("variants");
+        out.remove("sources");
+        out.remove("requires");
+        v.fields().forEachRemaining(e -> out.set(e.getKey(), e.getValue().deepCopy()));
+        return out;
+    }
+
+    /** A legacy bundle rewritten as a variants bundle whose single variant is `os` (top-level sources/requires move into it). */
+    public CollectorBundle withVariantFor(String os, String combine) {
+        if (!isLegacy()) return this;
+        ObjectNode m = manifest.deepCopy();
+        ObjectNode variant = JSON.createObjectNode();
+        if (m.has("requires")) variant.set("requires", m.remove("requires"));
+        variant.set("sources", m.has("sources") ? m.remove("sources") : JSON.createArrayNode());
+        m.put("combine", combine == null || combine.isBlank() ? "sum" : combine);
+        m.putObject("variants").set(os, variant);
+        return new CollectorBundle(m, files);
     }
 }

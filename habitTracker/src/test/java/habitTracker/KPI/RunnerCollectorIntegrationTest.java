@@ -54,6 +54,7 @@ class RunnerCollectorIntegrationTest {
     @Autowired MongoTemplate mongoTemplate;
     @Autowired KPIRepository kpiRepository;
     @Autowired KPIProxyCapabilityRepository capabilityRepository;
+    @Autowired habitTracker.KPI.deploy.KpiDeploymentRepository deploymentRepository;
     @Autowired CapabilityAgentService service;
     @Autowired CapabilityLifecycleService lifecycle;
     @Autowired RunnerCollectorProvider provider;
@@ -154,6 +155,7 @@ class RunnerCollectorIntegrationTest {
     void setUp() {
         mongoTemplate.dropCollection(KPI.class);
         mongoTemplate.dropCollection(KPIProxyCapability.class);
+        mongoTemplate.dropCollection(habitTracker.KPI.deploy.KpiDeployment.class);
         reset(generator, runnerClient, selector);
         runner = new FakeRunner();
         when(selector.pick(USER)).thenReturn(Optional.of(DEVICE));
@@ -171,6 +173,10 @@ class RunnerCollectorIntegrationTest {
                 "ActivityWatch on your computer", List.of("activitywatch")));
         when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(bundle(List.of("web")));
+    }
+
+    private habitTracker.KPI.deploy.KpiDeployment dep(String kpiId, Integer version) {
+        return deploymentRepository.findByKpiIdAndDeviceIdAndCapabilityVersion(kpiId, DEVICE, version).orElseThrow();
     }
 
     private String lastCollectorId = "kpi-x";
@@ -240,10 +246,11 @@ class RunnerCollectorIntegrationTest {
         assertEquals(1, runner.activates);
         assertTrue(runner.active);
         KPIProxyCapability stored = capabilityRepository.findById(built.id()).orElseThrow();
-        assertEquals(DEVICE, stored.getRunnerDeviceId());
-        assertEquals("kpi-" + kpi.getId(), stored.getCollectorId());
+        assertEquals(java.util.List.of(DEVICE), stored.getTargetDeviceIds());
+        habitTracker.KPI.deploy.KpiDeployment storedDep = dep(kpi.getId(), stored.getVersion());
+        assertEquals("kpi-" + kpi.getId(), storedDep.getCollectorId());
         assertEquals(runner.approvedHash, stored.getApprovedContractHash());
-        assertTrue(stored.getCollectorActivated());
+        assertTrue(storedDep.isActivated());
 
         // readings pull: two days, one of them recorded twice (newest wins); stored as SHADOW-flagged
         LocalDate d1 = LocalDate.now().minusDays(2), d2 = LocalDate.now().minusDays(1);
@@ -258,7 +265,7 @@ class RunnerCollectorIntegrationTest {
         Document day2 = data.stream().filter(d -> ((Number) d.get("value")).doubleValue() == 41.0).findFirst().orElseThrow();
         assertEquals("SHADOW", day2.get("flag"));
         assertEquals(true, day2.get("pending"));
-        assertEquals("2026-11-04T00:20:00Z", capabilityRepository.findById(built.id()).orElseThrow().getReadingsSince());
+        assertEquals("2026-11-04T00:20:00Z", dep(kpi.getId(), stored.getVersion()).getReadingsSince());
 
         // next pull sends the cursor
         runner.readings.clear();
@@ -384,7 +391,8 @@ class RunnerCollectorIntegrationTest {
         KPI after = kpiRepository.findById(kpi.getId()).orElseThrow();
         assertEquals(ProxyStatus.ACTIVE, after.getProxyStatus());
         assertEquals(0, after.getConsecutiveProxyFailures() == null ? 0 : after.getConsecutiveProxyFailures());
-        assertNull(capabilityRepository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), USER).orElseThrow().getLastPulledOn());
+        KPIProxyCapability latest = capabilityRepository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), USER).orElseThrow();
+        assertNull(dep(kpi.getId(), latest.getVersion()).getLastPulledOn());
     }
 
     @Test
@@ -434,7 +442,7 @@ class RunnerCollectorIntegrationTest {
                 org.mockito.ArgumentMatchers.eq(List.of(new CredentialRef("github", "api.github.com"))));
         assertEquals(List.of("http"), p.declaredCapabilities().get("sources"));
         assertEquals(List.of("github@api.github.com"), p.declaredCapabilities().get("credentials"));
-        assertEquals(DEVICE, capabilityRepository.findById(p.id()).orElseThrow().getRunnerDeviceId());
+        assertEquals(java.util.List.of(DEVICE), capabilityRepository.findById(p.id()).orElseThrow().getTargetDeviceIds());
 
         CapabilityDTO c = service.approveAs(USER, kpi.getName(), p.id());
         assertEquals(CapabilityStatus.AWAITING_CONTRACT, c.status(), String.valueOf(c.failureReason()));

@@ -36,6 +36,28 @@ public class RunnerCollectorClient {
         this.longCallMs = longCallMs;
     }
 
+    /** What the runner reports about itself: Go runtime.GOOS / GOARCH and the package managers found on PATH. */
+    public record RunnerInfo(String os, String arch, java.util.List<String> managers) {}
+
+    /**
+     * GET /v1/runner/info → os/arch/managers. An older runner (no such fields, or no such route) yields os null,
+     * arch null, no managers: callers must tolerate an unknown OS.
+     */
+    public RunnerInfo info(String userId, String deviceId) {
+        JsonNode n;
+        try {
+            n = jobs.send(userId, deviceId, "GET", "/v1/runner/info", "");
+        } catch (RunnerCallException e) {
+            if (e.getStatus() == 404) return new RunnerInfo(null, null, java.util.List.of());
+            throw e;
+        }
+        java.util.List<String> managers = new java.util.ArrayList<>();
+        if (n != null && n.path("managers").isArray()) n.get("managers").forEach(m -> managers.add(m.asText()));
+        String os = n == null ? "" : n.path("os").asText("");
+        String arch = n == null ? "" : n.path("arch").asText("");
+        return new RunnerInfo(os.isBlank() ? null : os, arch.isBlank() ? null : arch, java.util.List.copyOf(managers));
+    }
+
     /** → {activitywatch:{installed, running, buckets, error?}, sandbox:{available, kind, error?}, operation}. */
     public JsonNode sensors(String userId, String deviceId) {
         return jobs.send(userId, deviceId, "GET", "/v1/sensors", "");

@@ -2,6 +2,8 @@ package habitTracker.KPI;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import habitTracker.KPI.deploy.KpiDeployment;
+import habitTracker.KPI.deploy.KpiDeploymentRepository;
 import habitTracker.relay.Device;
 import habitTracker.relay.DeviceService;
 import habitTracker.relay.OnlineRunnerSelector;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -48,6 +51,7 @@ public class RunnerCollectorPipeline {
     interface Sleeper { void sleep(long ms) throws InterruptedException; }
 
     private final KPIProxyCapabilityRepository repository;
+    private final KpiDeploymentRepository deployments;
     private final CapabilityGenerator generator;
     private final RunnerCollectorClient client;
     private final OnlineRunnerSelector selector;
@@ -58,19 +62,22 @@ public class RunnerCollectorPipeline {
     private final Sleeper sleeper;
 
     @Autowired
-    public RunnerCollectorPipeline(KPIProxyCapabilityRepository repository, CapabilityGenerator generator,
+    public RunnerCollectorPipeline(KPIProxyCapabilityRepository repository, KpiDeploymentRepository deployments,
+                                   CapabilityGenerator generator,
                                    RunnerCollectorClient client, OnlineRunnerSelector selector, DeviceService devices,
                                    CapabilityLifecycleService lifecycle,
                                    @Value("${kpi.runner.sensor-poll-ms:3000}") long sensorPollMs,
                                    @Value("${kpi.runner.sensor-install-timeout-ms:600000}") long sensorInstallTimeoutMs) {
-        this(repository, generator, client, selector, devices, lifecycle, sensorPollMs, sensorInstallTimeoutMs, Thread::sleep);
+        this(repository, deployments, generator, client, selector, devices, lifecycle, sensorPollMs, sensorInstallTimeoutMs, Thread::sleep);
     }
 
-    RunnerCollectorPipeline(KPIProxyCapabilityRepository repository, CapabilityGenerator generator,
+    RunnerCollectorPipeline(KPIProxyCapabilityRepository repository, KpiDeploymentRepository deployments,
+                            CapabilityGenerator generator,
                             RunnerCollectorClient client, OnlineRunnerSelector selector, DeviceService devices,
                             CapabilityLifecycleService lifecycle, long sensorPollMs, long sensorInstallTimeoutMs,
                             Sleeper sleeper) {
         this.repository = repository;
+        this.deployments = deployments;
         this.generator = generator;
         this.client = client;
         this.selector = selector;
@@ -93,12 +100,12 @@ public class RunnerCollectorPipeline {
     /** cap is PENDING_TEST and saved. */
     KPIProxyCapability attempt(KPIProxyCapability cap, KPI kpi, int maxAttempts) {
         String userId = cap.getUserId();
-        if (cap.getRunnerDeviceId() == null) {
+        if (device(cap) == null) {
             Optional<String> d = selector.pick(userId);
             if (d.isEmpty()) return fail(cap, CapabilityAgentService.NO_RUNNER_REASON);
-            cap.setRunnerDeviceId(d.get());
+            cap.setTargetDeviceIds(new ArrayList<>(List.of(d.get())));
         }
-        if (cap.getCollectorId() == null) cap.setCollectorId("kpi-" + kpi.getId());
+        deployment(cap); // the proposing device's row: collector id + per-device state
         repository.save(cap);
         try {
             if (sensorsBlock(cap)) return repository.save(cap);
@@ -159,7 +166,8 @@ public class RunnerCollectorPipeline {
     }
 
     private Install installAndTest(KPIProxyCapability cap, KPI kpi, CollectorBundle bundle) {
-        String userId = cap.getUserId(), device = cap.getRunnerDeviceId(), id = cap.getCollectorId();
+        KpiDeployment dep = deployment(cap);
+        String userId = cap.getUserId(), device = dep.getDeviceId(), id = dep.getCollectorId();
         CapabilityProgress.step("Checking the collector against the safety rules");
         List<String> problems = CollectorStaticCheck.check(bundle, sources(cap), CredentialRef.byName(credentials(cap)));
         if (!problems.isEmpty()) {
@@ -170,13 +178,19 @@ public class RunnerCollectorPipeline {
         CapabilityProgress.step("Installing it on " + runnerName(cap));
         JsonNode installed;
         try {
-            installed = client.install(userId, device, id, kpi.getName(), bundle.manifest(), bundle.files());
+            if (dep.getOs() == null && !bundle.isLegacy()) dep.setOs(client.info(userId, device).os());
+            installed = client.install(userId, device, id, kpi.getName(), bundle.resolve(dep.getOs()), bundle.files());
+        } catch (IllegalArgumentException e) { // variants bundle without an entry for this device's OS
+            return new Install("The collector does not support " + runnerName(cap) + ": " + e.getMessage(), false);
         } catch (RunnerCallException e) {
             if (e.getStatus() == 400) return new Install("The runner rejected the collector: " + runnerError(e), false);
             throw stopFor(e);
         }
         cap.setContractHash(installed.path("contractHash").asText(null));
         boolean approved = installed.path("approved").asBoolean(false);
+        dep.setContractHash(cap.getContractHash());
+        dep.setApproved(approved);
+        save(dep);
         repository.save(cap);
 
         CapabilityProgress.step("Testing it with sample data in the runner's sandbox");
@@ -223,7 +237,11 @@ public class RunnerCollectorPipeline {
         try {
             CapabilityProgress.step("Saving your approval on " + runnerName(cap));
             try {
-                client.approve(cap.getUserId(), cap.getRunnerDeviceId(), cap.getCollectorId(), cap.getContractHash());
+                KpiDeployment dep = deployment(cap);
+                client.approve(cap.getUserId(), dep.getDeviceId(), dep.getCollectorId(), cap.getContractHash());
+                dep.setContractHash(cap.getContractHash());
+                dep.setApproved(true);
+                save(dep);
             } catch (RunnerCallException e) {
                 if (e.getStatus() == 409) {
                     return fail(cap, "Test gate failed: the collector on your runner changed after this contract was shown. Press Regenerate.");
@@ -253,7 +271,8 @@ public class RunnerCollectorPipeline {
         CapabilityProgress.step("Running it once on your real data for " + day);
         JsonNode r;
         try {
-            r = client.run(cap.getUserId(), cap.getRunnerDeviceId(), cap.getCollectorId(), from, to);
+            KpiDeployment dep = deployment(cap);
+            r = client.run(cap.getUserId(), dep.getDeviceId(), dep.getCollectorId(), from, to);
         } catch (RunnerCallException e) {
             return switch (e.getStatus()) {
                 case 503 -> { // ActivityWatch down / bucket missing / credential missing or rejected: not the collector's
@@ -296,7 +315,7 @@ public class RunnerCollectorPipeline {
             if (needsAw && !awRunning(s) && !"installing".equals(s.path("operation").asText(""))) {
                 CapabilityProgress.step("Installing ActivityWatch on " + runnerName(cap));
                 try {
-                    client.installSensor(cap.getUserId(), cap.getRunnerDeviceId(), ACTIVITYWATCH);
+                    client.installSensor(cap.getUserId(), device(cap), ACTIVITYWATCH);
                 } catch (RunnerCallException e) {
                     if (e.getStatus() == 501) {
                         cap.setFailureReason("ActivityWatch can't be installed automatically on " + runnerName(cap)
@@ -338,19 +357,43 @@ public class RunnerCollectorPipeline {
 
     /** "Start over" on a first build: remove the collector from the runner (best effort). */
     void forget(KPIProxyCapability cap) {
-        if (cap.getRunnerDeviceId() == null || cap.getCollectorId() == null) return;
+        if (device(cap) == null) return;
+        KpiDeployment dep = deployments.findByKpiIdAndDeviceIdAndCapabilityVersion(cap.getKpiId(), device(cap), cap.getVersion()).orElse(null);
+        if (dep == null || dep.getCollectorId() == null) return;
         try {
-            client.delete(cap.getUserId(), cap.getRunnerDeviceId(), cap.getCollectorId());
+            client.delete(cap.getUserId(), dep.getDeviceId(), dep.getCollectorId());
         } catch (RuntimeException e) {
-            log.info("[RunnerCollector] could not delete collector {} on {}: {}", cap.getCollectorId(), cap.getRunnerDeviceId(), e.toString());
+            log.info("[RunnerCollector] could not delete collector {} on {}: {}", dep.getCollectorId(), dep.getDeviceId(), e.toString());
         }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
+    /** The proposing device: first of targetDeviceIds (the build pipeline runs against one device), null when none. */
+    static String device(KPIProxyCapability cap) {
+        List<String> t = cap.getTargetDeviceIds();
+        return t == null || t.isEmpty() ? null : t.get(0);
+    }
+
+    /** This version's deployment row on the proposing device; created on first use (collector id "kpi-<kpiId>"). */
+    KpiDeployment deployment(KPIProxyCapability cap) {
+        String device = device(cap);
+        if (device == null) return null;
+        return deployments.findByKpiIdAndDeviceIdAndCapabilityVersion(cap.getKpiId(), device, cap.getVersion())
+                .orElseGet(() -> deployments.save(KpiDeployment.builder()
+                        .userId(cap.getUserId()).kpiId(cap.getKpiId()).capabilityId(cap.getId())
+                        .capabilityVersion(cap.getVersion()).deviceId(device).collectorId("kpi-" + cap.getKpiId())
+                        .createdAt(Instant.now()).updatedAt(Instant.now()).build()));
+    }
+
+    private void save(KpiDeployment dep) {
+        dep.setUpdatedAt(Instant.now());
+        deployments.save(dep);
+    }
+
     private JsonNode sensors(KPIProxyCapability cap) {
         try {
-            return client.sensors(cap.getUserId(), cap.getRunnerDeviceId());
+            return client.sensors(cap.getUserId(), device(cap));
         } catch (RunnerCallException e) {
             if (e.getStatus() == 503 || e.getStatus() == 404) {
                 throw new Stop(SANDBOX_UNAVAILABLE + runnerName(cap) + " does not support KPI collectors yet. Update the runner app, then press Regenerate.");
@@ -373,9 +416,9 @@ public class RunnerCollectorPipeline {
     }
 
     String runnerName(KPIProxyCapability cap) {
-        if (cap.getRunnerDeviceId() == null) return "your runner";
+        if (device(cap) == null) return "your runner";
         try {
-            return devices.owned(cap.getUserId(), cap.getRunnerDeviceId()).map(Device::getName)
+            return devices.owned(cap.getUserId(), device(cap)).map(Device::getName)
                     .filter(n -> n != null && !n.isBlank()).orElse("your runner");
         } catch (RuntimeException e) {
             return "your runner";
