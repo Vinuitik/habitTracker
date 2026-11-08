@@ -6,6 +6,8 @@ import habitTracker.KPI.deploy.DeviceCombiner;
 import habitTracker.KPI.deploy.KpiDeployment;
 import habitTracker.KPI.deploy.KpiDeploymentRepository;
 import habitTracker.KPI.deploy.KpiDeploymentTarget;
+import habitTracker.KPI.deploy.KpiDeploymentStatus;
+import habitTracker.relay.RunnerCollectorClient;
 import habitTracker.KPI.deploy.KpiDeviceReading;
 import habitTracker.KPI.deploy.KpiDeviceReadingRepository;
 import habitTracker.KPI.DeviceReadingController.DeviceReadingDTO;
@@ -83,7 +85,7 @@ class DeviceAggregationTest {
             rows.add(KpiDeployment.builder().kpiId("k1").deviceId(id).collectorId("kpi-k1").capabilityVersion(1)
                     .target(KpiDeploymentTarget.ACTIVE).build());
         }
-        when(deployments.findByKpiIdAndCapabilityVersion("k1", 1)).thenReturn(rows);
+        when(deployments.findByKpiId("k1")).thenReturn(rows);
     }
 
     int push(String device, double v, String recordedAt) throws Exception {
@@ -151,6 +153,42 @@ class DeviceAggregationTest {
         assertEquals(0, push("a", 1, "2026-11-08T00:00:00Z"));
         assertEquals(42.0, points.get(DAY).getValue());
         verify(recorder, never()).record(any(), any(), anyDouble(), any(), any());
+    }
+
+    @Test
+    void duringRollout_deviceOnV2AndDeviceStillOnV1BothCombined() throws Exception {
+        cap.setVersion(2);
+        cap.setCombine("sum");
+        KpiDeployment aV1 = row("a", 1, "kpi-k1-v1", KpiDeploymentTarget.ACTIVE, KpiDeploymentStatus.ACTIVE);
+        KpiDeployment aV2 = row("a", 2, "kpi-k1-v2", KpiDeploymentTarget.ACTIVE, KpiDeploymentStatus.ACTIVE);
+        KpiDeployment bV1 = row("b", 1, "kpi-k1-v1", KpiDeploymentTarget.ACTIVE, KpiDeploymentStatus.ACTIVE);
+        KpiDeployment bV2 = row("b", 2, "kpi-k1-v2", KpiDeploymentTarget.ACTIVE, KpiDeploymentStatus.PENDING); // not installed yet
+        when(deployments.findByKpiId("k1")).thenReturn(List.of(aV1, aV2, bV1, bV2));
+        // pull reads a@v2 and b@v1 only
+        java.util.List<String> ids = new ArrayList<>();
+        RunnerCollectorClient client = mock(RunnerCollectorClient.class);
+        provider = new RunnerCollectorProvider(mock(KPIRepository.class), repo(cap), deployments, client, health, recorder,
+                readingRepo, data, new KPICollectionNameUtil());
+        when(client.list(any(), any())).thenReturn(JSON.createArrayNode());
+        when(client.readings(any(), any(), any(), any())).thenAnswer(i -> {
+            ids.add(i.getArgument(1) + ":" + i.getArgument(2));
+            return JSON.readTree("[{\"from\":\"2026-11-07T00:00:00Z\",\"value\":3,\"unit\":\"hours\",\"recordedAt\":\"2026-11-08T01:00:00Z\"}]");
+        });
+        provider.pull(kpi);
+        assertEquals(List.of("a:kpi-k1-v2", "b:kpi-k1-v1"), ids);
+        assertEquals(6.0, points.get(DAY).getValue()); // both devices, expected = 2
+        assertEquals(2, points.get(DAY).getDevicesExpected());
+    }
+
+    private KpiDeployment row(String device, int version, String collectorId, KpiDeploymentTarget t, KpiDeploymentStatus s) {
+        return KpiDeployment.builder().kpiId("k1").deviceId(device).capabilityVersion(version).collectorId(collectorId)
+                .target(t).status(s).activated(s == KpiDeploymentStatus.ACTIVE).build();
+    }
+
+    private KPIProxyCapabilityRepository repo(KPIProxyCapability c) {
+        KPIProxyCapabilityRepository r = mock(KPIProxyCapabilityRepository.class);
+        when(r.findFirstByKpiIdAndUserIdOrderByVersionDesc("k1", "u1")).thenReturn(Optional.of(c));
+        return r;
     }
 
     @Test
