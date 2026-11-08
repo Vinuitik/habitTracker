@@ -81,24 +81,22 @@ public class KPIProxyCapability {
     private String lastUnit;
 
     // S3 RUNNER platform.
-    // The paired runner (relay Device id) the collector is installed on, and its id there ("kpi-<kpiId>", same
-    // across versions: a repair re-installs under the same id).
-    private String runnerDeviceId;
-    private String collectorId;
+    // Multi-device (kpi-multidevice.md): the runners (relay Device ids) this KPI should run on. Per-device state
+    // (collector id, readings cursor, activation) lives on KpiDeployment rows, one per (kpi, device, version).
+    private List<String> targetDeviceIds;
+    // How per-device values combine into the KPI's daily value: sum | max | avg | latest.
+    @Builder.Default
+    private String combine = "sum";
+    // R4: set when a redefine changed the unit/sources, so history is no longer comparable.
+    private Boolean meaningChanged;
     // Generated bundle as one JSON string {manifest, files} (file paths contain dots, which Mongo map keys can't).
     private String collectorBundle;
-    // contractHash = the runner's sha256 of {sources, schedule, window} for this version's manifest;
+    // contractHash = the runner's sha256 of {sources, schedule, window} for the proposing device's manifest (display);
     // approvedContractHash = the hash the user approved (copied to repair versions: same hash = no new approval).
     private String contractHash;
     private String approvedContractHash;
     // Last fixture test run on the runner (per case), shown in the UI.
     private List<CollectorTestCase> collectorTests;
-    // Readings pull bookkeeping: max recordedAt seen (ISO, the runner's ?since=), the day of the last pull,
-    // and whether POST /activate succeeded.
-    private String readingsSince;
-    private LocalDate lastPulledOn;
-    private Boolean collectorActivated;
-
     public record CollectorTestCase(String name, boolean passed, Double expected, Double got, String error) {}
 
     private LocalDateTime createdAt;

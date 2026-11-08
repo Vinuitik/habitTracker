@@ -1,6 +1,9 @@
 package habitTracker.KPI;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import habitTracker.KPI.deploy.KpiDeployment;
+import habitTracker.KPI.deploy.KpiDeploymentRepository;
+import habitTracker.KPI.deploy.KpiDeploymentTarget;
 import habitTracker.relay.RunnerCallException;
 import habitTracker.relay.RunnerCollectorClient;
 import habitTracker.relay.RunnerUnavailableException;
@@ -10,9 +13,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -29,6 +34,8 @@ import java.util.TreeMap;
  *     → GET .../readings?since=<readingsSince> (runner filters on recordedAt) → per local day (from's date; a day
  *       recorded twice keeps the newest) → ProxyReadingRecorder.record (SHADOW / plausibility / anomaly)
  *       → readingsSince = max recordedAt, lastPulledOn = today.
+ * Per-device state (collector id, cursor, activation) lives on KpiDeployment rows; pull(kpi) iterates the live
+ *   version's ACTIVE-target rows and hands each device's days to storeDeviceReadings (the aggregation seam).
  *   Runner offline / unreachable → skipped, nothing counted (no breaker trip); tried again next hour.
  * Activation listener: CapabilityWentLive for a RUNNER version → POST /activate (best effort; the pull retries).
  */
@@ -43,14 +50,17 @@ public class RunnerCollectorProvider {
 
     private final KPIRepository kpiRepository;
     private final KPIProxyCapabilityRepository repository;
+    private final KpiDeploymentRepository deployments;
     private final RunnerCollectorClient client;
     private final ProxyHealthService health;
     private final ProxyReadingRecorder recorder;
 
     public RunnerCollectorProvider(KPIRepository kpiRepository, KPIProxyCapabilityRepository repository,
-                                   RunnerCollectorClient client, ProxyHealthService health, ProxyReadingRecorder recorder) {
+                                   KpiDeploymentRepository deployments, RunnerCollectorClient client,
+                                   ProxyHealthService health, ProxyReadingRecorder recorder) {
         this.kpiRepository = kpiRepository;
         this.repository = repository;
+        this.deployments = deployments;
         this.client = client;
         this.health = health;
         this.recorder = recorder;
@@ -62,7 +72,9 @@ public class RunnerCollectorProvider {
         for (KPI kpi : kpiRepository.findByActive(true)) {
             if (kpi.getProxyType() != ProxyType.RUNNER_COLLECTOR || health.needsRepair(kpi)) continue;
             Optional<KPIProxyCapability> cap = live(kpi);
-            if (cap.isEmpty() || today.equals(cap.get().getLastPulledOn())) continue;
+            if (cap.isEmpty()) continue;
+            List<KpiDeployment> due = pullable(cap.get());
+            if (due.isEmpty() || due.stream().allMatch(d -> today.equals(d.getLastPulledOn()))) continue;
             try {
                 pull(kpi);
             } catch (RuntimeException e) { // one broken KPI must not stop the others
@@ -71,16 +83,34 @@ public class RunnerCollectorProvider {
         }
     }
 
-    /** One pull for this KPI (nightly/hourly job and the on-demand endpoint). Never throws for runner problems. */
+    /**
+     * One pull for this KPI (nightly/hourly job and the on-demand endpoint): every pullable deployment of the live
+     * version, one after another. Never throws for runner problems. Overall outcome: FAILED if any device's collector
+     * failed, else PULLED if any pulled, else SKIPPED_OFFLINE.
+     */
     public PullResult pull(KPI kpi) {
         Optional<KPIProxyCapability> found = live(kpi);
         if (found.isEmpty()) return new PullResult(Outcome.NOT_RUNNABLE, 0);
         KPIProxyCapability cap = found.get();
-        String user = cap.getUserId(), device = cap.getRunnerDeviceId(), id = cap.getCollectorId();
+        List<KpiDeployment> rows = pullable(cap);
+        if (rows.isEmpty()) return new PullResult(Outcome.NOT_RUNNABLE, 0);
+        Outcome overall = Outcome.SKIPPED_OFFLINE;
+        int stored = 0;
+        for (KpiDeployment dep : rows) {
+            PullResult r = pullDeployment(kpi, cap, dep);
+            stored += r.stored();
+            if (r.outcome() == Outcome.FAILED) overall = Outcome.FAILED;
+            else if (r.outcome() == Outcome.PULLED && overall != Outcome.FAILED) overall = Outcome.PULLED;
+        }
+        return new PullResult(overall, stored);
+    }
+
+    private PullResult pullDeployment(KPI kpi, KPIProxyCapability cap, KpiDeployment dep) {
+        String user = cap.getUserId(), device = dep.getDeviceId(), id = dep.getCollectorId();
         try {
-            if (!Boolean.TRUE.equals(cap.getCollectorActivated())) {
+            if (!dep.isActivated()) {
                 client.activate(user, device, id);
-                cap.setCollectorActivated(true);
+                dep.setActivated(true);
             }
             JsonNode state = find(client.list(user, device), id);
             if (state != null && "failed".equals(state.path("state").asText(""))) {
@@ -88,15 +118,16 @@ public class RunnerCollectorProvider {
                 cap.setLastRunAt(LocalDateTime.now());
                 cap.setLastResult("FAILED on runner: " + clip(err));
                 cap.setConsecutiveFailures((cap.getConsecutiveFailures() == null ? 0 : cap.getConsecutiveFailures()) + 1);
-                cap.setLastPulledOn(LocalDate.now());
+                dep.setLastPulledOn(LocalDate.now());
+                saveDeployment(dep);
                 repository.save(cap);
                 health.recordFailure(kpi); // the runner stopped scheduling it; breaker → M12 repair (new version + activate)
                 return new PullResult(Outcome.FAILED, 0);
             }
-            JsonNode readings = client.readings(user, device, id, cap.getReadingsSince());
+            JsonNode readings = client.readings(user, device, id, dep.getReadingsSince());
             // one value per local day; a re-run of the same window (same date) keeps the newest recordedAt
             Map<LocalDate, JsonNode> byDay = new TreeMap<>();
-            String maxRecorded = cap.getReadingsSince();
+            String maxRecorded = dep.getReadingsSince();
             OffsetDateTime maxAt = parse(maxRecorded);
             for (JsonNode r : readings) {
                 OffsetDateTime from = parse(r.path("from").asText(null));
@@ -112,19 +143,10 @@ public class RunnerCollectorProvider {
                     maxRecorded = r.path("recordedAt").asText();
                 }
             }
-            int stored = 0;
-            for (Map.Entry<LocalDate, JsonNode> e : byDay.entrySet()) {
-                JsonNode r = e.getValue();
-                String unit = r.path("unit").asText(null);
-                if (unit != null && !unit.isBlank()) cap.setLastUnit(unit);
-                ProxyProvider.Context ctx = new ProxyProvider.Context(cap.getStatus() == CapabilityStatus.SHADOW, cap.getLastUnit());
-                recorder.record(kpi, e.getKey(), r.path("value").asDouble(), ctx, KPIDataSource.PROXY_CAPABILITY);
-                stored++;
-                cap.setLastResult("OK: " + CapabilityOutput.formatValue(r.path("value").asDouble(), unit) + " for " + e.getKey());
-                if (health.needsRepair(kpi)) break; // anomaly tripped the breaker: stop storing; repair takes over
-            }
-            cap.setReadingsSince(maxRecorded);
-            cap.setLastPulledOn(LocalDate.now());
+            int stored = storeDeviceReadings(kpi, cap, dep, byDay);
+            dep.setReadingsSince(maxRecorded);
+            dep.setLastPulledOn(LocalDate.now());
+            saveDeployment(dep);
             if (stored > 0) {
                 cap.setLastRunAt(LocalDateTime.now());
                 cap.setConsecutiveFailures(0);
@@ -143,27 +165,62 @@ public class RunnerCollectorProvider {
         }
     }
 
-    /** POST /activate when a RUNNER version goes live (SHADOW or ACTIVE). Best effort: pull() retries. */
+    /**
+     * SEAM for multi-device aggregation (agent 5): where one device's per-day readings (newest recordedAt per day,
+     * already deduped) land. Today a KPI has one device, so they go straight to KPIData through the recorder.
+     * Aggregation will replace this body with: write kpi_device_readings, then combine across devices.
+     * @return days stored
+     */
+    int storeDeviceReadings(KPI kpi, KPIProxyCapability cap, KpiDeployment dep, Map<LocalDate, JsonNode> byDay) {
+        int stored = 0;
+        for (Map.Entry<LocalDate, JsonNode> e : byDay.entrySet()) {
+            JsonNode r = e.getValue();
+            String unit = r.path("unit").asText(null);
+            if (unit != null && !unit.isBlank()) cap.setLastUnit(unit);
+            ProxyProvider.Context ctx = new ProxyProvider.Context(cap.getStatus() == CapabilityStatus.SHADOW, cap.getLastUnit());
+            recorder.record(kpi, e.getKey(), r.path("value").asDouble(), ctx, KPIDataSource.PROXY_CAPABILITY);
+            stored++;
+            cap.setLastResult("OK: " + CapabilityOutput.formatValue(r.path("value").asDouble(), unit) + " for " + e.getKey());
+            if (health.needsRepair(kpi)) break; // anomaly tripped the breaker: stop storing; repair takes over
+        }
+        return stored;
+    }
+
+    /** POST /activate on every device when a RUNNER version goes live (SHADOW or ACTIVE). Best effort: pull() retries. */
     @EventListener
     public void onLive(CapabilityWentLive event) {
         KPIProxyCapability cap = event.capability();
-        if (cap.getPlatform() != CapabilityPlatform.RUNNER || cap.getRunnerDeviceId() == null || cap.getCollectorId() == null) return;
-        try {
-            client.activate(cap.getUserId(), cap.getRunnerDeviceId(), cap.getCollectorId());
-            cap.setCollectorActivated(true);
-        } catch (RuntimeException e) {
-            cap.setCollectorActivated(false);
-            log.info("[RunnerPull] activate of {} on {} failed ({}), the next pull retries", cap.getCollectorId(),
-                    cap.getRunnerDeviceId(), e.toString());
+        if (cap.getPlatform() != CapabilityPlatform.RUNNER) return;
+        for (KpiDeployment dep : pullable(cap)) {
+            try {
+                client.activate(cap.getUserId(), dep.getDeviceId(), dep.getCollectorId());
+                dep.setActivated(true);
+            } catch (RuntimeException e) {
+                dep.setActivated(false);
+                log.info("[RunnerPull] activate of {} on {} failed ({}), the next pull retries", dep.getCollectorId(),
+                        dep.getDeviceId(), e.toString());
+            }
+            saveDeployment(dep);
         }
-        repository.save(cap);
+    }
+
+    private void saveDeployment(KpiDeployment dep) {
+        dep.setUpdatedAt(Instant.now());
+        deployments.save(dep);
+    }
+
+    /** Deployments of this capability version that should be running (target ACTIVE) and have a collector id. */
+    private List<KpiDeployment> pullable(KPIProxyCapability cap) {
+        return deployments.findByKpiIdAndCapabilityVersion(cap.getKpiId(), cap.getVersion()).stream()
+                .filter(d -> d.getTarget() == KpiDeploymentTarget.ACTIVE)
+                .filter(d -> d.getDeviceId() != null && d.getCollectorId() != null)
+                .toList();
     }
 
     private Optional<KPIProxyCapability> live(KPI kpi) {
         return repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), kpi.getUserId())
                 .filter(c -> c.getPlatform() == CapabilityPlatform.RUNNER)
-                .filter(c -> c.getStatus() == CapabilityStatus.ACTIVE || c.getStatus() == CapabilityStatus.SHADOW)
-                .filter(c -> c.getRunnerDeviceId() != null && c.getCollectorId() != null);
+                .filter(c -> c.getStatus() == CapabilityStatus.ACTIVE || c.getStatus() == CapabilityStatus.SHADOW);
     }
 
     private static JsonNode find(JsonNode list, String id) {

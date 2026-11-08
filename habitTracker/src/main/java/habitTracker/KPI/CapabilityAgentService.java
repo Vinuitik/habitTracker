@@ -112,7 +112,7 @@ public class CapabilityAgentService {
                 .changeSummary(refineFeedback == null ? null : p.changeSummary())
                 .refineFeedback(refineFeedback)
                 .declaredCapabilities(granted)
-                .runnerDeviceId(pinDevice)
+                .targetDeviceIds(pinDevice == null ? null : new java.util.ArrayList<>(List.of(pinDevice)))
                 .status(CapabilityStatus.PROPOSED)
                 .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
                 .createdAt(LocalDateTime.now())
@@ -315,7 +315,7 @@ public class CapabilityAgentService {
                         .sourceCode(latest.getSourceCode())
                         // RUNNER: same collector id on the same runner; the approved contract hash carries over
                         // (unchanged hash → no new approval; changed → AWAITING_CONTRACT, never auto-approved)
-                        .runnerDeviceId(latest.getRunnerDeviceId()).collectorId(latest.getCollectorId())
+                        .targetDeviceIds(latest.getTargetDeviceIds()).combine(latest.getCombine())
                         .collectorBundle(latest.getCollectorBundle()).contractHash(latest.getContractHash())
                         .approvedContractHash(latest.getApprovedContractHash())
                         .repair(true).shadowUntil(latest.getShadowUntil())

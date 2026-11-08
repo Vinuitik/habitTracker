@@ -60,6 +60,7 @@ class CapabilityAgentIntegrationTest {
     @Autowired JwtUtil jwtUtil;
     @Autowired KPIRepository kpiRepository;
     @Autowired KPIProxyCapabilityRepository capabilityRepository;
+    @Autowired habitTracker.KPI.deploy.KpiDeploymentRepository deploymentRepository;
     @Autowired CapabilityAgentService service;
     @Autowired CapabilityLifecycleService lifecycle;
     final ObjectMapper mapper = new ObjectMapper();
@@ -77,6 +78,7 @@ class CapabilityAgentIntegrationTest {
         auth = new AuthTestHelper(mongoTemplate, jwtUtil);
         mongoTemplate.dropCollection(KPI.class);
         mongoTemplate.dropCollection(KPIProxyCapability.class);
+        mongoTemplate.dropCollection(habitTracker.KPI.deploy.KpiDeployment.class);
         mongoTemplate.dropCollection(User.class);
         reset(generator, pipeline);
         attemptFeedback.clear();
@@ -498,9 +500,11 @@ class CapabilityAgentIntegrationTest {
                 .consecutiveProxyFailures(3).build());
         capabilityRepository.save(KPIProxyCapability.builder().userId(u.getId()).kpiId(k.getId())
                 .platform(CapabilityPlatform.RUNNER).description("count widgets").proposal("spec")
-                .declaredCapabilities(Map.of("sources", AW)).collectorId("kpi-" + k.getId()).runnerDeviceId("dev-1")
+                .declaredCapabilities(Map.of("sources", AW)).targetDeviceIds(new java.util.ArrayList<>(List.of("dev-1")))
                 .status(CapabilityStatus.ACTIVE).version(1)
                 .lastResult("FAILED on runner: NameError old").build());
+        deploymentRepository.save(habitTracker.KPI.deploy.KpiDeployment.builder().userId(u.getId()).kpiId(k.getId())
+                .capabilityVersion(1).deviceId("dev-1").collectorId("kpi-" + k.getId()).build());
         return k;
     }
 
@@ -521,7 +525,7 @@ class CapabilityAgentIntegrationTest {
         assertEquals(1, caps.stream().filter(c -> c.getStatus() == CapabilityStatus.ACTIVE).count());
         assertTrue(caps.stream().anyMatch(c -> c.getVersion() == 1 && c.getStatus() == CapabilityStatus.DISABLED));
         KPIProxyCapability v2 = caps.stream().filter(c -> c.getVersion() == 2).findFirst().orElseThrow();
-        assertEquals("kpi-" + k.getId(), v2.getCollectorId(), "a repair re-installs under the same collector id");
+        assertEquals(List.of("dev-1"), v2.getTargetDeviceIds(), "a repair re-installs on the same device(s); the pipeline (mocked here) creates the deployment row");
     }
 
     @Test
