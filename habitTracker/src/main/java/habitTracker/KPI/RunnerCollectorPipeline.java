@@ -110,12 +110,13 @@ public class RunnerCollectorPipeline {
         try {
             if (sensorsBlock(cap)) return repository.save(cap);
             Install result;
+            List<DeviceFacts> facts = deviceFacts(cap);
             while (true) {
                 CapabilityProgress.step("Writing the collector on your runner");
                 CollectorBundle bundle;
                 try {
                     bundle = generator.generateCollector(userId, kpi.getName(), cap.getDescription(), cap.getProposal(),
-                            sources(cap), credentials(cap), cap.getCollectorBundle(), cap.getFailureReason());
+                            sources(cap), credentials(cap), cap.getCollectorBundle(), cap.getFailureReason(), facts);
                 } catch (CapabilityGeneratorException e) {
                     // Not counted: the model never produced a bundle (runner offline, auth expired, busy, bad JSON).
                     return fail(cap, "Code generation failed: " + e.getMessage());
@@ -124,7 +125,7 @@ public class RunnerCollectorPipeline {
                 cap.setSourceCode(bundle.collectorPy());
                 cap.setAttempts(attempts(cap) + 1);
                 cap.setCollectorTests(null);
-                result = installAndTest(cap, kpi, bundle);
+                result = installAndTest(cap, kpi, bundle, facts);
                 if (result.problem() == null) break;
                 if (attempts(cap) >= maxAttempts) return fail(cap, result.problem());
                 cap.setFailureReason(result.problem());
@@ -165,11 +166,12 @@ public class RunnerCollectorPipeline {
         return false;
     }
 
-    private Install installAndTest(KPIProxyCapability cap, KPI kpi, CollectorBundle bundle) {
+    private Install installAndTest(KPIProxyCapability cap, KPI kpi, CollectorBundle bundle, List<DeviceFacts> facts) {
         KpiDeployment dep = deployment(cap);
         String userId = cap.getUserId(), device = dep.getDeviceId(), id = dep.getCollectorId();
         CapabilityProgress.step("Checking the collector against the safety rules");
-        List<String> problems = CollectorStaticCheck.check(bundle, sources(cap), CredentialRef.byName(credentials(cap)));
+        List<CollectorStaticCheck.Target> targets = facts.stream().map(f -> new CollectorStaticCheck.Target(f.os(), f.managers())).toList();
+        List<String> problems = CollectorStaticCheck.check(bundle, sources(cap), CredentialRef.byName(credentials(cap)), targets);
         if (!problems.isEmpty()) {
             problems.stream().limit(5).forEach(p -> CapabilityProgress.runnerEvent("text", "✕ " + clip(p)));
             return new Install("Static check failed: " + String.join("; ", problems.subList(0, Math.min(10, problems.size()))), false);
@@ -451,6 +453,55 @@ public class RunnerCollectorPipeline {
             return new RunnerCredentials(null, List.of());
         }
         return new RunnerCredentials(d.get(), List.copyOf(out));
+    }
+
+    /**
+     * Facts about every target device for the collector prompt and static check: runner info (os, managers) and the
+     * credentials it holds (names + hosts). A device that cannot answer is listed with an unknown OS (legacy manifest).
+     */
+    List<DeviceFacts> deviceFacts(KPIProxyCapability cap) {
+        List<DeviceFacts> out = new ArrayList<>();
+        List<String> ids = cap.getTargetDeviceIds() == null ? List.of() : cap.getTargetDeviceIds();
+        for (String id : ids) {
+            String os = null;
+            List<String> managers = List.of();
+            try {
+                RunnerCollectorClient.RunnerInfo info = client.info(cap.getUserId(), id);
+                if (info != null) {
+                    os = info.os();
+                    managers = info.managers();
+                }
+            } catch (RunnerCallException | RunnerUnavailableException e) {
+                log.info("[RunnerCollector] runner info on {} failed: {}", id, e.getClass().getSimpleName());
+            }
+            out.add(new DeviceFacts(id, deviceName(cap.getUserId(), id), os, managers, credentialsOn(cap.getUserId(), id)));
+        }
+        return out;
+    }
+
+    String deviceName(String userId, String deviceId) {
+        try {
+            return devices.owned(userId, deviceId).map(Device::getName).filter(n -> n != null && !n.isBlank()).orElse(deviceId);
+        } catch (RuntimeException e) {
+            return deviceId;
+        }
+    }
+
+    /** GET /v1/credentials on one device → names + hosts; empty when it cannot say. */
+    List<CredentialRef> credentialsOn(String userId, String deviceId) {
+        List<CredentialRef> out = new ArrayList<>();
+        try {
+            JsonNode list = client.credentials(userId, deviceId);
+            if (list != null && list.isArray()) {
+                for (JsonNode c : list) {
+                    CredentialRef r = new CredentialRef(c.path("name").asText(""), c.path("host").asText(""));
+                    if (r.valid()) out.add(r);
+                }
+            }
+        } catch (RunnerCallException | RunnerUnavailableException e) {
+            log.info("[RunnerCollector] credentials list on {} failed: {}", deviceId, e.getClass().getSimpleName());
+        }
+        return out;
     }
 
     /** declaredCapabilities.credentials ("name@host") → refs; empty when the plan reads no web API. */

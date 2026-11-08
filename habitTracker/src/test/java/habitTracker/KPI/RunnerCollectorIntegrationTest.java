@@ -171,7 +171,7 @@ class RunnerCollectorIntegrationTest {
         when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
                 "Sum YouTube watch time from ActivityWatch web events", "Minutes of YouTube per day",
                 "ActivityWatch on your computer", List.of("activitywatch")));
-        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any()))
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(bundle(List.of("web")));
     }
 
@@ -301,7 +301,7 @@ class RunnerCollectorIntegrationTest {
         assertTrue(runner.active, "new version activated");
 
         // wider contract (adds the window bucket) → AWAITING_CONTRACT, the runner is never asked to approve it
-        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any()))
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(bundle(List.of("web", "window")));
         broken = kpiRepository.findById(kpi.getId()).orElseThrow();
         broken.setProxyStatus(ProxyStatus.NEEDS_REPAIR);
@@ -332,7 +332,7 @@ class RunnerCollectorIntegrationTest {
         assertTrue(c.failureReason().startsWith(RunnerCollectorPipeline.SANDBOX_UNAVAILABLE), c.failureReason());
         assertTrue(c.failureReason().contains("bwrap not found"));
         assertEquals(0, c.attempts());
-        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any());
+        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any(), any());
         assertEquals(0, runner.installs);
     }
 
@@ -344,7 +344,7 @@ class RunnerCollectorIntegrationTest {
         CapabilityDTO c = proposeAndApprove(kpi);
         assertEquals(CapabilityStatus.AWAITING_SENSOR, c.status());
         assertTrue(c.failureReason().startsWith("ActivityWatch isn't running on"), c.failureReason());
-        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any());
+        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any(), any());
 
         CapabilityDTO after = service.installSensorAs(USER, kpi.getName(), c.id());
         assertEquals(1, runner.sensorInstalls);
@@ -361,14 +361,14 @@ class RunnerCollectorIntegrationTest {
         assertEquals(CapabilityStatus.AWAITING_CONTRACT, c.status());
         assertEquals(2, c.attempts());
         verify(generator).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(),
-                org.mockito.ArgumentMatchers.startsWith("Fixture test failed: case busy-day: expected 47, got 12"));
+                org.mockito.ArgumentMatchers.startsWith("Fixture test failed: case busy-day: expected 47, got 12"), any());
     }
 
     @Test
     void staticCheckFailure_neverReachesTheRunner_whenAllAttemptsFail() {
         CollectorBundle bad = bundle(List.of("web"));
         bad.files().put("collector.py", "import socket\nprint(1)\n");
-        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any())).thenReturn(bad);
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn(bad);
         KPI kpi = kpi();
         CapabilityDTO c = proposeAndApprove(kpi);
         assertEquals(CapabilityStatus.TEST_FAILED, c.status());
@@ -435,7 +435,7 @@ class RunnerCollectorIntegrationTest {
         runner.credentials.add(Map.of("name", "github", "host", "api.github.com", "auth", "bearer", "updatedAt", "2026-11-08T00:00:00Z"));
         when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
                 "Count my PRs via the GitHub API", null, null, List.of("http"), List.of(new CredentialRef("github", "api.github.com"))));
-        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any())).thenReturn(httpBundle());
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn(httpBundle());
         KPI kpi = kpi();
         CapabilityDTO p = service.proposeAs(USER, kpi.getName(), "PRs I open per day");
         verify(generator).propose(anyString(), anyString(), anyString(),
@@ -447,7 +447,7 @@ class RunnerCollectorIntegrationTest {
         CapabilityDTO c = service.approveAs(USER, kpi.getName(), p.id());
         assertEquals(CapabilityStatus.AWAITING_CONTRACT, c.status(), String.valueOf(c.failureReason()));
         verify(generator).generateCollector(anyString(), anyString(), any(), any(), any(),
-                org.mockito.ArgumentMatchers.eq(List.of(new CredentialRef("github", "api.github.com"))), any(), any());
+                org.mockito.ArgumentMatchers.eq(List.of(new CredentialRef("github", "api.github.com"))), any(), any(), any());
     }
 
     @Test

@@ -72,15 +72,38 @@ public final class CollectorStaticCheck {
 
     /** credentials = approved credential name → host (CredentialRef.byName of the plan); http sources must use one. */
     public static List<String> check(CollectorBundle b, Collection<String> allowedSources, Map<String, String> credentials) {
+        return check(b, allowedSources, credentials, List.of());
+    }
+
+    /** One device the collector will run on: its OS (Go runtime.GOOS) and the package managers found there. */
+    public record Target(String os, Collection<String> managers) {}
+
+    /**
+     * targets = the devices the collector will run on (empty = unknown: variants are still checked for shape, but not
+     * against any device). A legacy bundle (no variants) is accepted only for a single device.
+     */
+    public static List<String> check(CollectorBundle b, Collection<String> allowedSources, Map<String, String> credentials,
+                                     List<Target> targets) {
         List<String> p = new ArrayList<>();
-        checkManifest(b.manifest(), allowedSources, credentials == null ? Map.of() : credentials, p);
+        checkManifest(b.manifest(), allowedSources, credentials == null ? Map.of() : credentials,
+                targets == null ? List.of() : targets, p);
         checkFiles(b, p);
         String py = b.collectorPy();
         if (py != null) checkImports(py, p);
         return p;
     }
 
-    private static void checkManifest(JsonNode m, Collection<String> allowed, Map<String, String> credentials, List<String> p) {
+    private static final Set<String> OSES = Set.of("windows", "linux", "darwin");
+    private static final Set<String> COMBINE = Set.of("sum", "max", "avg", "latest");
+    static final int MAX_REQUIRES = 5;
+    private static final Map<String, Pattern> ID_PATTERNS = Map.of(
+            "winget", Pattern.compile("^[A-Za-z0-9.+-]{1,128}$"),
+            "brew", Pattern.compile("^[a-z0-9@+._-]{1,64}(/[a-z0-9._-]+){0,2}$"),
+            "flatpak", Pattern.compile("^[A-Za-z0-9_.-]{3,128}$"),
+            "pip", Pattern.compile("^[A-Za-z0-9._-]{1,64}(==[A-Za-z0-9.*+!-]{1,32})?$"));
+
+    private static void checkManifest(JsonNode m, Collection<String> allowed, Map<String, String> credentials,
+                                      List<Target> targets, List<String> p) {
         String schedule = m.path("schedule").asText("");
         String window = m.path("window").asText("");
         if ("hourly".equals(schedule)) {
@@ -92,23 +115,129 @@ public final class CollectorStaticCheck {
         if (m.path("unit").asText("").isBlank()) p.add("manifest.unit is required");
         String agg = m.path("aggregation").asText("");
         if (!Set.of("sum", "last", "max").contains(agg)) p.add("manifest.aggregation must be sum, last or max");
-        JsonNode sources = m.get("sources");
-        if (sources == null || !sources.isArray() || sources.isEmpty() || sources.size() > MAX_SOURCES) {
-            p.add("manifest.sources must list 1-" + MAX_SOURCES + " sources");
+        if (m.path("variants").isObject()) {
+            checkVariants(m, allowed, credentials, targets, p);
             return;
+        }
+        if (targets.size() > 1) {
+            p.add("The collector must have a variants entry for each operating system it runs on, because it is installed on "
+                    + targets.size() + " devices");
+        }
+        if (m.has("combine") && !COMBINE.contains(m.path("combine").asText(""))) {
+            p.add("manifest.combine must be sum, max, avg or latest");
+        }
+        checkSourceList(m.get("sources"), "", allowed, credentials, p);
+        checkRequires(m.get("requires"), "", null, p);
+    }
+
+    private static void checkVariants(JsonNode m, Collection<String> allowed, Map<String, String> credentials,
+                                      List<Target> targets, List<String> p) {
+        if (!COMBINE.contains(m.path("combine").asText(""))) p.add("manifest.combine must be sum, max, avg or latest");
+        JsonNode variants = m.get("variants");
+        if (variants.isEmpty()) {
+            p.add("manifest.variants must have one entry per operating system");
+            return;
+        }
+        for (Target t : targets) {
+            if (t.os() != null && !variants.has(t.os())) {
+                p.add("The collector has no variant for " + t.os() + ", which one of the target devices runs");
+            }
+        }
+        List<String> firstShape = null;
+        String firstOs = null;
+        var it = variants.fields();
+        while (it.hasNext()) {
+            var e = it.next();
+            String os = e.getKey();
+            JsonNode v = e.getValue();
+            String prefix = "variant " + os + ": ";
+            if (!OSES.contains(os)) {
+                p.add("manifest.variants key \"" + clip(os) + "\" is not windows, linux or darwin");
+                continue;
+            }
+            if (!v.isObject()) {
+                p.add(prefix + "a variant must be an object with sources and requires");
+                continue;
+            }
+            if (checkSourceList(v.get("sources"), prefix, allowed, credentials, p)) {
+                List<String> shape = new ArrayList<>();
+                v.get("sources").forEach(s -> shape.add(s.path("type").asText("")));
+                if (firstShape == null) {
+                    firstShape = shape;
+                    firstOs = os;
+                } else if (!firstShape.equals(shape)) {
+                    p.add("Variant " + os + " reads " + shape.size() + " sources of types " + shape + " but variant " + firstOs
+                            + " reads " + firstShape.size() + " of types " + firstShape
+                            + ", and every variant must have the same sources in the same type order");
+                }
+            }
+            checkRequires(v.get("requires"), prefix, managersFor(os, targets), p);
+        }
+    }
+
+    /** null = no device of that OS is known (managers are not checked); else the managers every such device has. */
+    private static Set<String> managersFor(String os, List<Target> targets) {
+        Set<String> out = null;
+        for (Target t : targets) {
+            if (!os.equals(t.os())) continue;
+            Set<String> have = t.managers() == null ? Set.of() : new java.util.HashSet<>(t.managers());
+            if (out == null) out = have;
+            else out.retainAll(have);
+        }
+        return out;
+    }
+
+    private static void checkRequires(JsonNode requires, String prefix, Set<String> managers, List<String> p) {
+        if (requires == null || requires.isNull()) return;
+        if (!requires.isArray()) {
+            p.add(prefix + "requires must be a list");
+            return;
+        }
+        if (requires.size() > MAX_REQUIRES) p.add(prefix + "requires may list at most " + MAX_REQUIRES + " packages");
+        Set<String> seen = new java.util.HashSet<>();
+        for (JsonNode r : requires) {
+            String manager = r.path("manager").asText("");
+            String id = r.path("id").asText("");
+            if (!manager.equals("relay") && !ID_PATTERNS.containsKey(manager)) {
+                p.add(prefix + "requires manager \"" + clip(manager) + "\" is not one of relay, winget, brew, flatpak or pip");
+                continue;
+            }
+            if (managers != null && !managers.contains(manager)) {
+                p.add(prefix + "requires " + manager + ", which is not available on the " + prefix.substring(8, prefix.length() - 2)
+                        + " device (it has " + (managers.isEmpty() ? "no package managers" : String.join(", ", new java.util.TreeSet<>(managers))) + ")");
+                continue;
+            }
+            if (id.startsWith("-")) {
+                p.add(prefix + "requires id \"" + clip(id) + "\" may not start with a dash");
+            } else if (manager.equals("relay") ? !id.equals("activitywatch") : !ID_PATTERNS.get(manager).matcher(id).matches()) {
+                p.add(prefix + "requires id \"" + clip(id) + "\" is not a valid " + manager + " package id");
+            } else if (!seen.add(manager + ":" + id)) {
+                p.add(prefix + "requires lists " + manager + " " + clip(id) + " twice");
+            }
+            if (r.path("why").asText("").isBlank()) p.add(prefix + "requires " + manager + " " + clip(id) + " needs a \"why\"");
+        }
+    }
+
+    /** → true when the list had a usable shape (types can be compared across variants). */
+    private static boolean checkSourceList(JsonNode sources, String prefix, Collection<String> allowed,
+                                           Map<String, String> credentials, List<String> p) {
+        if (sources == null || !sources.isArray() || sources.isEmpty() || sources.size() > MAX_SOURCES) {
+            p.add(prefix + "manifest.sources must list 1-" + MAX_SOURCES + " sources");
+            return false;
         }
         int i = 0;
         for (JsonNode s : sources) {
             String type = s.path("type").asText("");
+            String at = prefix + "source " + i + ": ";
             if (!SOURCE_TYPES.contains(type)) {
-                p.add("source " + i + ": unknown type \"" + clip(type) + "\" (activitywatch, file or http)");
+                p.add(at + "unknown type \"" + clip(type) + "\" (activitywatch, file or http)");
             } else if (allowed != null && !allowed.contains(type)) {
-                p.add("source " + i + ": reads " + type + ", which the approved plan did not declare");
+                p.add(at + "reads " + type + ", which the approved plan did not declare");
             }
             if (type.equals("activitywatch")) {
                 JsonNode buckets = s.get("buckets");
                 if (buckets == null || !buckets.isArray() || buckets.isEmpty()) {
-                    p.add("source " + i + ": activitywatch needs buckets");
+                    p.add(at + "activitywatch needs buckets");
                 } else {
                     buckets.forEach(bk -> {
                         if (!BUCKETS.contains(bk.asText())) p.add("activitywatch bucket \"" + clip(bk.asText()) + "\" is not one of window, web, afk");
@@ -116,14 +245,15 @@ public final class CollectorStaticCheck {
                 }
             } else if (type.equals("file")) {
                 String why = globProblem(s.path("glob").asText(""));
-                if (why != null) p.add("source " + i + ": " + why);
-                if (s.path("why").asText("").isBlank()) p.add("source " + i + ": a file source needs \"why\"");
+                if (why != null) p.add(at + why);
+                if (s.path("why").asText("").isBlank()) p.add(at + "a file source needs \"why\"");
             } else if (type.equals("http")) {
                 String why = httpProblem(s, credentials);
-                if (why != null) p.add("source " + i + ": " + why);
+                if (why != null) p.add(at + why);
             }
             i++;
         }
+        return true;
     }
 
     /** null when the http source is acceptable, else why not. credentials = approved name → host. */
