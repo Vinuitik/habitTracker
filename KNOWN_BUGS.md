@@ -1,5 +1,8 @@
 # Known Bugs
 
+## Open — fix in the next agent batch
+- **KPI Automate: "What should change?" textarea keeps old text after a refine.** You have to delete the previous suggestion by hand. `AUTOMATE.refineDraft` is only cleared in kpi-list.js when the refined plan arrives (`job.refining`, ~line 371); the textarea is re-filled from it in `renderAutomateRefine()`. Likely fix: clear the draft (and the textarea) as soon as the refine is accepted/started, keep it only if the refine fails.
+
 ## Pre-existing test infrastructure failures (not production bugs)
 
 ### DynamicKPIDataRepositoryTest — all 9 tests error
