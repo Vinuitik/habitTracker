@@ -1,6 +1,6 @@
 # KPI Flows
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `SandboxCapabilityProvider.java`, `SandboxClient.java`, `HttpSandboxClient.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`, `CapabilityGrants.java`, `CapabilitySecret.java`, `CapabilitySecretRepository.java`, `CapabilitySecretService.java`, `CapabilitySecretController.java`, `MissingSecretException.java`, `CapabilityLifecycleService.java`, `CapabilityOutput.java`, `ReadingPlausibility.java`, `RunnerCollectorPipeline.java`, `RunnerCollectorProvider.java`, `CollectorBundle.java`, `CollectorStaticCheck.java`, `ProxyReadingRecorder.java`, `CapabilityWentLive.java`
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`, `RunnerOnlyKpiMigration.java`, `CapabilityLifecycleService.java`, `CapabilityOutput.java`, `ReadingPlausibility.java`, `RunnerCollectorPipeline.java`, `RunnerCollectorProvider.java`, `CollectorBundle.java`, `CollectorStaticCheck.java`, `ProxyReadingRecorder.java`, `CapabilityWentLive.java`
 
 ## Storage model
 
@@ -55,27 +55,24 @@ Two copies exist per page (`templates/kpi-*.html` and `static/kpi-*.html`); `Pag
 - `static/kpi-list.html` + `static/js/kpi-list.js` — card grid with Add Data / View Charts / Auto-Fill / Delete per KPI. Cards opted into auto-fill show an "Auto-fill: N" badge. The Auto-Fill button opens a settings modal (`PUT .../default-fill`).
 - `static/kpi-dashboard.html` + `static/js/kpi-dashboard.js` — Chart.js line charts (value + EMA trend). Auto-filled points render as a diamond (`rectRot` point style) instead of a circle, and the tooltip appends "— auto-filled".
 
-## Sandboxed capability proxy (M7)
+## Runner-only capabilities (docs/designs/runner-only-kpis.md H1)
 
-Nightly: `KPIProxyFillService.fillFromProxies()` → KPI with `proxyType=SANDBOX_CAPABILITY` → `ProxyHealthService.needsRepair()` (skip if breaker open) → `SandboxCapabilityProvider.fetchValue()`:
-1. `KPIProxyCapabilityRepository.findFirstByKpiIdAndUserIdOrderByVersionDesc()` (collection `kpi_proxy_capabilities`, read fresh every run — editing needs no redeploy). Missing / not `ACTIVE` or `SHADOW` / not `SERVER` platform → `Optional.empty()` (counts as failure).
-2. Prepends `TARGET_DATE = "<yesterday>"` to `sourceCode` → `CapabilitySecretService.requestFor()` (hosts + ONLY declared secrets; `MissingSecretException` → no run, `lastResult="NOT_RUN: secret X not set"`, counts as a failure) → `SandboxClient.run()` (`HttpSandboxClient`: `POST http://sandbox:8090/run`, see `/sandbox/FLOWS.md`).
-3. `OK` → last non-blank stdout line parsed by `CapabilityOutput.parse()`: a plain number (old scripts) or `{"value": n, "unit"?: "min", "evidence"?: [{"label","value"}, ≤20 rows]}` (`parseLastLine` = its `.value`). The unit is stored on the capability (`lastUnit`) for the plausibility guard. Anything else (`NONZERO_EXIT`, `TIMEOUT`, `SIDECAR_ERROR`, unparseable stdout) → `Optional.empty()`.
-4. Back in fill service (S1, SANDBOX_CAPABILITY only, before the anomaly check): `ProxyProvider.context()` (SHADOW? unit) + `ProxyHealthService.plausibilityReason()` → implausible → `KPIService.addFlaggedProxyDataForUser(.., "IMPLAUSIBLE", reason)`; SHADOW → same with flag `SHADOW`; both are forced `pending` (confirm-inbox), count as success, never trip the breaker. Otherwise: value → `isAnomalous()` → `KPIService.addKPIDataForUser(..., PROXY_CAPABILITY)` → `recordSuccess()`/`flagAnomaly()`; empty → `ProxyHealthService.recordFailure()` → N consecutive (`kpi.proxy.failure-threshold`, default 3) → `NEEDS_REPAIR`.
-5. The provider also writes `lastRunAt` / `lastResult` / `consecutiveFailures` on the capability doc (diagnostics only; the breaker lives on the KPI).
+No user-influenced code runs on the hub. Every AI-built capability is a RUNNER collector (see "RUNNER platform" below); the agent is never offered a platform choice. The former SERVER path (sandbox sidecar, egress proxy, per-user capability secrets, `ProxyType.SANDBOX_CAPABILITY`, `CapabilityPlatform.SERVER/WINDOWS`) is removed. `CapabilityPlatform.ANDROID` stays as a reserved placeholder [NOT IMPLEMENTED].
 
-Calls are sequential: a hanging script blocks the nightly loop for at most its timeout, then the next KPI/user runs normally.
-
-To change script timeout: `sandbox.script-timeout-seconds` (`SANDBOX_SCRIPT_TIMEOUT_SECONDS`). To change sidecar URL: `sandbox.url` (`SANDBOX_URL`). To change HTTP read timeout: `sandbox.read-timeout-seconds`. To change the stdout contract: `SandboxCapabilityProvider.parseLastLine()`.
-
-Egress + secrets: see "Network egress and secrets" below. [NOT IMPLEMENTED] Non-SERVER platforms (WINDOWS/ANDROID generation).
-
-A capability row can still be inserted by hand (`status` must be `ACTIVE`; `_class` is added by Spring Data when saved via the repository):
-`{userId, kpiId, platform:"SERVER", language:"python", sourceCode:"print(42)", status:"ACTIVE", version:1}` plus a KPI with `proxyType:"SANDBOX_CAPABILITY"`.
+Legacy data, once at startup:
+```
+RunnerOnlyKpiMigration.migrate() (@PostConstruct; UpdateScheduler @DependsOn it, so the startup fill sees migrated docs)
+  → _migration {_id: "runner-only-kpis-v1"} exists → no-op
+  → kpi_proxy_capabilities platform SERVER|WINDOWS → status RETIRED, retiredPlatform = old value, platform = null
+  → kpis proxyType SANDBOX_CAPABILITY → proxyType NONE (manual), proxyStatus ACTIVE, consecutiveProxyFailures 0
+  → drop kpi_capability_secrets → write the _migration flag
+```
+All writes are raw (`MongoTemplate` + collection names): a doc still holding a removed enum value cannot be mapped. A RETIRED version is never run; the Automate dialog treats it like REJECTED (describe form = start over). Old `PROXY_CAPABILITY` data points stay.
+To change: `RunnerOnlyKpiMigration` (bump `MIGRATION_ID` to re-run a changed migration).
 
 ## Capability agent loop (M8, stages 1-4) + repair (M12)
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`) + `styles/organisms/automate-dialog.css` + shared `static/js/molecules/step-list.js`; prompts `resources/prompts/kpi-capability-{propose,generate,previous-failure,sandbox-facts}.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `CapabilityGeneratorException.java`, `CapabilityRejectedException.java`, `CapabilityDTO.java`, `AgentCapabilityRepairTrigger.java`, `CapabilityRepairTrigger.java`; UI `static/kpi-list.html` + `static/js/kpi-list.js` (`openAutomateModal()`) + `styles/organisms/automate-dialog.css` + shared `static/js/molecules/step-list.js`; prompts `resources/prompts/kpi-capability-{propose,previous-failure}.md` + `kpi-collector-generate.md`; runner side `relay/RunnerJobService`, `relay/OnlineRunnerSelector` (see `relay/FLOWS.md`). The old `backup/claude_cli.py` `/internal/agent/capability` endpoint is no longer called (removal pending a cleanup stage).
 
 Async UI wrapper (the UI never calls the blocking endpoints below):
 ```
@@ -84,7 +81,7 @@ UI action (Propose / Approve and build / Regenerate / Fix it)
   → CapabilityAgentController.startJob() (userId captured on the request thread) → CapabilityTaskService.start()
       bad action / missing id → 400; a job already running for (user, KPI) → 409 (UI then resumes it via /jobs/active)
   → 202 {jobId}; worker pool (4 daemon threads) → CapabilityProgress.with(sink) → CapabilityAgentService.proposeAs/approveAs/regenerateAs/repairAs(userId, ...)
-      service stages → CapabilityProgress.step(): "Drafting a plan on your runner" / "Writing the script on your runner" / "Testing the script in the sandbox for <date>"
+      service stages → CapabilityProgress.step(): "Drafting a plan on your runner", then RunnerCollectorPipeline's steps (sensors, write, fixtures, dry run)
       RunnerCapabilityGenerator.forwardEvents(): runner job events (kind step|text, ≤200 chars) → same list; job usage → CapabilityProgress.usage()
   → GET .../capability/jobs/{jobId}?after=<nextSeq> every ENV.TIMING.KPI_CAP_POLL_MS (1.5s)
       → {jobId, state: running|done|failed, events:[{seq,kind,text}] (seq > after), nextSeq, result?: CapabilityDTO,
@@ -98,7 +95,7 @@ To change stage texts: `CapabilityAgentService` `CapabilityProgress.step()` call
 
 Blocking endpoints (`/propose`, `/{id}/approve`, `/{id}/regenerate`, `/repair`) are kept unchanged for API callers and the integration tests; the nightly repair (`AgentCapabilityRepairTrigger`) calls `repairFor()` directly and never binds a progress sink (all `CapabilityProgress` calls are no-ops there).
 
-Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → AWAITING_CONFIRM → SHADOW → ACTIVE | TEST_FAILED` (S1; see "Confirm gate + shadow" below); `REJECTED` (user said no / superseded); `NEEDS_REPAIR` (old version while a repair version is built) → `DISABLED` once the new one is ACTIVE.
+Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → AWAITING_CONFIRM → SHADOW → ACTIVE | TEST_FAILED` (S1; see "Confirm gate + shadow" below); `REJECTED` (user said no / superseded); `RETIRED` (ex-SERVER/WINDOWS version, see above); `AWAITING_SENSOR` / `AWAITING_CONTRACT` (RUNNER); `NEEDS_REPAIR` (old version while a repair version is built) → `DISABLED` once the new one is ACTIVE.
 
 ```
 1-2 PROPOSE   POST /api/kpis/{name}/capability/propose {description}
@@ -108,39 +105,37 @@ Status machine (`CapabilityStatus`): `PROPOSED → PENDING_TEST → AWAITING_CON
                 then lastSeenAt) → none → CapabilityGeneratorException.noRunner() → 503 {"error":"Connect a runner to generate this capability"}
               → CapabilityPrompts.proposePrompt() → RunnerJobService.startJob(kind "kpi", no project, maxTurns 3)
               → pollJob() every kpi.capability.poll-ms (2s) until state done/failed, or kpi.capability.job-timeout-ms (300s) → cancelJob() + 502
-              → CapabilityPrompts.parseProposal(result) → {proposal, platform, declaredCapabilities, measures?, dataSource?}
+              → CapabilityPrompts.parseProposal(result) → {proposal, sources, measures?, dataSource?} (a legacy "platform" key is ignored)
                 (measures / dataSource = optional one-sentence summaries for the UI; stored on the version, copied on repair)
-              → checkGrantable(): platform != SERVER, or any network host / secret declared → 422, NOTHING stored
-              → older PROPOSED/TEST_FAILED rows → REJECTED; new KPIProxyCapability v(latest+1) status=PROPOSED
-              → UI shows plain-language facts (Measures / Data comes from / Updates: nightly / Needs from you),
-                the full plan collapsed, internet hosts as chips, secret inputs
-3-4 APPROVE   POST .../capability/{id}/approve  (approval IS the permission grant)
-              → status must be PROPOSED; checkGrantable() re-run on the stored spec
-              → attempt(): PENDING_TEST → CapabilityGenerator.generate(owner, ...) (same runner job path;
-                CapabilityPrompts.generatePrompt(proposal, declaredCapabilities, previousCode?, previousError?) → parseSourceCode())
-                → sourceCode stored on this version, attempts++
-              → TEST GATE: SandboxClient.run("TARGET_DATE = <yesterday>\n" + sourceCode) (M7 sandbox)
-              → must be OK + last stdout line a finite number or the JSON form (CapabilityOutput.parse)
+              → checkSources(): sources empty → 422 "This can't be captured yet: ... ActivityWatch and local files ...";
+                anything outside {activitywatch, file} → 422; NOTHING stored
+              → older PROPOSED/TEST_FAILED rows → REJECTED; new KPIProxyCapability v(latest+1) platform=RUNNER status=PROPOSED,
+                declaredCapabilities {sources: [...]}
+              → UI shows plain-language facts (Measures / Data comes from / Updates / Needs from you), the full plan collapsed,
+                and what the collector may read
+3-4 APPROVE   POST .../capability/{id}/approve
+              → status must be PROPOSED; checkGrantable() re-run on the stored spec (platform must be RUNNER)
+              → attempt(): PENDING_TEST → RunnerCollectorPipeline.attempt() (see "RUNNER platform")
               → pass: sample {value, unit, evidence, date} stored on the version → AWAITING_CONFIRM (S1; the KPI is NOT wired yet).
                 Repair versions (`repair=true`) skip the confirm and go ACTIVE (SHADOW again if the replaced version was still on trial)
                 via CapabilityLifecycleService.testGatePassed() → wire(): older live versions → DISABLED,
-                KPI.proxyType=SANDBOX_CAPABILITY, proxyStatus=ACTIVE, consecutiveProxyFailures=0
+                KPI.proxyType=RUNNER_COLLECTOR, proxyStatus=ACTIVE, consecutiveProxyFailures=0
               → fail: TEST_FAILED + failureReason (visible in UI, GET .../capability)
 RETRY         POST .../capability/{id}/regenerate  (only TEST_FAILED, attempts < MAX_ATTEMPTS=3, else 409)
-              → same attempt(), previousCode + failureReason fed into the prompt
+              → same attempt(), previous bundle + failureReason fed into the prompt
               runner offline/busy/failed/timeout/bad-JSON → TEST_FAILED "Code generation failed: ..." but do NOT count as an attempt
               (no runner → failureReason "Code generation failed: Connect a runner to generate this capability"; regenerate once connected)
 REJECT        POST .../capability/{id}/reject (PROPOSED / TEST_FAILED / AWAITING_CONFIRM / AWAITING_SENSOR / AWAITING_CONTRACT → REJECTED; UI footer "Discard setup" → inline confirm → describe form prefilled = start over)
               Dialog close (✕ / Esc / backdrop) never changes state; a running job has no cancel endpoint, so Discard is disabled until it finishes [NOT IMPLEMENTED: job cancel, "Resume setup" hint on the KPI card]
 REPAIR (M12)  proxy breaker trips → ProxyHealthService.recordFailure()/flagAnomaly() → CapabilityRepairTrigger.attemptRepair(kpi)
-              → AgentCapabilityRepairTrigger (single background thread; non-SANDBOX_CAPABILITY KPIs only logged)
+              → AgentCapabilityRepairTrigger (single background thread; non-RUNNER_COLLECTOR KPIs only logged)
               → CapabilityGenerator.runnerAvailable(owner)? no → parked in in-memory `waiting` (kpiId→userId), nothing counted
                 → retryWaiting() every kpi.repair.runner-check-ms (60s): owner has a runner online → re-read KPI
-                → still SANDBOX_CAPABILITY + NEEDS_REPAIR → dispatch; else dropped
+                → still RUNNER_COLLECTOR + NEEDS_REPAIR → dispatch; else dropped
               → CapabilityAgentService.repairFor(userId, kpi, autoRetry=true)
               → runner drops mid-repair → result TEST_FAILED with the no-runner reason (waitingForRunner()) → auto-retry loop
                 stops, KPI parked again; next dispatch continues on that TEST_FAILED version (attempts unchanged)
-              → old version → NEEDS_REPAIR; NEW version (copy of spec + old code, failureReason seeded from old lastResult)
+              → old version → NEEDS_REPAIR; NEW version (copy of spec + bundle + collector id, failureReason seeded from old lastResult)
               → attempt() up to MAX_ATTEMPTS → pass clears KPI NEEDS_REPAIR (as above); fail leaves it for the manual button
               Manual "Fix it": POST .../capability/repair → repairFor(.., autoRetry=false), one attempt per click
               (409 unless KPI.proxyStatus=NEEDS_REPAIR, or latest is a TEST_FAILED repair version, which is then regenerated)
@@ -148,10 +143,12 @@ REPAIR (M12)  proxy breaker trips → ProxyHealthService.recordFailure()/flagAno
 
 Auth/scoping: KPI resolved by `(name, currentUser)`, capability only via `KPIProxyCapabilityRepository.findByIdAndUserIdAndKpiId()` — never `findById`. Foreign id or KPI → 400 "not found" (no existence leak). Tested in `CapabilityAgentIntegrationTest.anotherUser_cannotSeeOrDriveMyCapability` (cf. commit `b8a1057`).
 
-Enforcement: the **gate** is `CapabilityAgentService.checkGrantable()` → `CapabilityGrants.normalize()` (propose, approve, retry): SERVER only; `declaredCapabilities.network` entries must be plain public FQDNs (lowercased/deduped; no IPs, ports, wildcards, URLs, single-label or internal names such as `localhost`, `javaapp`, `mongodbHabit`, `egress-proxy`, `*.internal`, `*.local`), <= 10 hosts / 10 secrets; secret names must be env-var style and not reserved (`PATH`, `HTTP*`, `PYTHON*`, `LD_*`, `SSL_*`...). Violations → 422 "... cannot be granted". **Approving the proposal is the grant** for exactly the stored (normalized) lists. The **boundary** is the sandbox + proxy: runs without hosts are `--network none`; with hosts they reach only those hosts through `egress-proxy` (see `/egress-proxy/FLOWS.md`).
+Enforcement: the **gate** is `CapabilityAgentService.checkSources()` (propose, approve, retry): sources ⊆ {activitywatch, file}, at least one. A collector never gets network or secrets. The **boundary** is the runner's own OS sandbox (no network, read-only declared inputs) + the contract approval pinned to the runner-computed hash, not the hub's checks.
+
+UI Automate modal (kpi-list.js): while a job runs → StepList rows (● running + seconds, ✓ done) + "Used N tokens" when usage came back; result → `renderAutomateSummary()` facts + `renderAutomateAccess()` (what it may read) + `renderAutomateCode()`; TEST_FAILED → `describeFailure()` maps failureReason prefixes ("Code generation failed:", "Runner sandbox unavailable:", "Static check failed:", "Fixture test failed:" …) to one sentence + what to do. All text via textContent / Dom.esc.
 
 ### Confirm gate + shadow (S1; kpi-sensors.md "Test pipeline" 5-6)
-Files: `CapabilityLifecycleService.java` (platform-agnostic state machine: no sandbox/runner types), `CapabilityOutput.java`, `ReadingPlausibility.java`, `ProxyHealthService.plausibilityReason()`, `KPIProxyFillService`, UI `kpi-list.js renderAutomateConfirm()`.
+Files: `CapabilityLifecycleService.java` (platform-agnostic state machine: no runner types), `CapabilityOutput.java`, `ReadingPlausibility.java`, `ProxyHealthService.plausibilityReason()`, `KPIProxyFillService`, UI `kpi-list.js renderAutomateConfirm()`.
 ```
 test gate passes (first build)  → CapabilityLifecycleService.testGatePassed() → AWAITING_CONFIRM (sample on the version; KPI not wired)
   UI (live-steps panel stays above): "Value for <date>: 47 min" + evidence rows + [Looks right] [Wrong, because…] [Start over]
@@ -160,24 +157,23 @@ Looks right  POST .../capability/{id}/confirm (instant) → confirmRight() → S
 Wrong        job action "wrong" {id, description=reason} (blocking twin: POST .../{id}/wrong {reason})
               → CapabilityAgentService.wrongAs(): recordWrong() (confirmRounds++) → 3rd "wrong" → TEST_FAILED + "You said the number was wrong
                 3 times, so I stopped. Start over ..." ; else failureReason = CapabilityLifecycleService.wrongFeedback() (value, evidence, reason)
-                → attempt() (generate with previousCode+that text → sandbox test gate) → AWAITING_CONFIRM again.
+                → attempt() (runner build with the previous bundle + that text) → AWAITING_CONFIRM again.
                 Not limited by MAX_ATTEMPTS (test-gate failures inside a round still count; Regenerate is then hidden at 3).
-SHADOW       nightly KPIProxyFillService: readings stored pending=true, flag="SHADOW" (every reading, not sampled: confirm-inbox shows all 7)
+SHADOW       RunnerCollectorProvider pull: readings stored pending=true, flag="SHADOW" (every reading, not sampled: confirm-inbox shows all 7)
               → CapabilityLifecycleService.promoteDueShadows() @Scheduled kpi.shadow.promote-cron (0 30 0 * * ?) → ACTIVE when shadowUntil <= today
-ACTIVE or SHADOW  plausibility guard on every nightly reading: non-finite; negative while the unit is in ReadingPlausibility.NON_NEGATIVE_UNITS;
+ACTIVE or SHADOW  plausibility guard on every pulled reading: non-finite; negative while the unit is in ReadingPlausibility.NON_NEGATIVE_UNITS;
               or > 5× median of the last 14 trusted readings (needs ≥5, median > 0; earlier IMPLAUSIBLE-pending points are ignored)
               → stored pending, flag="IMPLAUSIBLE", flagReason (plain language) → confirm-inbox; breaker NOT touched.
 ```
 `KPIData.flag`/`flagReason` are cleared by confirm (`KPIService.confirmKPIData`) and edit. Everything is additive: pre-S1 documents have none of the new fields; existing ACTIVE capabilities are never touched by the promotion job (it only reads status SHADOW).
-Reuse for another platform: produce a `CapabilityOutput` from its test run and call `CapabilityLifecycleService.testGatePassed(cap, kpi, out, date, skipConfirm)`; `wire()` sets `KPI.proxyType` from the platform (RUNNER → `RUNNER_COLLECTOR`, else `SANDBOX_CAPABILITY`) and publishes `CapabilityWentLive` (RUNNER: the provider POSTs /activate). [NOT IMPLEMENTED] showing `flagReason` in the /today confirm chips (the DTO already carries `flag`, `flagReason`).
+Reuse for another platform: produce a `CapabilityOutput` from its test run and call `CapabilityLifecycleService.testGatePassed(cap, kpi, out, date, skipConfirm)`; `wire()` sets `KPI.proxyType = RUNNER_COLLECTOR` (a new platform needs its own ProxyType here) and publishes `CapabilityWentLive` (RUNNER: the provider POSTs /activate). [NOT IMPLEMENTED] showing `flagReason` in the /today confirm chips (the DTO already carries `flag`, `flagReason`).
 
 ### RUNNER platform (S3; kpi-sensors.md "Iteration 1")
 Files: `RunnerCollectorPipeline.java`, `RunnerCollectorProvider.java`, `CollectorBundle.java`, `CollectorStaticCheck.java`, `ProxyReadingRecorder.java`, `CapabilityWentLive.java`, prompt `resources/prompts/kpi-collector-generate.md`; transport `relay/RunnerCollectorClient` (see `relay/FLOWS.md`).
 ```
-PROPOSE   same job; prompt offers SERVER | RUNNER (local device data: ActivityWatch / app files; no network, stdlib only,
-          declared sources only) → Proposal.sources → checkGrantable(): RUNNER needs network = secrets = [] and
-          sources ⊆ {activitywatch, file} → declaredCapabilities {network: [], secrets: [], sources: [...]}, platform RUNNER
-APPROVE   attempt() → platform RUNNER → RunnerCollectorPipeline.attempt():
+PROPOSE   same job; the prompt describes ONLY the runner (local device data: ActivityWatch / app files; no network, stdlib only,
+          declared sources only) → Proposal.sources → checkSources() → declaredCapabilities {sources: [...]}, platform RUNNER
+APPROVE   attempt() → RunnerCollectorPipeline.attempt():
           runnerDeviceId = OnlineRunnerSelector.pick() (pinned on the version), collectorId = "kpi-<kpiId>" (same for every version)
           → GET /v1/sensors: sandbox.available=false → TEST_FAILED "Runner sandbox unavailable: ..." (no generation, not an attempt; never runs unsandboxed)
                              activitywatch declared but not installed+running → AWAITING_SENSOR "ActivityWatch isn't running on <runner>"
@@ -200,7 +196,7 @@ PULL      RunnerCollectorProvider.pullDue() @Scheduled kpi.runner.pull-cron (0 4
           on demand: POST .../capability/pull (UI "Fetch values now") → {outcome, stored}
           pull(): activate if needed → GET /v1/collectors: state "failed" → ProxyHealthService.recordFailure() (→ M12 repair)
           → GET .../readings?since=readingsSince → one value per local day of `from` (same day twice → newest recordedAt)
-          → ProxyReadingRecorder.record() (SHADOW / IMPLAUSIBLE flags, anomaly breaker; shared with the nightly sandbox fill)
+          → ProxyReadingRecorder.record() (SHADOW / IMPLAUSIBLE flags, anomaly breaker)
           → readingsSince = max recordedAt, lastPulledOn = today
           runner offline / RunnerCallException → skipped, nothing counted (no breaker trip), next hour again
 REPAIR    breaker trip → AgentCapabilityRepairTrigger (now also RUNNER_COLLECTOR) → repairFor(): new version copies
@@ -210,57 +206,30 @@ REPAIR    breaker trip → AgentCapabilityRepairTrigger (now also RUNNER_COLLECT
 REJECT    "Discard setup" on a first build → DELETE /v1/collectors/{id} (best effort; not for repair versions)
 ```
 KPIProxyFillService skips `RUNNER_COLLECTOR` KPIs (they are pulled, not fetched per night).
-Mongo (additive, all nullable on `kpi_proxy_capabilities`): `runnerDeviceId`, `collectorId`, `collectorBundle` (JSON string: file paths contain dots), `contractHash`, `approvedContractHash`, `collectorTests`, `readingsSince`, `lastPulledOn`, `collectorActivated`. New enum values: `CapabilityPlatform.RUNNER`, `CapabilityStatus.AWAITING_SENSOR/AWAITING_CONTRACT`, `ProxyType.RUNNER_COLLECTOR`.
+Mongo (additive, all nullable on `kpi_proxy_capabilities`): `runnerDeviceId`, `collectorId`, `collectorBundle` (JSON string: file paths contain dots), `contractHash`, `approvedContractHash`, `collectorTests`, `readingsSince`, `lastPulledOn`, `collectorActivated`. New enum values: `CapabilityPlatform.RUNNER`, `CapabilityStatus.AWAITING_SENSOR/AWAITING_CONTRACT/RETIRED`, `ProxyType.RUNNER_COLLECTOR`.
 [NOT IMPLEMENTED] hourly collectors on the hub (static check requires `daily HH:MM` + `1d`; the pull writes one value per day); runner time zone (the dry run's "yesterday" uses the hub's zone); choosing which runner when a user has several online (first pick is pinned); a presence hook (worst case ~1h after reconnect); "file" sources beyond the static check (the runner's deny-list is authoritative); multi-proxy fusion.
 
-## Network egress and secrets
+Errors: 400 bad input/not found, 409 conflict (wrong status, attempt cap, already ACTIVE, generator busy), 422 proposal a runner collector cannot do, 502 generator failure.
 
-```
-UI Automate modal (kpi-list.js): while a job runs → StepList rows (● running + seconds, ✓ done) + "Used N tokens" when usage came back;
-  result → renderAutomateSummary() facts + renderAutomateCode() (<details>, monospace <pre>); TEST_FAILED → describeFailure() maps
-  failureReason prefixes ("Code generation failed:", "Test gate failed: secret X not set / TIMEOUT / SIDECAR_ERROR / exited 0 …")
-  to one sentence + what to do, raw script output only inside a collapsed "What the script printed". All text via textContent / Dom.esc.
-UI Automate modal: proposal shows declared hosts + secrets; per secret a write-only password input ("set"/"not set")
-  → PUT/DELETE /api/kpi-secrets/{NAME} {value}  (CapabilitySecretController → CapabilitySecretService.set/delete)
-      scoped by SecurityUtils.getCurrentUserId(); stored encrypted in `kpi_capability_secrets` (id = userId:NAME);
-      GET /api/kpi-secrets returns NAMES only — no endpoint ever returns a value
-approve / regenerate / repair → attempt():
-  → CapabilitySecretService.missing(owner, declared secrets) non-empty → TEST_FAILED "secret X not set. Set it in the Automate dialog, then retry." (no LLM call, no sandbox run, attempt not consumed)
-  → generate code → CapabilitySecretService.requestFor(): hosts = declared network; secrets = decrypt ONLY declared names for cap.userId
-  → SandboxClient.Request{allowedHosts, secrets} → HttpSandboxClient → POST sandbox:8090/run → env-file + proxy token (see sandbox/FLOWS.md)
-  → HttpSandboxClient.redact() second-pass scrubs secret values from stdout/stderr before they are stored in failureReason/lastResult or fed to an LLM repair prompt
-nightly: SandboxCapabilityProvider.fetchValue() → same requestFor() with kpi.userId; a deleted secret = failure (breaker) with "NOT_RUN: secret X not set"
-```
-Encryption: `VaultEncryptionService.encryptString()/decrypt()` (AES-256-GCM, reused, no new crypto) with key `KPI_SECRETS_KEY` (base64 32 bytes; `kpi.secrets.key`), falling back to a SHA-256 derivation of `JWT_SECRET` when blank. To change: `CapabilitySecretService` constructor. Tests: `CapabilityEgressIntegrationTest` (CRUD, ciphertext at rest, cross-user isolation, only-declared payload, missing-secret gate, nightly path, redaction), `CapabilityGrantsTest`.
+To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what is grantable: `CapabilityAgentService.checkSources()`. To change the build / dry run: `RunnerCollectorPipeline`. To change prompts: `resources/prompts/kpi-capability-*.md` (`{{PLACEHOLDER}}`s, filled once by `CapabilityPrompts.fill()`); JSON contract: `CapabilityPrompts.parseProposal()` / `parseCollectorBundle()`. To change runner choice: `OnlineRunnerSelector.pick()`. To change job timing: `kpi.capability.job-timeout-ms`, `kpi.capability.poll-ms`; repair wake-up: `kpi.repair.runner-check-ms`. To change repair behaviour: `AgentCapabilityRepairTrigger` / `CapabilityAgentService.repairFor()`.
 
-Errors: 400 bad input/not found, 409 conflict (wrong status, attempt cap, already ACTIVE, generator busy), 422 proposal not grantable, 502 generator failure.
-
-To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what is grantable: `CapabilityGrants` (host/secret-name rules; keep `sandbox/app.py` `validate_extras()` in sync) and `CapabilityAgentService.checkGrantable()`. To change test-gate sample date/plausibility: `CapabilityAgentService.attempt()`. To change prompts: `resources/prompts/kpi-capability-*.md` (`{{PLACEHOLDER}}`s, filled once by `CapabilityPrompts.fill()`); JSON contract: `CapabilityPrompts.parseProposal()` / `parseSourceCode()`. To change runner choice: `OnlineRunnerSelector.pick()`. To change job timing: `kpi.capability.job-timeout-ms`, `kpi.capability.poll-ms`; repair wake-up: `kpi.repair.runner-check-ms`. To change repair behaviour: `AgentCapabilityRepairTrigger` / `CapabilityAgentService.repairFor()`.
-
-[NOT IMPLEMENTED] Intake as a multi-turn conversation (today: one free-text description → one proposal; reject + re-describe to iterate). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. Plausibility check against KPI history in the test gate (only "exit 0 + finite number").  Listing/deleting secrets that no capability uses anymore happens only via the API (no UI screen outside the Automate modal). Per-capability secret rotation reminders.
+[NOT IMPLEMENTED] Intake as a multi-turn conversation (today: one free-text description → one proposal; reject + re-describe to iterate). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. Internet-based KPIs (GitHub etc.): planned as runner-fetched `http` sources with runner-held credentials (runner-only-kpis.md R1/R2/H3/H4).
 
 ## Technology Notes
 
-- **Docker socket = host root.** Only the `sandbox` container mounts `/var/run/docker.sock`; `javaapp` never does. Anyone who can make the sidecar run arbitrary docker args owns the host, so the sidecar hardcodes the `docker run` flags (`build_docker_cmd`) and accepts only `{code, timeout}`. It has NO authentication: it relies on being reachable only on the compose network (no published port). Anything else on that network (any container, a compromised `javaapp`) can run code in a capped sandbox, but cannot choose docker flags.
-- **Sidecar down / restarting:** `HttpSandboxClient` turns connection errors into `SIDECAR_ERROR` → counts as a failure per KPI. A multi-night outage therefore trips every sandbox KPI's breaker to `NEEDS_REPAIR` after 3 nights, needing a manual reset (`PUT /api/kpis/{name}/proxy/reset`). On sidecar start it force-removes leftover `kpi-sandbox=1` containers.
-- **Concurrency:** sidecar semaphore (`SANDBOX_MAX_CONCURRENT`, default 4); waiters give up after 60s with `SIDECAR_ERROR`. `javaapp` calls sequentially anyway. HTTP read timeout (150s) must stay above script timeout + queue wait + pull, or `javaapp` gives up while the container still runs (it is still killed by the sidecar).
-- **Timeouts:** enforced in the sidecar (clamped to `SANDBOX_MAX_TIMEOUT_SECONDS`=60) with an explicit `docker rm -f`, since `--rm` does not fire when the client is killed. An OOM kill shows as exit 137 → `NONZERO_EXIT`.
-- **Image pull:** runner image `python:3.12-slim` is pulled lazily on first run (before the script timer starts, up to 180s), not at sidecar start. First night after deploy is slower; no internet at that moment = `SIDECAR_ERROR`. The image is never auto-updated afterwards.
-- **Isolation limits:** per-run container: 128m, 0.25 cpu, `--network none` (or the `internal` egress network + proxy when hosts are declared), pids 64, all caps dropped, read-only rootfs + 16m tmpfs, uid 65534. Containers share the host kernel (no gVisor); a kernel escape is out of scope per the staged-safety posture. Those container memory caps are on top of the sidecar's own 64m `mem_limit`.
-- **Script contract:** python only, source <= 64KB, output truncated at 64KB, value = last non-blank stdout line. Scripts get `TARGET_DATE` as a module constant, their declared secrets as env vars, and proxy env vars if hosts are declared; nothing else.
-- **Not persisted:** run output beyond 300 chars of `lastResult`; no audit log of executed code besides the capability doc.
-- **Generated code is untrusted (M8).** It is LLM output steered by a free-text user description; it is only ever executed by the sandbox sidecar (never in `javaapp`, never on the host), `--network none` unless it declared (and the user approved) specific hosts, only its own declared secrets, capped CPU/mem/time. The UI renders it and all LLM text with `textContent` (no HTML injection). Approval gates *what is requested*; the sandbox, not the review, is the actual safety boundary.
-- **Generation = the KPI owner's own Claude Code via their paired Relay runner** (job kind `kpi`: no project, no tools, text only). The server spends no Claude credits. No runner online → propose is 503 "Connect a runner to generate this capability"; approve/regenerate/repair end TEST_FAILED with that reason (no attempt consumed). If the runner's Claude login expired, the job ends `failed` and its error is shown. Existing ACTIVE capabilities keep running without any runner (they never call the LLM).
+- **Generated code is untrusted (M8).** It is LLM output steered by a free-text user description; it is only ever executed by the user's own runner in its OS sandbox (never in `javaapp`, never on the hub host), with no network and only its declared, approved inputs. The UI renders it and all LLM text with `textContent` (no HTML injection). Approval gates *what is read*; the runner sandbox, not the review, is the actual safety boundary. A malicious collector can only hurt its own user's machine within that sandbox.
+- **Generation = the KPI owner's own Claude Code via their paired Relay runner** (job kind `kpi`: no project, no tools, text only). The server spends no Claude credits. No runner online → propose is 503 "Connect a runner to generate this capability"; approve/regenerate/repair end TEST_FAILED with that reason (no attempt consumed). If the runner's Claude login expired, the job ends `failed` and its error is shown. Live collectors run on the runner's own schedule; readings reach the hub whenever it is online (no runner = no data, manual KPIs only).
 - **Runner choice:** `OnlineRunnerSelector` = devices with a live uplink in *this* JVM's `UplinkRegistry`; preference "most recently used for a job" is in-memory (lost on restart → falls back to `lastSeenAt`). A user with two online runners may get consecutive jobs on the same one. Busy runner (409/429 on start/poll) → 409 "Your runner is busy".
 - **Async jobs are in-memory, single-node** (`CapabilityTaskService.tasks`): a javaapp restart loses every job and its event log (the poll then 404s and the UI reloads the stored capability status); the capability version itself is in Mongo, but a restart mid-attempt leaves it `PENDING_TEST`. Max 4 jobs run at once across all users (more queue in the executor); one running job per (user, KPI). Finished jobs are kept 15 min, evicted lazily on the next start. Progress reaches the job via a `ThreadLocal` (`CapabilityProgress`) bound only on the worker thread, so nothing changes for blocking callers. The service worker (`static/sw.js`, `API_NO_CACHE`) never caches `/api/kpis/*/capability*` GETs, otherwise stale-while-revalidate would replay old poll snapshots.
 - **Token usage** is whatever the runner job reports in `usage` (`input_tokens`/`inputTokens` + `cache_creation_input_tokens` + `output_tokens`/`outputTokens`, or `total_tokens`); absent → no "Used N tokens" line. Cache reads are not counted.
 - **Error text:** runner HTTP error bodies (JSON) are logged, never shown (`RunnerCapabilityGenerator.fromCall()`); unparseable model replies say "The AI's reply could not be used (...). Try again" (`CapabilityPrompts.bad()`).
-- **Blocking poll.** propose/approve/regenerate/repair hold the request thread while polling the runner job (every 2s, up to 300s; each poll is itself a blocking uplink call bounded by `relay.proxy.timeout-ms`) + sandbox time (up to ~60s). On timeout the job is cancelled. A runner that disconnects mid-job → treated as no runner (job state lives only on the runner, see `relay/FLOWS.md`). Hub restart mid-generation loses the waiting request; the runner job finishes but its result is discarded. a reverse proxy (Caddy/Cloudflare ~100s edge timeout) in front may cut the browser connection while the server keeps working: reopening the dialog shows the resulting state (`GET .../capability`). `PENDING_TEST` is transient in-flight state; a javaapp crash mid-attempt leaves a stuck `PENDING_TEST` row (no sweeper; propose again supersedes it).
-- **LLM output is not trusted to be JSON.** `CapabilityPrompts.parseProposal()/parseSourceCode()` (a Java port of the old `claude_cli.parse_capability_result()`) extracts the first `{`..last `}` object, validates keys/types and the 64KB cap; anything else → 502 / "Code generation failed" (not counted as an attempt). Fenced code inside `sourceCode` is stripped.
-- **Test gate is weak by design.** One dry run with no real data (no network, so nothing external to read): it proves "runs, exits 0, prints a number", not "prints the right number". Backstops (S1): the user's AWAITING_CONFIRM check against evidence, then 7 days of SHADOW readings in the confirm-inbox, then the plausibility guard forever. The check is only as good as the evidence the script prints (an old plain-number script gives the user nothing to verify) and the guard can't catch a consistently wrong number.
+- **Blocking poll.** propose/approve/regenerate/repair hold the request thread while polling the runner job (every 2s, up to 300s; each poll is itself a blocking uplink call bounded by `relay.proxy.timeout-ms`) + runner test/dry-run time (up to `kpi.runner.long-call-timeout-ms`). On timeout the job is cancelled. A runner that disconnects mid-job → treated as no runner (job state lives only on the runner, see `relay/FLOWS.md`). Hub restart mid-generation loses the waiting request; the runner job finishes but its result is discarded. a reverse proxy (Caddy/Cloudflare ~100s edge timeout) in front may cut the browser connection while the server keeps working: reopening the dialog shows the resulting state (`GET .../capability`). `PENDING_TEST` is transient in-flight state; a javaapp crash mid-attempt leaves a stuck `PENDING_TEST` row (no sweeper; propose again supersedes it).
+- **LLM output is not trusted to be JSON.** `CapabilityPrompts.parseProposal()/parseCollectorBundle()` extract the first `{`..last `}` object and validate keys/types (bundle content: `CollectorStaticCheck`, 64KB `collector.py` cap); anything else → 502 / "Code generation failed" (not counted as an attempt).
+- **Test gate is limited by design.** Fixture cases the agent wrote itself + one dry run on yesterday's real data: it proves "runs and agrees with its own fixtures", not "prints the right number". Backstops (S1): the user's AWAITING_CONFIRM check against evidence, then 7 days of SHADOW readings in the confirm-inbox, then the plausibility guard forever. The check is only as good as the evidence the script prints (an old plain-number script gives the user nothing to verify) and the guard can't catch a consistently wrong number.
 - **Shadow/promotion state is time-based and lives in Mongo** (`shadowUntil`); the promotion job runs in the javaapp JVM at 00:30 (a missed night is caught up the next, it compares dates). `kpi.shadow.days` changes apply to new confirmations only. Plausibility history is the last 14 stored points; with <5 only impossible values are flagged. The unit-can't-be-negative list is a hardcoded set (`ReadingPlausibility.NON_NEGATIVE_UNITS`); unknown units may be negative.
 - **Auto-repair runs on one background daemon thread** (`AgentCapabilityRepairTrigger`): lost on restart (KPI then just stays `NEEDS_REPAIR` for the manual button), and one repair at a time across all users (a slow runner delays everyone's repairs).
-- **Repairs waiting for a runner are in-memory only** (`AgentCapabilityRepairTrigger.waiting`): a javaapp restart forgets them; the KPI stays `NEEDS_REPAIR` (breaker open, nothing runs) until the next breaker trip re-fires the trigger or the user clicks "Fix it". Wake-up is a 60s poll, not a connect hook, so relay stays free of KPI dependencies; worst case a repair starts ~60s after the runner connects. Waiting never trips or resets the breaker and never consumes an attempt. A new repair version is non-ACTIVE until its test gate passes, so `SandboxCapabilityProvider` (which reads the latest version) runs nothing for that KPI in the meantime; it was already skipped by the open breaker.
+- **Legacy migration is flag-gated and one-shot** (`_migration` `runner-only-kpis-v1`): a SERVER doc restored from an older backup after the flag exists is not rewritten and will fail to map on read; delete the flag doc and restart to re-run. `retiredPlatform` is not a mapped field (raw Mongo only).
+- **Repairs waiting for a runner are in-memory only** (`AgentCapabilityRepairTrigger.waiting`): a javaapp restart forgets them; the KPI stays `NEEDS_REPAIR` (breaker open, nothing runs) until the next breaker trip re-fires the trigger or the user clicks "Fix it". Wake-up is a 60s poll, not a connect hook, so relay stays free of KPI dependencies; worst case a repair starts ~60s after the runner connects. Waiting never trips or resets the breaker and never consumes an attempt. A new repair version is non-ACTIVE until its test gate passes, so `RunnerCollectorProvider` (which pulls only for a SHADOW/ACTIVE latest version) pulls nothing for that KPI in the meantime; it was already skipped by the open breaker.
 
 - **RUNNER collectors (S3):** the runner sandbox (bwrap / AppContainer) is the boundary, not the hub's static check (regex over import lines, deny-list mirror). Approval binds to the runner-computed contract hash; the hub trusts the runner's `approved` flag + its own `approvedContractHash` to skip re-approval. Readings live on the runner until pulled (data-dir wipe = lost unpulled readings and lost approvals → collector 403 until re-approved; the pull then logs `PULL_ERROR`). The pull cursor is `recordedAt`, so a re-run of an old window re-writes that day (overwrites a value the user edited). `/test` and `/run` wait up to `kpi.runner.long-call-timeout-ms` (180s; other runner calls `relay.proxy.timeout-ms`, 30s): a runner slower than that is reported as offline (not an attempt) while it may still finish the run. Sensor install polling holds a capability worker thread up to 10 min.
 
@@ -278,12 +247,8 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Auto-fill UI (edit) | `static/kpi-list.html` `openAutoFillModal()` | modal → `PUT /api/kpis/{name}/default-fill` |
 | Habit links, post-creation | `KPIService.updateKPIHabitMappings()` | `PUT /api/kpis/{name}/habits`, full replace |
 | Habit links UI (edit) | `static/kpi-list.html` `openManageHabitsModal()` | modal → `PUT /api/kpis/{name}/habits` |
-| Sandbox proxy provider | `SandboxCapabilityProvider.fetchValue()` | `ProxyType.SANDBOX_CAPABILITY` |
 | Capability storage | `KPIProxyCapability` / `KPIProxyCapabilityRepository` | collection `kpi_proxy_capabilities` |
-| Script timeout | `sandbox.script-timeout-seconds` / `SANDBOX_SCRIPT_TIMEOUT_SECONDS` | sidecar clamps to its own max |
-| Sidecar URL / HTTP timeout | `sandbox.url`, `sandbox.read-timeout-seconds` / `HttpSandboxClient` | default `http://sandbox:8090` |
-| Stdout -> value parsing | `CapabilityOutput.parse()` (`SandboxCapabilityProvider.parseLastLine()` = `.value`) | last non-blank line: number or JSON `{value, unit?, evidence?}`, evidence cap `MAX_EVIDENCE` 20 |
-| Evidence/unit instructions in the generation prompt | `resources/prompts/kpi-capability-sandbox-facts.md` | |
+| Collector output -> value parsing | `CapabilityOutput.parse()` / `RunnerCollectorPipeline.dryRun()` | last non-blank line: number or JSON `{value, unit?, evidence?}`, evidence cap `MAX_EVIDENCE` 20 |
 | Confirm gate (right / wrong) | `CapabilityAgentService.confirm()` / `wrong()`, `CapabilityLifecycleService` | `POST .../{id}/confirm`, job action `wrong` |
 | Max "wrong" rounds | `CapabilityLifecycleService.MAX_CONFIRM_ROUNDS` | 3 |
 | Shadow length / promotion | `kpi.shadow.days` (`KPI_SHADOW_DAYS`), `kpi.shadow.promote-cron`, `CapabilityLifecycleService.promoteDueShadows()` | |
@@ -291,7 +256,7 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Flagged readings | `KPIService.addFlaggedProxyDataForUser()`, `KPIData.flag/flagReason` | `SHADOW` / `IMPLAUSIBLE`, forced `pending` |
 | Confirm UI | `kpi-list.js renderAutomateConfirm()` / `automateConfirm()`, `.automate__sample/__evidence*` in `kpi.css`, `ENV.ENDPOINTS.KPI_CAP_CONFIRM` | |
 | Automate UI | `static/kpi-list.html` `#automateModal`, `static/js/kpi-list.js` `openAutomateModal()` / `renderAutomate()` | chrome (head/foot, stage rail, breakpoints 900/640) in `styles/organisms/automate-dialog.css`; content styles in `styles/pages/kpi.css` `.automate__*` |
-| Automate plain-language facts / failure sentences | `kpi-list.js` `renderAutomateSummary()`, `describeFailure()` | "Updates" text is fixed (nightly fill) |
+| Automate plain-language facts / failure sentences | `kpi-list.js` `renderAutomateSummary()`, `describeFailure()` | "Updates" text is fixed (runner schedule) |
 | Automate job polling | `kpi-list.js` `automateStart()` / `automatePoll()`, `ENV.TIMING.KPI_CAP_POLL_MS`, `ENV.ENDPOINTS.KPI_CAP_*` | |
 | Step rows (shared with planner) | `static/js/molecules/step-list.js`, `styles/molecules/step-list.css` | |
 | Async capability jobs | `CapabilityTaskService`, `CapabilityAgentController.startJob()/pollJob()/activeJob()` | `WORKERS`, `KEEP_FINISHED_MS` |
@@ -299,27 +264,24 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 | Agent endpoints | `CapabilityAgentController` | `/api/kpis/{name}/capability/...` |
 | Pipeline (propose/approve/test gate/retry) | `CapabilityAgentService` | `propose()`, `approve()`, `attempt()`, `regenerate()` |
 | Attempt cap | `CapabilityAgentService.MAX_ATTEMPTS` | 3 |
-| What may be granted | `CapabilityAgentService.checkGrantable()` | rejects network/secrets/non-SERVER |
+| What may be granted | `CapabilityAgentService.checkSources()` / `checkGrantable()` | sources ⊆ activitywatch/file, platform RUNNER only |
+| Legacy SERVER/WINDOWS cleanup | `RunnerOnlyKpiMigration.migrate()` | `_migration` flag `runner-only-kpis-v1` |
 | LLM transport (Java) | `RunnerCapabilityGenerator` | `kpi.capability.job-timeout-ms` (300000), `kpi.capability.poll-ms` (2000); swap via `CapabilityGenerator` |
 | Which runner runs the job | `OnlineRunnerSelector.pick()` | online uplink, last job use, then `lastSeenAt` |
-| LLM prompt text | `resources/prompts/kpi-capability-*.md` | `{{KPI_NAME}}`, `{{DESCRIPTION}}`, `{{PROPOSAL}}`, `{{DECLARED}}`, `{{SANDBOX_FACTS}}`, `{{PREVIOUS_FAILURE}}` |
-| LLM JSON contract | `CapabilityPrompts` | `parseProposal()`, `parseSourceCode()`, `MAX_SOURCE_BYTES` |
+| LLM prompt text | `resources/prompts/kpi-capability-*.md` | `{{KPI_NAME}}`, `{{DESCRIPTION}}`, `{{PROPOSAL}}`, `{{SOURCES}}`, `{{PREVIOUS_FAILURE}}` |
+| LLM JSON contract | `CapabilityPrompts` | `parseProposal()`, `parseCollectorBundle()`; size cap `CollectorStaticCheck.MAX_SOURCE_BYTES` |
 | "Connect a runner" message | `CapabilityGeneratorException.NO_RUNNER_MESSAGE` | 503 in `CapabilityAgentController.generator()` |
 | Repair waiting for runner | `AgentCapabilityRepairTrigger.retryWaiting()` | `kpi.repair.runner-check-ms` (60000) |
 | Auto-repair trigger | `AgentCapabilityRepairTrigger` | replaces former `LoggingCapabilityRepairTrigger` |
 | Manual "Fix it" | `CapabilityAgentService.repair()` | `POST .../capability/repair` |
-| Container limits / flags | `sandbox/app.py` `build_docker_cmd()`, `SANDBOX_MEM`, `SANDBOX_CPUS` | see `/sandbox/FLOWS.md` |
 | RUNNER pipeline (sensors → generate → static → install → fixtures → contract → dry run) | `RunnerCollectorPipeline.attempt()` / `approveContract()` / `dryRun()` / `installSensor()` | S3 |
-| RUNNER grant rules | `CapabilityAgentService.checkGrantable()` (RUNNER branch) | no hosts/secrets, sources ⊆ activitywatch/file |
 | Static check rules (imports allowlist, deny-list globs, fixtures ≥2 incl. 0) | `CollectorStaticCheck.check()`, `ALLOWED_MODULES`, `DENIED_DIRS/FILES` | keep deny-list in sync with Relay `sources.go` |
 | Contract sentence | `CollectorStaticCheck.contractText()` | shown at AWAITING_CONTRACT |
 | Collector generation prompt | `resources/prompts/kpi-collector-generate.md`, `CapabilityPrompts.collectorPrompt()` / `parseCollectorBundle()` | `{{SOURCES}}` |
-| Propose prompt (SERVER vs RUNNER) | `resources/prompts/kpi-capability-propose.md` | `sources` field |
+| Propose prompt (runner only, no platform choice) | `resources/prompts/kpi-capability-propose.md` | `sources` field |
 | Collector id on the runner | `RunnerCollectorPipeline.attempt()` (`"kpi-" + kpiId`) | stable across versions |
 | Readings pull schedule / on-demand | `kpi.runner.pull-cron` (hourly :40), `RunnerCollectorProvider.pullDue()/pull()`, `POST .../capability/pull` | offline = skip |
-| Shared reading guards (SHADOW / IMPLAUSIBLE / anomaly) | `ProxyReadingRecorder.record()` | used by fill + pull |
+| Shared reading guards (SHADOW / IMPLAUSIBLE / anomaly) | `ProxyReadingRecorder.record()` | used by the runner pull |
 | Activate on go-live | `CapabilityWentLive` event, `RunnerCollectorProvider.onLive()` | |
 | Sensor install polling | `kpi.runner.sensor-poll-ms` (3000), `kpi.runner.sensor-install-timeout-ms` (600000) | |
 | RUNNER UI (contract / sensor / tests / fetch) | `kpi-list.js renderAutomateContract()`, `renderAutomateSensor()`, `renderAutomateTests()`, `renderAutomatePull()`, `ENV.ENDPOINTS.KPI_CAP_PULL` | job actions `contract`, `sensor` |
-- **Secrets at rest/in flight (egress feature):** encrypted in Mongo with `KPI_SECRETS_KEY` (or a key derived from `JWT_SECRET` if unset: then rotating `JWT_SECRET` makes every stored secret undecryptable; `resolve()` throws and runs fail, users must re-enter). A DB dump alone does not reveal values; a dump plus the env key does. In flight they pass javaapp → sidecar as plaintext JSON over the internal compose network (no TLS, no sidecar auth), then sit in a 0600 temp file during the run and in the container env (`docker inspect` shows them while it runs). Redaction of output is best-effort (encoded output evades it). Details and the hostname-only allowlist caveats: `sandbox/FLOWS.md`, `egress-proxy/FLOWS.md`.
-- **Proxy / egress failure modes:** `egress-proxy` down or `SANDBOX_EGRESS_SECRET` unset => every capability that declares hosts fails (`SIDECAR_ERROR` or a script-side proxy error) and feeds the circuit breaker (3 nights → `NEEDS_REPAIR`) and the auto-repair loop; hostless capabilities are unaffected.
