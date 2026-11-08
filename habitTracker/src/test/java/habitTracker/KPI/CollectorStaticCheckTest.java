@@ -61,6 +61,46 @@ class CollectorStaticCheckTest {
         assertTrue(all.contains("did not declare"), all);
     }
 
+    static final java.util.Map<String, String> GH = java.util.Map.of("github", "api.github.com");
+
+    private static List<String> httpProblems(String json, java.util.Map<String, String> creds) throws Exception {
+        CollectorBundle b = RunnerCollectorIntegrationTest.httpBundle();
+        com.fasterxml.jackson.databind.node.ArrayNode src = ((ObjectNode) b.manifest()).putArray("sources");
+        src.add(new ObjectMapper().readTree(json));
+        return CollectorStaticCheck.check(b, List.of("http"), creds);
+    }
+
+    @Test
+    void httpSource_mustUseAnApprovedCredentialOnItsHost() throws Exception {
+        assertEquals(List.of(), CollectorStaticCheck.check(RunnerCollectorIntegrationTest.httpBundle(), List.of("http"), GH));
+        assertEquals(List.of(), httpProblems("""
+                {"type":"http","credential":"github","url":"https://api.github.com/user/repos?since={from}&until={to}","why":"w","method":"GET"}""", GH));
+        for (String bad : List.of(
+                "{\"type\":\"http\",\"credential\":\"gitlab\",\"url\":\"https://api.github.com/x\",\"why\":\"w\"}",   // not approved
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://evil.com/x\",\"why\":\"w\"}",         // other host
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"http://api.github.com/x\",\"why\":\"w\"}",    // not https
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://api.github.com:8443/x\",\"why\":\"w\"}", // port
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://u:p@api.github.com/x\",\"why\":\"w\"}", // userinfo
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://api.github.com/x#f\",\"why\":\"w\"}",  // fragment
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://api.github.com/{token}\",\"why\":\"w\"}", // placeholder
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://{from}.github.com/x\",\"why\":\"w\"}",  // in host
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://api.github.com/x\",\"why\":\"w\",\"method\":\"POST\"}",
+                "{\"type\":\"http\",\"credential\":\"github\",\"url\":\"https://api.github.com/x\"}")) {           // no why
+            assertFalse(httpProblems(bad, GH).isEmpty(), bad);
+        }
+        // the plan approved no credential at all
+        assertFalse(CollectorStaticCheck.check(RunnerCollectorIntegrationTest.httpBundle(), List.of("http")).isEmpty());
+        // http not in the approved plan
+        assertFalse(CollectorStaticCheck.check(RunnerCollectorIntegrationTest.httpBundle(), AW, GH).isEmpty());
+    }
+
+    @Test
+    void contractText_namesTheHostAndCredential() {
+        assertEquals("Reads api.github.com with your \"github\" credential (my PRs) · your runner makes that call; "
+                        + "the script itself has no internet · runs daily at 00:10",
+                CollectorStaticCheck.contractText(RunnerCollectorIntegrationTest.httpBundle().manifest()));
+    }
+
     @Test
     void contractText_isPlainLanguage() throws Exception {
         ObjectNode m = (ObjectNode) new ObjectMapper().readTree("""

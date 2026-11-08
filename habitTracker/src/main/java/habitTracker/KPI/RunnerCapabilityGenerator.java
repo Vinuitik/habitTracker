@@ -63,17 +63,18 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
     }
 
     @Override
-    public Proposal propose(String userId, String kpiName, String description) {
+    public Proposal propose(String userId, String kpiName, String description, List<CredentialRef> available) {
         return prompts.parseProposal(run(userId, AiUsageService.Source.kpi(AiUsage.KPI_PROPOSE, kpiName),
-                prompts.proposePrompt(kpiName, description)));
+                prompts.proposePrompt(kpiName, description, available)));
     }
 
     @Override
     public CollectorBundle generateCollector(String userId, String kpiName, String description, String proposal,
-                                             List<String> sources, String previousBundleJson, String previousError) {
+                                             List<String> sources, List<CredentialRef> credentials,
+                                             String previousBundleJson, String previousError) {
         String kind = CapabilityProgress.isRepair() ? AiUsage.KPI_REPAIR : AiUsage.KPI_GENERATE;
         return prompts.parseCollectorBundle(run(userId, AiUsageService.Source.kpi(kind, kpiName),
-                prompts.collectorPrompt(kpiName, description, proposal, sources, previousBundleJson, previousError)));
+                prompts.collectorPrompt(kpiName, description, proposal, sources, credentials, previousBundleJson, previousError)));
     }
 
     /** → the job's result node (agent's final message). */

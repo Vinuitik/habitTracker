@@ -42,6 +42,7 @@ public class RunnerCollectorPipeline {
     private static final Logger log = LoggerFactory.getLogger(RunnerCollectorPipeline.class);
     static final String SANDBOX_UNAVAILABLE = "Runner sandbox unavailable: ";
     static final String ACTIVITYWATCH = "activitywatch";
+    static final String HTTP = "http";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     interface Sleeper { void sleep(long ms) throws InterruptedException; }
@@ -107,7 +108,7 @@ public class RunnerCollectorPipeline {
                 CollectorBundle bundle;
                 try {
                     bundle = generator.generateCollector(userId, kpi.getName(), cap.getDescription(), cap.getProposal(),
-                            sources(cap), cap.getCollectorBundle(), cap.getFailureReason());
+                            sources(cap), credentials(cap), cap.getCollectorBundle(), cap.getFailureReason());
                 } catch (CapabilityGeneratorException e) {
                     // Not counted: the model never produced a bundle (runner offline, auth expired, busy, bad JSON).
                     return fail(cap, "Code generation failed: " + e.getMessage());
@@ -160,7 +161,7 @@ public class RunnerCollectorPipeline {
     private Install installAndTest(KPIProxyCapability cap, KPI kpi, CollectorBundle bundle) {
         String userId = cap.getUserId(), device = cap.getRunnerDeviceId(), id = cap.getCollectorId();
         CapabilityProgress.step("Checking the collector against the safety rules");
-        List<String> problems = CollectorStaticCheck.check(bundle, sources(cap));
+        List<String> problems = CollectorStaticCheck.check(bundle, sources(cap), CredentialRef.byName(credentials(cap)));
         if (!problems.isEmpty()) {
             problems.stream().limit(5).forEach(p -> CapabilityProgress.runnerEvent("text", "✕ " + clip(p)));
             return new Install("Static check failed: " + String.join("; ", problems.subList(0, Math.min(10, problems.size()))), false);
@@ -255,10 +256,15 @@ public class RunnerCollectorPipeline {
             r = client.run(cap.getUserId(), cap.getRunnerDeviceId(), cap.getCollectorId(), from, to);
         } catch (RunnerCallException e) {
             return switch (e.getStatus()) {
-                case 503 -> { // ActivityWatch down / bucket missing: not the collector's fault, not an attempt
+                case 503 -> { // ActivityWatch down / bucket missing / credential missing or rejected: not the collector's
+                    // fault, not an attempt. "Check again" (installSensor) retries the dry run.
+                    boolean aw = sources(cap).contains(ACTIVITYWATCH), web = sources(cap).contains(HTTP);
+                    String fix = aw && web ? "Make sure ActivityWatch is running there and the credential is saved on that runner"
+                            : web ? "Add or fix the credential in Relay → " + runnerName(cap) + " → KPI credentials"
+                            : "Make sure ActivityWatch is running there";
                     cap.setStatus(CapabilityStatus.AWAITING_SENSOR);
                     cap.setFailureReason(runnerName(cap) + " could not read the collector's data: " + runnerError(e)
-                            + ". Make sure ActivityWatch is running there, then press Check again.");
+                            + ". " + fix + ", then press Check again.");
                     yield repository.save(cap);
                 }
                 case 422 -> fail(cap, "Test gate failed: the collector crashed on your real data: " + runnerError(e));
@@ -286,7 +292,8 @@ public class RunnerCollectorPipeline {
         }
         try {
             JsonNode s = sensors(cap);
-            if (!awRunning(s) && !"installing".equals(s.path("operation").asText(""))) {
+            boolean needsAw = sources(cap).contains(ACTIVITYWATCH); // http-only: "Check again" just retries the fetch
+            if (needsAw && !awRunning(s) && !"installing".equals(s.path("operation").asText(""))) {
                 CapabilityProgress.step("Installing ActivityWatch on " + runnerName(cap));
                 try {
                     client.installSensor(cap.getUserId(), cap.getRunnerDeviceId(), ACTIVITYWATCH);
@@ -299,7 +306,7 @@ public class RunnerCollectorPipeline {
                     if (e.getStatus() != 409) throw stopFor(e); // 409 = an install is already running: just wait
                 }
             }
-            if (!awRunning(s)) {
+            if (needsAw && !awRunning(s)) {
                 CapabilityProgress.step("Waiting for ActivityWatch to start on " + runnerName(cap));
                 long deadline = System.currentTimeMillis() + sensorInstallTimeoutMs;
                 do {
@@ -312,7 +319,7 @@ public class RunnerCollectorPipeline {
                     s = sensors(cap);
                 } while (!"".equals(s.path("operation").asText("")) && System.currentTimeMillis() < deadline);
             }
-            if (!awRunning(s)) {
+            if (needsAw && !awRunning(s)) {
                 cap.setFailureReason(awMessage(cap, s));
                 return repository.save(cap);
             }
@@ -373,6 +380,41 @@ public class RunnerCollectorPipeline {
         } catch (RuntimeException e) {
             return "your runner";
         }
+    }
+
+    /** The runner the collector goes to + the credentials it holds (names + hosts only). */
+    record RunnerCredentials(String deviceId, List<CredentialRef> list) {}
+
+    /**
+     * GET /v1/credentials on the runner the next build would use (OnlineRunnerSelector.pick). No runner online →
+     * deviceId null + empty list (the propose call then reports "connect a runner"). An older runner (404) or a disabled
+     * store (503) → empty list: the plan can still use local sources, and an http plan is told which credential to add.
+     */
+    RunnerCredentials runnerCredentials(String userId) {
+        Optional<String> d = selector.pick(userId);
+        if (d.isEmpty()) return new RunnerCredentials(null, List.of());
+        List<CredentialRef> out = new ArrayList<>();
+        try {
+            JsonNode list = client.credentials(userId, d.get());
+            if (list != null && list.isArray()) {
+                for (JsonNode c : list) {
+                    CredentialRef r = new CredentialRef(c.path("name").asText(""), c.path("host").asText(""));
+                    if (r.valid()) out.add(r);
+                }
+            }
+        } catch (RunnerCallException e) {
+            log.info("[RunnerCollector] credentials list on {} failed: HTTP {}", d.get(), e.getStatus()); // body not logged
+        } catch (RunnerUnavailableException e) {
+            return new RunnerCredentials(null, List.of());
+        }
+        return new RunnerCredentials(d.get(), List.copyOf(out));
+    }
+
+    /** declaredCapabilities.credentials ("name@host") → refs; empty when the plan reads no web API. */
+    static List<CredentialRef> credentials(KPIProxyCapability cap) {
+        if (cap.getDeclaredCapabilities() == null) return List.of();
+        List<String> s = cap.getDeclaredCapabilities().get("credentials");
+        return s == null ? List.of() : s.stream().map(CredentialRef::parse).toList();
     }
 
     @SuppressWarnings("unchecked")

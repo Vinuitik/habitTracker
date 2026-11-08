@@ -41,6 +41,14 @@ public class RunnerCollectorClient {
         return jobs.send(userId, deviceId, "GET", "/v1/sensors", "");
     }
 
+    /**
+     * KPI credentials held on the runner → [{name, host, auth, updatedAt}] (never values; HUB.md "KPI credentials").
+     * 503 = the runner's credential store is not enabled, 404 = an older runner without the endpoint.
+     */
+    public JsonNode credentials(String userId, String deviceId) {
+        return jobs.send(userId, deviceId, "GET", "/v1/credentials", "");
+    }
+
     /** 202; poll sensors() until operation == "". */
     public void installSensor(String userId, String deviceId, String name) {
         jobs.send(userId, deviceId, "POST", "/v1/sensors/install", json.createObjectNode().put("name", name).toString());

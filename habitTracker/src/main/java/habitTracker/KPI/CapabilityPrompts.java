@@ -43,7 +43,7 @@ public class CapabilityPrompts {
 
     /** S3 RUNNER collector bundle prompt (kpi-collector-generate.md). */
     public String collectorPrompt(String kpiName, String description, String proposal, List<String> sources,
-                                  String previousBundleJson, String previousError) {
+                                  List<CredentialRef> credentials, String previousBundleJson, String previousError) {
         String previous = previousError == null || previousError.isEmpty() ? ""
                 : fill(previousFailureTemplate, Map.of(
                         "PREVIOUS_CODE", previousBundleJson == null || previousBundleJson.isEmpty() ? "(none)" : previousBundleJson,
@@ -53,6 +53,7 @@ public class CapabilityPrompts {
         vars.put("DESCRIPTION", description);
         vars.put("PROPOSAL", String.valueOf(proposal));
         vars.put("SOURCES", sources == null || sources.isEmpty() ? "(none declared)" : String.join(", ", sources));
+        vars.put("CREDENTIALS", credentialList(credentials, "(none: this collector may not use an http source)"));
         vars.put("PREVIOUS_FAILURE", previous);
         return fill(collectorTemplate, vars);
     }
@@ -66,8 +67,22 @@ public class CapabilityPrompts {
         }
     }
 
-    public String proposePrompt(String kpiName, String description) {
-        return fill(proposeTemplate, Map.of("KPI_NAME", kpiName, "DESCRIPTION", description));
+    /** available = the runner's credentials, names + hosts only (never values: the hub never has them). */
+    public String proposePrompt(String kpiName, String description, List<CredentialRef> available) {
+        return fill(proposeTemplate, Map.of("KPI_NAME", kpiName, "DESCRIPTION", description,
+                "CREDENTIALS", credentialList(available, "(none yet)")));
+    }
+
+    /** "- github (host api.github.com)" lines. Names/hosts come from the runner; re-filtered here anyway. */
+    static String credentialList(List<CredentialRef> refs, String none) {
+        if (refs == null || refs.isEmpty()) return none;
+        StringBuilder sb = new StringBuilder();
+        for (CredentialRef r : refs) {
+            if (!r.valid()) continue;
+            if (!sb.isEmpty()) sb.append('\n');
+            sb.append("- ").append(r.name()).append(" (host ").append(r.host()).append(')');
+        }
+        return sb.isEmpty() ? none : sb.toString();
     }
 
     /** Agent's final message → Proposal. Throws CapabilityGeneratorException (not busy) on anything unusable. */
@@ -85,8 +100,17 @@ public class CapabilityPrompts {
                 if (!s.isEmpty() && !sources.contains(s)) sources.add(s);
             });
         }
+        List<CredentialRef> credentials = new ArrayList<>();
+        JsonNode creds = out.get("credentials");
+        if (creds != null && creds.isArray()) {
+            creds.forEach(c -> {
+                if (!c.isObject()) return;
+                CredentialRef r = new CredentialRef(c.path("name").asText(""), c.path("host").asText(""));
+                if (!r.name().isEmpty() && credentials.stream().noneMatch(x -> x.name().equals(r.name()))) credentials.add(r);
+            });
+        }
         return new CapabilityGenerator.Proposal(proposal.asText().strip(),
-                optionalText(out, "measures"), optionalText(out, "dataSource"), sources);
+                optionalText(out, "measures"), optionalText(out, "dataSource"), sources, credentials);
     }
 
     // Optional one-line summaries for the UI; absent / non-text / blank → null (the UI falls back).

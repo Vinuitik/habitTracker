@@ -13,7 +13,8 @@ import java.util.Optional;
 /**
  * M8 agent loop. Every capability is a RUNNER collector (runner-only-kpis.md: no user-influenced code runs on the
  * hub, and the agent is never offered a platform choice):
- *   propose (LLM writes a spec + the local sources it reads; anything else is rejected, see checkSources)
+ *   propose (runner's credential names fetched first; LLM writes a spec + the sources it reads + the credentials an
+ *   http source needs; anything else, or a credential the runner lacks, is rejected, see checkSources)
  *   -> approve -> RunnerCollectorPipeline.attempt (generate bundle, static check, install + fixture tests on the
  *   runner, contract approval, dry run on real data) -> CapabilityLifecycleService.
  * A passing first build then stops at AWAITING_CONFIRM -> SHADOW -> ACTIVE (CapabilityLifecycleService); repairs go live directly.
@@ -78,8 +79,13 @@ public class CapabilityAgentService {
         }
 
         CapabilityProgress.step("Drafting a plan on your runner");
-        CapabilityGenerator.Proposal p = generator.propose(userId, kpi.getName(), description.trim());
-        Map<String, List<String>> granted = checkSources(p.sources());
+        // Names + hosts only; the values never leave the runner. null = mocked pipeline in tests.
+        RunnerCollectorPipeline.RunnerCredentials onRunner = runnerPipeline.runnerCredentials(userId);
+        List<CredentialRef> available = onRunner == null ? List.of() : onRunner.list();
+        CapabilityGenerator.Proposal p = generator.propose(userId, kpi.getName(), description.trim(), available);
+        Map<String, List<String>> granted = checkSources(p.sources(), p.credentials(), available);
+        // Credentials are per runner: build on the runner whose list the plan was checked against.
+        String pinDevice = granted.containsKey("credentials") && onRunner != null ? onRunner.deviceId() : null;
 
         // A newer proposal supersedes any unfinished older one.
         for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
@@ -96,6 +102,7 @@ public class CapabilityAgentService {
                 .description(description.trim()).proposal(p.proposal())
                 .measures(p.measures()).dataSource(p.dataSource())
                 .declaredCapabilities(granted)
+                .runnerDeviceId(pinDevice)
                 .status(CapabilityStatus.PROPOSED)
                 .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
                 .createdAt(LocalDateTime.now())
@@ -326,25 +333,66 @@ public class CapabilityAgentService {
         if (c.getPlatform() != CapabilityPlatform.RUNNER) {
             throw new CapabilityRejectedException("Only collectors on your runner are supported; start over.");
         }
-        checkSources(RunnerCollectorPipeline.sources(c));
+        List<CredentialRef> creds = RunnerCollectorPipeline.credentials(c);
+        // Stored plan: re-validate shape only (the runner list was checked at propose; the runner re-checks every fetch).
+        checkSources(RunnerCollectorPipeline.sources(c), creds, creds);
     }
 
-    // The approval boundary: a collector never has network or secrets (the runner's sandbox enforces that); it
-    // reads sources ⊆ {activitywatch, file}, at least one. Stored as declaredCapabilities {sources: [...]}; the
-    // runner's contract approval then pins exactly what it reads.
-    static Map<String, List<String>> checkSources(List<String> sources) {
+    // The approval boundary: a collector script never has network or secrets (the runner's sandbox enforces that); it
+    // reads sources ⊆ {activitywatch, file, http}, at least one. http = the RUNNER fetches one host with a credential
+    // the user saved there; the plan must name it and the runner must already hold it (name + same host).
+    // Stored as declaredCapabilities {sources: [...], credentials?: ["name@host"]}; the runner's contract approval
+    // then pins exactly what it reads (credential + url are in the contract hash).
+    static Map<String, List<String>> checkSources(List<String> sources, List<CredentialRef> needed,
+                                                  List<CredentialRef> onRunner) {
         List<String> src = sources == null ? List.of() : sources.stream().distinct().toList();
         if (src.isEmpty()) {
-            throw new CapabilityRejectedException("This can't be captured yet: a collector on your runner can only read "
-                    + "ActivityWatch and local files on your computer, with no internet access.");
+            throw new CapabilityRejectedException("This can't be captured yet: a collector on your runner can read "
+                    + "ActivityWatch, local files on your computer, or a web API through a credential saved on your "
+                    + "runner, and the AI found none of these that has this data.");
         }
-        if (!List.of(RunnerCollectorPipeline.ACTIVITYWATCH, "file").containsAll(src)) {
-            throw new CapabilityRejectedException("A runner collector must read ActivityWatch and/or local files "
+        if (!CollectorStaticCheck.SOURCE_TYPES.containsAll(src)) {
+            throw new CapabilityRejectedException("A runner collector must read ActivityWatch, local files or a web API "
                     + "(the agent proposed sources " + src + ").");
         }
         Map<String, List<String>> out = new java.util.LinkedHashMap<>();
         out.put("sources", src);
+        if (!src.contains(RunnerCollectorPipeline.HTTP)) return out;
+
+        List<CredentialRef> want = needed == null ? List.of() : needed;
+        if (want.isEmpty()) {
+            throw new CapabilityRejectedException("The plan reads a web API but names no credential for it. Try again, "
+                    + "or describe which service the data comes from.");
+        }
+        for (CredentialRef r : want) {
+            if (!r.valid()) {
+                throw new CapabilityRejectedException("The plan names an unusable credential (\"" + clip(r.name())
+                        + "\" for \"" + clip(r.host()) + "\"). Try again.");
+            }
+        }
+        Map<String, String> have = CredentialRef.byName(onRunner);
+        List<String> missing = new java.util.ArrayList<>();
+        for (CredentialRef r : want) {
+            String host = have.get(r.name());
+            if (host == null) {
+                missing.add("\"" + r.name() + "\" for " + r.host());
+            } else if (!host.equals(r.host())) {
+                throw new CapabilityRejectedException("Your runner's credential \"" + r.name() + "\" is for " + host
+                        + ", but this needs " + r.host() + ". Save one for " + r.host() + " in Relay → your runner → "
+                        + "KPI credentials (use a read-only token), then propose again.");
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new CapabilityRejectedException("This needs an API credential on your runner. Add "
+                    + (missing.size() == 1 ? "one named " : "these: ") + String.join(", ", missing)
+                    + " in Relay → your runner → KPI credentials (use a read-only, minimal-scope token), then propose again.");
+        }
+        out.put("credentials", CredentialRef.storedList(want));
         return out;
+    }
+
+    private static String clip(String s) {
+        return s == null ? "" : s.length() > 40 ? s.substring(0, 40) + "..." : s;
     }
 
     private static int attemptsOf(KPIProxyCapability c) {

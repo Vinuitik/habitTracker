@@ -78,6 +78,7 @@ class RunnerCollectorIntegrationTest {
         String state = "pending";
         int installs, approves, runs, activates, sensorInstalls;
         List<Map<String, Object>> readings = new ArrayList<>();
+        List<Map<String, Object>> credentials = new ArrayList<>(); // GET /v1/credentials rows (never values)
         String lastSince;
 
         UplinkRegistry.Response handle(String method, String path, String body) throws Exception {
@@ -89,6 +90,7 @@ class RunnerCollectorIntegrationTest {
                                 : Map.of("available", false, "kind", "none", "error", "bwrap not found"),
                         "operation", installPolls > 0 ? "installing" : ""));
             }
+            if (method.equals("GET") && path.equals("/v1/credentials")) return ok(credentials);
             if (method.equals("POST") && path.equals("/v1/sensors/install")) {
                 sensorInstalls++;
                 installPolls = 2;
@@ -164,10 +166,10 @@ class RunnerCollectorIntegrationTest {
         when(runnerClient.call(anyString(), anyString(), anyString(), anyString(), any())).thenAnswer(route);
         when(runnerClient.call(anyString(), anyString(), anyString(), anyString(), any(), org.mockito.ArgumentMatchers.anyLong())).thenAnswer(route);
         when(generator.runnerAvailable(USER)).thenReturn(true);
-        when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
                 "Sum YouTube watch time from ActivityWatch web events", "Minutes of YouTube per day",
                 "ActivityWatch on your computer", List.of("activitywatch")));
-        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(bundle(List.of("web")));
     }
 
@@ -292,7 +294,7 @@ class RunnerCollectorIntegrationTest {
         assertTrue(runner.active, "new version activated");
 
         // wider contract (adds the window bucket) → AWAITING_CONTRACT, the runner is never asked to approve it
-        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(bundle(List.of("web", "window")));
         broken = kpiRepository.findById(kpi.getId()).orElseThrow();
         broken.setProxyStatus(ProxyStatus.NEEDS_REPAIR);
@@ -323,7 +325,7 @@ class RunnerCollectorIntegrationTest {
         assertTrue(c.failureReason().startsWith(RunnerCollectorPipeline.SANDBOX_UNAVAILABLE), c.failureReason());
         assertTrue(c.failureReason().contains("bwrap not found"));
         assertEquals(0, c.attempts());
-        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any());
+        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any());
         assertEquals(0, runner.installs);
     }
 
@@ -335,7 +337,7 @@ class RunnerCollectorIntegrationTest {
         CapabilityDTO c = proposeAndApprove(kpi);
         assertEquals(CapabilityStatus.AWAITING_SENSOR, c.status());
         assertTrue(c.failureReason().startsWith("ActivityWatch isn't running on"), c.failureReason());
-        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any());
+        verify(generator, never()).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any());
 
         CapabilityDTO after = service.installSensorAs(USER, kpi.getName(), c.id());
         assertEquals(1, runner.sensorInstalls);
@@ -351,7 +353,7 @@ class RunnerCollectorIntegrationTest {
         CapabilityDTO c = proposeAndApprove(kpi);
         assertEquals(CapabilityStatus.AWAITING_CONTRACT, c.status());
         assertEquals(2, c.attempts());
-        verify(generator).generateCollector(anyString(), anyString(), any(), any(), any(), any(),
+        verify(generator).generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(),
                 org.mockito.ArgumentMatchers.startsWith("Fixture test failed: case busy-day: expected 47, got 12"));
     }
 
@@ -359,7 +361,7 @@ class RunnerCollectorIntegrationTest {
     void staticCheckFailure_neverReachesTheRunner_whenAllAttemptsFail() {
         CollectorBundle bad = bundle(List.of("web"));
         bad.files().put("collector.py", "import socket\nprint(1)\n");
-        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any())).thenReturn(bad);
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any())).thenReturn(bad);
         KPI kpi = kpi();
         CapabilityDTO c = proposeAndApprove(kpi);
         assertEquals(CapabilityStatus.TEST_FAILED, c.status());
@@ -406,9 +408,66 @@ class RunnerCollectorIntegrationTest {
         assertEquals(1, kpiRepository.findById(kpi.getId()).orElseThrow().getConsecutiveProxyFailures());
     }
 
+    static CollectorBundle httpBundle() {
+        ObjectNode m = JSON.createObjectNode();
+        m.put("schedule", "daily 00:10").put("window", "1d").put("unit", "count").put("aggregation", "sum");
+        m.putArray("sources").addObject().put("type", "http").put("credential", "github")
+                .put("url", "https://api.github.com/search/issues?q=author:me+created:{from}..{to}").put("why", "my PRs");
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("collector.py", "import json, argparse\nprint(json.dumps({'value': 0}))\n");
+        files.put("fixtures/busy-day/inputs/http/0.json", "{\"total_count\": 3}");
+        files.put("fixtures/busy-day/expected.json", "{\"value\": 3}");
+        files.put("fixtures/empty-day/inputs/http/0.json", "{\"total_count\": 0}");
+        files.put("fixtures/empty-day/expected.json", "{\"value\": 0}");
+        return new CollectorBundle(m, files);
+    }
+
+    @Test
+    void httpPlan_withTheCredentialOnTheRunner_isGrantedPinnedAndBuilt() {
+        runner.credentials.add(Map.of("name", "github", "host", "api.github.com", "auth", "bearer", "updatedAt", "2026-11-08T00:00:00Z"));
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Count my PRs via the GitHub API", null, null, List.of("http"), List.of(new CredentialRef("github", "api.github.com"))));
+        when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any(), any())).thenReturn(httpBundle());
+        KPI kpi = kpi();
+        CapabilityDTO p = service.proposeAs(USER, kpi.getName(), "PRs I open per day");
+        verify(generator).propose(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.eq(List.of(new CredentialRef("github", "api.github.com"))));
+        assertEquals(List.of("http"), p.declaredCapabilities().get("sources"));
+        assertEquals(List.of("github@api.github.com"), p.declaredCapabilities().get("credentials"));
+        assertEquals(DEVICE, capabilityRepository.findById(p.id()).orElseThrow().getRunnerDeviceId());
+
+        CapabilityDTO c = service.approveAs(USER, kpi.getName(), p.id());
+        assertEquals(CapabilityStatus.AWAITING_CONTRACT, c.status(), String.valueOf(c.failureReason()));
+        verify(generator).generateCollector(anyString(), anyString(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.eq(List.of(new CredentialRef("github", "api.github.com"))), any(), any());
+    }
+
+    @Test
+    void httpPlan_withoutTheCredential_saysWhichOneToAdd() {
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "Count my PRs via the GitHub API", null, null, List.of("http"), List.of(new CredentialRef("github", "api.github.com"))));
+        KPI kpi = kpi();
+        CapabilityRejectedException e = assertThrows(CapabilityRejectedException.class,
+                () -> service.proposeAs(USER, kpi.getName(), "PRs I open per day"));
+        assertTrue(e.getMessage().contains("\"github\" for api.github.com"), e.getMessage());
+        assertTrue(e.getMessage().contains("KPI credentials"), e.getMessage());
+        assertEquals(0, capabilityRepository.count());
+    }
+
+    @Test
+    void httpPlan_credentialForAnotherHost_isRejected() {
+        runner.credentials.add(Map.of("name", "github", "host", "github.example.com", "auth", "bearer", "updatedAt", "x"));
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "x", null, null, List.of("http"), List.of(new CredentialRef("github", "api.github.com"))));
+        KPI kpi = kpi();
+        CapabilityRejectedException e = assertThrows(CapabilityRejectedException.class,
+                () -> service.proposeAs(USER, kpi.getName(), "x"));
+        assertTrue(e.getMessage().contains("is for github.example.com"), e.getMessage());
+    }
+
     @Test
     void proposalWithAnUnknownSource_isRejected() {
-        when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
                 "x", List.of("activitywatch", "http")));
         KPI kpi = kpi();
         assertThrows(CapabilityRejectedException.class, () -> service.proposeAs(USER, kpi.getName(), "x"));

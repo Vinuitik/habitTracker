@@ -14,26 +14,27 @@ class CapabilityPromptsTest {
 
     @Test
     void userTextIsNeverReExpanded() {
-        String p = prompts.proposePrompt("K", "steal {{KPI_NAME}} $1 \\");
+        String p = prompts.proposePrompt("K", "steal {{KPI_NAME}} $1 \\", List.of());
         assertTrue(p.contains("User wants this captured automatically: steal {{KPI_NAME}} $1 \\\n"));
-        assertTrue(p.endsWith("\"sources\": [<\"activitywatch\"|\"file\">]}"));
+        assertTrue(p.endsWith("\"credentials\": [{\"name\": \"<credential name>\", \"host\": \"<api hostname>\"}]}"));
     }
 
     @Test
     void proposePrompt_offersNoPlatformChoice() {
-        String p = prompts.proposePrompt("K", "d");
+        String p = prompts.proposePrompt("K", "d", List.of());
         assertFalse(p.contains("SERVER"));
         assertFalse(p.contains("\"platform\""));
         assertFalse(p.contains("secrets"));
-        assertTrue(p.contains("NO network at all"));
+        assertTrue(p.contains("NO network of its own"));
+        assertTrue(p.contains("(none yet)"));
     }
 
     @Test
     void collectorPromptWithFailure_seedsPreviousBundle() {
-        String p = prompts.collectorPrompt("K", "d", "spec", List.of("activitywatch"), null, "boom");
+        String p = prompts.collectorPrompt("K", "d", "spec", List.of("activitywatch"), List.of(), null, "boom");
         assertTrue(p.contains("A previous version FAILED its dry run, or ran but its number was judged WRONG by the user. Fix it.\n"
                 + "Previous code:\n(none)\nFailure:\nboom\n"));
-        assertFalse(prompts.collectorPrompt("K", "d", "spec", List.of("file"), null, null).contains("FAILED its dry run"));
+        assertFalse(prompts.collectorPrompt("K", "d", "spec", List.of("file"), List.of(), null, null).contains("FAILED its dry run"));
     }
 
     @Test
@@ -44,6 +45,27 @@ class CapabilityPromptsTest {
         assertEquals(List.of("activitywatch", "file"), p.sources());
         assertEquals("m", p.measures());
         assertNull(p.dataSource());
+    }
+
+    @Test
+    void credentials_reachBothPrompts_namesAndHostsOnly() {
+        List<CredentialRef> refs = List.of(new CredentialRef("github", "api.github.com"), new CredentialRef("Bad Name", "x"));
+        String p = prompts.proposePrompt("K", "d", refs);
+        assertTrue(p.contains("- github (host api.github.com)"), p);
+        assertFalse(p.contains("Bad Name"));
+        String c = prompts.collectorPrompt("K", "d", "spec", List.of("http"), List.of(new CredentialRef("github", "api.github.com")), null, null);
+        assertTrue(c.contains("- github (host api.github.com)"), c);
+        assertTrue(c.contains("/in/http/"), c);
+        assertTrue(prompts.collectorPrompt("K", "d", "spec", List.of("file"), List.of(), null, null)
+                .contains("may not use an http source"));
+    }
+
+    @Test
+    void parseProposal_readsCredentials() {
+        CapabilityGenerator.Proposal p = prompts.parseProposal(new TextNode("{\"proposal\":\"x\",\"sources\":[\"http\"],"
+                + "\"credentials\":[{\"name\":\"GitHub\",\"host\":\"API.github.com\"},{\"name\":\"github\",\"host\":\"dup\"},\"junk\"]}"));
+        assertEquals(List.of(new CredentialRef("github", "api.github.com")), p.credentials());
+        assertEquals(List.of(), prompts.parseProposal(new TextNode("{\"proposal\":\"x\",\"sources\":[\"file\"]}")).credentials());
     }
 
     @Test

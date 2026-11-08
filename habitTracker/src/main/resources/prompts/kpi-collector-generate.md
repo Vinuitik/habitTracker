@@ -3,14 +3,17 @@ KPI name: {{KPI_NAME}}
 User request: {{DESCRIPTION}}
 Approved plan: {{PROPOSAL}}
 Approved source types: {{SOURCES}}
+Approved credentials (an http source may use ONLY these, each only with its own host):
+{{CREDENTIALS}}
 
 Rules (a hub check rejects anything else):
-- NO network. python 3 STANDARD LIBRARY ONLY (json, datetime, os, pathlib, sqlite3, csv, re, collections, argparse, ...). No socket, urllib.request, http, ssl, subprocess, ctypes, importlib, __import__, exec, eval.
+- NO network in the script. python 3 STANDARD LIBRARY ONLY (json, datetime, os, pathlib, sqlite3, csv, re, collections, argparse, ...). No socket, urllib.request, http, ssl, subprocess, ctypes, importlib, __import__, exec, eval.
 - Invoked as: python3 collector.py --inputs /in --from <ISO-8601 with offset> --to <ISO-8601 with offset>. Count only what falls in [from, to).
 - Inputs are read-only snapshots the runner prepared; nothing else on the machine is visible:
   - source {"type":"activitywatch","buckets":["window","web","afk"]} (list only the buckets you need) → /in/aw/<bucket>.json = JSON array of ActivityWatch events [{"timestamp": "<ISO UTC>", "duration": <seconds>, "data": {...}}]. window data: {"app","title"}; web data: {"url","title","audible","incognito","tabCount"}; afk data: {"status": "afk"|"not-afk"}. A file may be missing or [] when there was no activity.
   - source {"type":"file","glob":"<absolute or ~/ path glob, no **>","why":"<one sentence>"} → copies under /in/files/<source index>/<path below the glob's fixed directory>. Never glob secrets (.ssh, .env, keyrings, browser Cookies / Login Data / key4.db / logins.json ...).
+  - source {"type":"http","credential":"<approved credential name>","url":"https://<that credential's host>/<path>?<query>","why":"<one sentence>"} → the RUNNER (not the script) makes one GET with the credential applied (15 s, max 1 MiB) → /in/http/<source index>.json (JSON responses) or /in/http/<source index>.txt (anything else). url: https only, the host must be exactly the credential's host, no port, no user:password@, no #fragment, never put a token or key in the url (the runner adds the auth). Use the placeholders {from} and {to} (only after the host, e.g. in the query) for the window as RFC3339 UTC like 2026-11-07T00:00:00Z, so the API returns only that day. Still filter by [from, to) in the script. Read-only GET only; one page per source (up to 10 sources). The script must cope with an empty list / object.
 - Print ONE line of JSON on stdout: {"value": <number>, "unit": "<short unit, e.g. min, count>", "evidence": [{"label": "<what>", "value": "<how much>"}, ...]} with up to 20 evidence rows that explain the number (largest first). An empty or missing input means value 0, not an error.
 - manifest: {"schedule": "daily 00:10", "window": "1d", "sources": [...], "unit": "<unit>", "aggregation": "sum"|"last"|"max"}. Use schedule "daily HH:MM" with window "1d" only.
-- fixtures: at least 2 cases under fixtures/<case>/ with inputs/... files (same layout as /in) and expected.json = {"value": <number>, "tolerance"?: <number>, "from"?: "<ISO>", "to"?: "<ISO>"} (without from/to every event in the fixture counts). One case MUST be an empty day (no events / empty files) expecting 0. Keep fixtures small and realistic.
+- fixtures: at least 2 cases under fixtures/<case>/ with inputs/... files (same layout as /in, e.g. inputs/http/0.json for source 0) and expected.json = {"value": <number>, "tolerance"?: <number>, "from"?: "<ISO>", "to"?: "<ISO>"} (without from/to every event in the fixture counts). One case MUST be an empty day (no events / empty files / an empty API response) expecting 0. Keep fixtures small and realistic, never real tokens.
 {{PREVIOUS_FAILURE}}Reply with ONLY one JSON object, no prose, no code fences: {"manifest": {...}, "files": {"collector.py": "<full python source>", "fixtures/<case>/inputs/aw/window.json": "<file text>", "fixtures/<case>/expected.json": "<file text>", ...}}

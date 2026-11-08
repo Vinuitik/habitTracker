@@ -41,7 +41,7 @@ class RunnerCapabilityGeneratorTest {
                 + "\"```json\\n{\\\"proposal\\\":\\\" Count PRs \\\","
                 + "\\\"sources\\\":[\\\"file\\\"]}\\n```\"}"));
 
-        CapabilityGenerator.Proposal p = gen.propose("u", "PRs", "count my PRs");
+        CapabilityGenerator.Proposal p = gen.propose("u", "PRs", "count my PRs", List.of());
 
         assertEquals("Count PRs", p.proposal());
         assertEquals(List.of("file"), p.sources());
@@ -58,7 +58,7 @@ class RunnerCapabilityGeneratorTest {
     @Test
     void noRunnerOnline_throwsNoRunnerWithoutStartingJob() {
         when(selector.pick("u")).thenReturn(Optional.empty());
-        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d"));
+        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d", List.of()));
         assertTrue(e.isNoRunner());
         assertEquals("Connect a runner to generate this capability", e.getMessage());
         verifyNoInteractions(jobs);
@@ -70,7 +70,7 @@ class RunnerCapabilityGeneratorTest {
         when(jobs.startJob(any(), any(), any())).thenReturn("j1");
         when(jobs.pollJob(any(), any(), any(), anyLong()))
                 .thenThrow(new RunnerUnavailableException(RunnerUnavailableException.Reason.OFFLINE, "device offline"));
-        assertTrue(assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d")).isNoRunner());
+        assertTrue(assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d", List.of())).isNoRunner());
     }
 
     @Test
@@ -78,7 +78,7 @@ class RunnerCapabilityGeneratorTest {
         when(selector.pick("u")).thenReturn(Optional.of("dev1"));
         when(jobs.startJob(any(), any(), any())).thenReturn("j1");
         when(jobs.pollJob(any(), any(), any(), anyLong())).thenReturn(snap("{\"state\":\"failed\",\"error\":\"auth expired\"}"));
-        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d"));
+        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d", List.of()));
         assertFalse(e.isNoRunner());
         assertTrue(e.getMessage().contains("auth expired"));
     }
@@ -87,7 +87,7 @@ class RunnerCapabilityGeneratorTest {
     void busyRunner_isBusy() {
         when(selector.pick("u")).thenReturn(Optional.of("dev1"));
         when(jobs.startJob(any(), any(), any())).thenThrow(new RunnerCallException(409, "{\"error\":\"busy\"}"));
-        assertTrue(assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d")).isBusy());
+        assertTrue(assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d", List.of())).isBusy());
     }
 
     @Test
@@ -96,7 +96,7 @@ class RunnerCapabilityGeneratorTest {
         when(selector.pick("u")).thenReturn(Optional.of("dev1"));
         when(jobs.startJob(any(), any(), any())).thenReturn("j1");
         when(jobs.pollJob(any(), any(), any(), anyLong())).thenReturn(snap("{\"state\":\"running\"}"));
-        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> slow.propose("u", "K", "d"));
+        CapabilityGeneratorException e = assertThrows(CapabilityGeneratorException.class, () -> slow.propose("u", "K", "d", List.of()));
         assertTrue(e.getMessage().contains("timed out"));
         verify(jobs).cancelJob("u", "dev1", "j1");
     }
@@ -106,6 +106,6 @@ class RunnerCapabilityGeneratorTest {
         when(selector.pick("u")).thenReturn(Optional.of("dev1"));
         when(jobs.startJob(any(), any(), any())).thenReturn("j1");
         when(jobs.pollJob(any(), any(), any(), anyLong())).thenReturn(snap("{\"state\":\"done\",\"result\":\"sorry, no\"}"));
-        assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d"));
+        assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d", List.of()));
     }
 }

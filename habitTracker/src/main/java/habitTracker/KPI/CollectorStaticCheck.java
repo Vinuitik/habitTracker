@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,6 +21,9 @@ import java.util.regex.Pattern;
  *     value per day), unit, aggregation sum|last|max, 1-10 sources, only types the approved proposal declared
  *   - activitywatch buckets in {window, web, afk}; file globs absolute or ~/, no "**", not a secret path
  *     (mirror of the runner's sources.go deny-list), not a whole home/root
+ *   - http: credential is one the approved plan lists, url https:// on exactly that credential's host, no port /
+ *     userinfo / fragment, placeholders only {from}/{to} after the host, method absent or GET, a "why"
+ *     (mirror of the runner's install-time url rules, Relay shared/API.md "http source")
  *   - files: only collector.py + fixtures/<case>/{inputs/..., expected.json}, no "..", size caps
  *   - fixtures: ≥ 2 cases, each with an expected.json holding a numeric "value", at least one expecting 0 (empty day)
  *   - collector.py imports: an allowlist of stdlib modules (regex over import lines, no AST); no __import__/importlib/exec
@@ -35,6 +39,8 @@ public final class CollectorStaticCheck {
     private static final Pattern DAILY = Pattern.compile("daily ([01][0-9]|2[0-3]):([0-5][0-9])");
     private static final Pattern CASE = Pattern.compile("[A-Za-z0-9_.-]{1,64}");
     private static final Set<String> BUCKETS = Set.of("window", "web", "afk");
+    static final Set<String> SOURCE_TYPES = Set.of("activitywatch", "file", "http");
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{[^}]*}?");
     private static final Pattern IMPORT = Pattern.compile("^\\s*(?:from\\s+([\\w.]+)\\s+import\\b|import\\s+([\\w.,\\s]+?)(?:\\s+as\\s+\\w+)?\\s*(?:#.*)?$)",
             Pattern.MULTILINE);
     private static final Pattern DYNAMIC = Pattern.compile("\\b(__import__|importlib|exec\\s*\\(|eval\\s*\\(|compile\\s*\\()");
@@ -61,15 +67,20 @@ public final class CollectorStaticCheck {
 
     /** → problems in plain sentences (empty = passed). allowedSources = source types the user approved in the plan. */
     public static List<String> check(CollectorBundle b, Collection<String> allowedSources) {
+        return check(b, allowedSources, Map.of());
+    }
+
+    /** credentials = approved credential name → host (CredentialRef.byName of the plan); http sources must use one. */
+    public static List<String> check(CollectorBundle b, Collection<String> allowedSources, Map<String, String> credentials) {
         List<String> p = new ArrayList<>();
-        checkManifest(b.manifest(), allowedSources, p);
+        checkManifest(b.manifest(), allowedSources, credentials == null ? Map.of() : credentials, p);
         checkFiles(b, p);
         String py = b.collectorPy();
         if (py != null) checkImports(py, p);
         return p;
     }
 
-    private static void checkManifest(JsonNode m, Collection<String> allowed, List<String> p) {
+    private static void checkManifest(JsonNode m, Collection<String> allowed, Map<String, String> credentials, List<String> p) {
         String schedule = m.path("schedule").asText("");
         String window = m.path("window").asText("");
         if ("hourly".equals(schedule)) {
@@ -89,8 +100,8 @@ public final class CollectorStaticCheck {
         int i = 0;
         for (JsonNode s : sources) {
             String type = s.path("type").asText("");
-            if (!type.equals("activitywatch") && !type.equals("file")) {
-                p.add("source " + i + ": unknown type \"" + clip(type) + "\" (activitywatch or file)");
+            if (!SOURCE_TYPES.contains(type)) {
+                p.add("source " + i + ": unknown type \"" + clip(type) + "\" (activitywatch, file or http)");
             } else if (allowed != null && !allowed.contains(type)) {
                 p.add("source " + i + ": reads " + type + ", which the approved plan did not declare");
             }
@@ -107,9 +118,50 @@ public final class CollectorStaticCheck {
                 String why = globProblem(s.path("glob").asText(""));
                 if (why != null) p.add("source " + i + ": " + why);
                 if (s.path("why").asText("").isBlank()) p.add("source " + i + ": a file source needs \"why\"");
+            } else if (type.equals("http")) {
+                String why = httpProblem(s, credentials);
+                if (why != null) p.add("source " + i + ": " + why);
             }
             i++;
         }
+    }
+
+    /** null when the http source is acceptable, else why not. credentials = approved name → host. */
+    static String httpProblem(JsonNode s, Map<String, String> credentials) {
+        String name = s.path("credential").asText("");
+        String url = s.path("url").asText("");
+        String method = s.path("method").asText("GET");
+        if (!"GET".equals(method)) return "an http source may only GET (got \"" + clip(method) + "\")";
+        if (s.path("why").asText("").isBlank()) return "an http source needs \"why\"";
+        if (name.isBlank()) return "an http source needs \"credential\"";
+        String host = credentials.get(name);
+        if (host == null) {
+            return "credential \"" + clip(name) + "\" is not one the approved plan uses"
+                    + (credentials.isEmpty() ? " (the plan uses none)" : " (" + String.join(", ", credentials.keySet()) + ")");
+        }
+        if (!url.startsWith("https://")) return "url \"" + clip(url) + "\" must start with https://";
+        String rest = url.substring("https://".length());
+        int end = rest.length();
+        for (char c : new char[]{'/', '?', '#'}) {
+            int k = rest.indexOf(c);
+            if (k >= 0 && k < end) end = k;
+        }
+        String authority = rest.substring(0, end);
+        if (authority.contains("@")) return "url \"" + clip(url) + "\" may not contain user:password@";
+        if (authority.contains(":")) return "url \"" + clip(url) + "\" may not set a port";
+        if (authority.contains("{")) return "url \"" + clip(url) + "\": placeholders may only come after the host";
+        if (!authority.toLowerCase(Locale.ROOT).equals(host)) {
+            return "url host \"" + clip(authority) + "\" must be the credential's host " + host;
+        }
+        if (url.contains("#")) return "url \"" + clip(url) + "\" may not have a #fragment";
+        Matcher ph = PLACEHOLDER.matcher(rest);
+        while (ph.find()) {
+            if (!ph.group().equals("{from}") && !ph.group().equals("{to}")) {
+                return "url placeholder " + clip(ph.group()) + " is not supported (only {from} and {to})";
+            }
+        }
+        if (url.chars().anyMatch(c -> c <= ' ' || c == 0x7f)) return "url may not contain spaces or control characters";
+        return null;
     }
 
     /** null when the glob is acceptable, else why not. */
@@ -216,10 +268,14 @@ public final class CollectorStaticCheck {
 
     // ── contract in plain language (shown at AWAITING_CONTRACT) ─────────────────
 
-    /** "Reads ActivityWatch window + browser activity · no internet · runs daily at 00:10". */
+    /**
+     * "Reads ActivityWatch window + browser activity · no internet · runs daily at 00:10". With an http source:
+     * "... api.github.com with your "github" credential (why) · the script itself has no internet · ...".
+     */
     public static String contractText(JsonNode manifest) {
         if (manifest == null) return null;
         List<String> reads = new ArrayList<>();
+        boolean web = false;
         JsonNode sources = manifest.get("sources");
         if (sources != null && sources.isArray()) {
             for (JsonNode s : sources) {
@@ -236,12 +292,28 @@ public final class CollectorStaticCheck {
                 } else if (type.equals("file")) {
                     String why = s.path("why").asText("").strip();
                     reads.add("files " + s.path("glob").asText("") + (why.isEmpty() ? "" : " (" + why + ")"));
+                } else if (type.equals("http")) {
+                    web = true;
+                    String why = s.path("why").asText("").strip();
+                    reads.add(hostOf(s.path("url").asText("")) + " with your \"" + s.path("credential").asText("")
+                            + "\" credential" + (why.isEmpty() ? "" : " (" + why + ")"));
                 }
             }
         }
         String schedule = manifest.path("schedule").asText("");
         String when = schedule.equals("hourly") ? "runs every hour"
                 : schedule.startsWith("daily ") ? "runs daily at " + schedule.substring(6) : "runs " + schedule;
-        return "Reads " + (reads.isEmpty() ? "nothing" : String.join(", ", reads)) + " · no internet · " + when;
+        return "Reads " + (reads.isEmpty() ? "nothing" : String.join(", ", reads))
+                + (web ? " · your runner makes that call; the script itself has no internet · " : " · no internet · ") + when;
+    }
+
+    private static String hostOf(String url) {
+        String rest = url.startsWith("https://") ? url.substring(8) : url;
+        int end = rest.length();
+        for (char c : new char[]{'/', '?', '#'}) {
+            int k = rest.indexOf(c);
+            if (k >= 0 && k < end) end = k;
+        }
+        return rest.substring(0, end);
     }
 }

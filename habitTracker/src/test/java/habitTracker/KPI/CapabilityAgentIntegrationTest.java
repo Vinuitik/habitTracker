@@ -91,7 +91,7 @@ class CapabilityAgentIntegrationTest {
     }
 
     private void generatorProposes(List<String> sources) {
-        when(generator.propose(anyString(), anyString(), anyString()))
+        when(generator.propose(anyString(), anyString(), anyString(), any()))
                 .thenReturn(new CapabilityGenerator.Proposal("Count the things", sources));
     }
 
@@ -148,7 +148,7 @@ class CapabilityAgentIntegrationTest {
     @Test
     void asyncJobs_proposeThenApprove_streamStepsAndReturnParsedCapability() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
                 "Count the things", "Widgets made per day", "Computed locally", AW));
         builds(value(5));
 
@@ -269,7 +269,7 @@ class CapabilityAgentIntegrationTest {
     @Test
     void asyncJobs_noRunner_failsWithSentence() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString(), anyString())).thenThrow(CapabilityGeneratorException.noRunner(null));
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenThrow(CapabilityGeneratorException.noRunner(null));
         String jobId = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
                 "{\"action\":\"propose\",\"description\":\"x\"}", 202).get("jobId").asText();
         JsonNode s = waitJob(alice, "Widgets", jobId);
@@ -291,7 +291,7 @@ class CapabilityAgentIntegrationTest {
         assertEquals("RUNNER", proposed.get("platform").asText());
         assertEquals("Count the things", proposed.get("proposal").asText());
         assertEquals("activitywatch", proposed.at("/declaredCapabilities/sources/0").asText());
-        verifyNoInteractions(pipeline);
+        verify(pipeline, never()).attempt(any(), any(), anyInt()); // only the credential-list lookup happened
         assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType(), "not wired before approval");
 
         JsonNode approved = act(alice, "Widgets", proposed.get("id").asText(), "approve", 200);
@@ -321,7 +321,7 @@ class CapabilityAgentIntegrationTest {
             propose(alice, "Widgets", 422);
         }
         assertEquals(0, capabilityRepository.count());
-        verifyNoInteractions(pipeline);
+        verify(pipeline, never()).attempt(any(), any(), anyInt()); // only the credential-list lookup happened
     }
 
     @Test
@@ -337,7 +337,7 @@ class CapabilityAgentIntegrationTest {
         JsonNode fresh = propose(alice, "Widgets", 200);
         assertEquals(2, fresh.get("version").asInt());
         assertEquals("RUNNER", fresh.get("platform").asText());
-        verifyNoInteractions(pipeline);
+        verify(pipeline, never()).attempt(any(), any(), anyInt()); // only the credential-list lookup happened
     }
 
     // ── test gate failure + retry cap ────────────────────────────────────────
@@ -379,14 +379,14 @@ class CapabilityAgentIntegrationTest {
     @Test
     void proposeWhenGeneratorBusy_is409() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString(), anyString())).thenThrow(new CapabilityGeneratorException("busy", true, null));
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenThrow(new CapabilityGeneratorException("busy", true, null));
         propose(alice, "Widgets", 409);
     }
 
     @Test
     void proposeWithNoRunnerOnline_is503WithConnectRunnerMessage() throws Exception {
         kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString(), anyString())).thenThrow(CapabilityGeneratorException.noRunner(null));
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenThrow(CapabilityGeneratorException.noRunner(null));
         JsonNode res = propose(alice, "Widgets", 503);
         assertEquals(CapabilityGeneratorException.NO_RUNNER_MESSAGE, res.get("error").asText());
     }
@@ -500,7 +500,7 @@ class CapabilityAgentIntegrationTest {
         act(bob, "Widgets", id, "approve", 400);
         act(bob, "Widgets", id, "reject", 400);
 
-        verifyNoInteractions(pipeline);
+        verify(pipeline, never()).attempt(any(), any(), anyInt()); // only the credential-list lookup happened
         KPIProxyCapability stored = capabilityRepository.findById(id).orElseThrow();
         assertEquals(CapabilityStatus.PROPOSED, stored.getStatus());
         assertEquals(alice.getId(), stored.getUserId());
