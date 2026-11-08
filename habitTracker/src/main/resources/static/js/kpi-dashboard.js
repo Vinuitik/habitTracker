@@ -75,6 +75,8 @@ async function loadKPIChart(kpiName) {
         if (response.ok) {
             renderChart(kpiName, data);
             updateKPIStats(kpiName, data);
+            const card = document.querySelector(`.kpi-chart-card[data-kpi-name="${CSS.escape(kpiName)}"]`);
+            if (card && window.KpiDevices) KpiDevices.update(card, card.getAttribute('data-kpi-id'), data);
         } else {
             showChartError(kpiName, 'Failed to load data');
         }

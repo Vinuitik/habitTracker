@@ -1,0 +1,35 @@
+/* Per-device breakdown under a dashboard chart (js/organisms/kpi-devices.js). */
+.kpi-devices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+.kpi-devices__list { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+.kpi-devices__list[hidden] { display: none; }
+.kpi-devices__empty { color: var(--color-text-muted); font-size: var(--text-sm); }
+.kpi-devices__device {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+.kpi-devices__device summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+.kpi-devices__name { color: var(--color-text-primary); }
+.kpi-devices__value { color: var(--color-text-secondary); font-family: var(--font-mono); font-size: var(--text-sm); }
+.kpi-devices__days {
+  list-style: none;
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+.kpi-devices__days li { display: flex; justify-content: space-between; gap: var(--space-3); }

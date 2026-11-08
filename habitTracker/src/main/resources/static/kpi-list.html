@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="/styles/molecules/modal.css">
   <link rel="stylesheet" href="/styles/molecules/step-list.css">
   <link rel="stylesheet" href="/styles/organisms/automate-dialog.css">
+  <link rel="stylesheet" href="/styles/organisms/kpi-retire.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
@@ -230,6 +231,8 @@
   <script src="/js/atoms/toast.js"></script>
   <script src="/js/atoms/dom.js"></script>
   <script src="/js/molecules/step-list.js"></script>
+  <script src="/js/atoms/api.js"></script>
+  <script src="/js/organisms/kpi-retire.js"></script>
   <script src="/js/offline/db.js"></script>
   <script src="/js/offline/crypto.js"></script>
   <script src="/js/offline/connectivity.js"></script>
@@ -488,6 +491,7 @@
             <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
             <button class="btn btn--ghost btn--sm" onclick='openAutomateModal(${JSON.stringify(kpi.name)}, ${needsRepair && kpi.proxyType === "RUNNER_COLLECTOR"})'>Automate</button>
             <button class="btn btn--ghost btn--sm" onclick='openProxyModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || {})})'>Data Source</button>
+            ${kpi.proxyType === 'RUNNER_COLLECTOR' ? `<button class="btn btn--ghost btn--sm" onclick='KpiRetire.open(${JSON.stringify(kpi.id)}, ${JSON.stringify(kpi.name)})'>Stop automating</button>` : ''}
             ${needsRepair ? `<button class="btn btn--ghost btn--sm" onclick="resetProxyHealth('${kpi.name}')">Reset Proxy</button>` : ''}
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
             </div>

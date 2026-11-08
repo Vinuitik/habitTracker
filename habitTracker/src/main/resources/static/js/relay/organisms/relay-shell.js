@@ -288,8 +288,10 @@ window.RelayShell = (() => {
         </div>
         <div class="relay-section-label">Recent sessions</div>
         <div class="relay-list relay-stagger" id="shell-recent"><div class="relay-empty">Loading…</div></div>
-        <div id="shell-creds"></div>`;
+        <div id="shell-creds"></div>
+        <div id="shell-packages"></div>`;
       const offCreds = RelayCredentials.mount($('shell-creds'), { dev: S.dev });
+      const offPackages = RelayPackages.mount($('shell-packages'), { dev: S.dev });
       Promise.all([allSessions(true), S.projectsReady]).then(([list]) => {
         if (!live) return;
         const recent = list.slice().sort((a, b) => String(b.lastActiveAt || b.createdAt || '')
@@ -304,7 +306,7 @@ window.RelayShell = (() => {
             ${R.stateBadge(s.state)}
           </a>`).join('') : '<div class="relay-empty">No sessions yet.</div>';
       }, (e) => { if (live) $('shell-recent').innerHTML = R.errorHtml(e); });
-      return () => { live = false; offCreds(); };
+      return () => { live = false; offCreds(); offPackages(); };
     }
 
     // ── + Project: name → scaffolded dir, or Folder… → register an existing one ─
