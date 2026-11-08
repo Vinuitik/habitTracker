@@ -42,7 +42,7 @@ Manifest gains optional `requires` (max 5):
 ```
 - `relay` = built-in installers; only id `activitywatch` (existing `sensors.go`, pinned AWVersion).
 - id regex per manager: winget `^[A-Za-z0-9.+-]{1,128}$`, brew `^[a-z0-9@+._-]{1,64}(/[a-z0-9._-]+){0,2}$`,
-  flatpak reverse-DNS `^[A-Za-z0-9_.-]{3,128}$`, pip `^[A-Za-z0-9._-]{1,64}(==[A-Za-z0-9.*+!-]{1,32})?$`. No URLs, no spaces, no flags.
+  flatpak reverse-DNS `^[A-Za-z0-9_.-]{3,128}$`, pip `^[A-Za-z0-9._-]{1,64}(==[A-Za-z0-9.*+!-]{1,32})?$`. No URLs, no spaces, no flags; **an id starting with `-` is always rejected** (runner `checkRequires`). Duplicate manager+id rejected.
 - **`ContractHash` covers `{sources, schedule, window, requires}`** (add `requires`; absent = not hashed, so old hashes stay valid).
 - No sudo ever. apt/dnf are not managers: the agent must not declare them.
 
@@ -60,6 +60,8 @@ Runner API (all under existing auth):
 | `POST /v1/packages/uninstall` | `{manager,id}` → 409 if `usedBy` non-empty; 400 if `installedByRelay=false`; 202 async |
 | `POST /v1/collectors/{id}/approve` | unchanged body `{contractHash}`. If manifest has `requires` not yet installed → state `awaiting_confirm`, returns 202 `{state:"awaiting_confirm"}`; installs run after local confirm |
 | `GET /local/confirm` (loopback only) | runner-served HTML page listing pending installs; Confirm/Deny buttons POST `/local/confirm/{token}`. **Must refuse any request arriving through the uplink** (mark uplink requests in context in `uplink.dispatch`) and any non-loopback RemoteAddr |
+
+**Wave-1 state (② merged, Relay bc20fbd+):** confirm hook is `Packages.ConfirmInstall func(collectorID, []Require) bool` (nil = allow, deny → 403). Approve currently returns 202 `{state:"installing"}` / 200 `{}`; ⑥ switches it to 202 `awaiting_confirm`. Uninstall precedence: 400 (preexisting) before 409 (in use). Uninstall keeps state `installed` while running, `failed`+error on failure, row removed on success. Known gaps for ⑥: relay manager uninstall is Linux-only and doesn't stop a running aw-qt; relay manager Install bypasses `Sensors.StartInstall`'s busy flag (route both through one lock).
 
 Collector `DELETE /v1/collectors/{id}` removes the id from every `usedBy`; never uninstalls by itself.
 `GET /v1/collectors` Info gains `"requiresState": "none|awaiting_confirm|installing|ready|failed"`.
