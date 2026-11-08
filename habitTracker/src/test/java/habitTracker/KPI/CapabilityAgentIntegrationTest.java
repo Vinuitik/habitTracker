@@ -174,6 +174,27 @@ class CapabilityAgentIntegrationTest {
         call(auth.session(alice), "GET", "/api/kpis/Widgets/capability/jobs/active", null, 204);
     }
 
+    @Test
+    void multiDevice_credentialMissingOnOneDevice_namesThatDevice_andStoresAllTargets() {
+        kpi(alice, "Gh");
+        CredentialRef gh = new CredentialRef("github", "api.github.com");
+        when(pipeline.credentialsOn(alice.getId(), "d1")).thenReturn(List.of(gh));
+        when(pipeline.credentialsOn(alice.getId(), "d2")).thenReturn(List.of());
+        when(pipeline.deviceName(alice.getId(), "d1")).thenReturn("Laptop");
+        when(pipeline.deviceName(alice.getId(), "d2")).thenReturn("Desktop");
+        when(generator.propose(anyString(), anyString(), anyString(), any())).thenReturn(new CapabilityGenerator.Proposal(
+                "PRs", null, null, List.of("http"), List.of(gh)));
+        CapabilityRejectedException e = assertThrows(CapabilityRejectedException.class,
+                () -> service.proposeAs(alice.getId(), "Gh", "my PRs", List.of("d1", "d2")));
+        assertTrue(e.getMessage().startsWith("On Desktop: "), e.getMessage());
+        // the planner is only offered credentials present on every device
+        verify(generator).propose(anyString(), anyString(), anyString(), eq(List.of()));
+
+        when(pipeline.credentialsOn(alice.getId(), "d2")).thenReturn(List.of(gh));
+        CapabilityDTO ok = service.proposeAs(alice.getId(), "Gh", "my PRs", List.of("d1", "d2"));
+        assertEquals(List.of("d1", "d2"), capabilityRepository.findById(ok.id()).orElseThrow().getTargetDeviceIds());
+    }
+
     // ── refine loop ──────────────────────────────────────────────────────────
 
     @Test

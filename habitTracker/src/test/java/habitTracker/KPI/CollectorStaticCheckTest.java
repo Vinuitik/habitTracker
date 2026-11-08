@@ -110,4 +110,95 @@ class CollectorStaticCheckTest {
         assertEquals("Reads ActivityWatch window + browser activity, files ~/.local/share/Anki2/*/collection.anki2 "
                 + "(review counts) · no internet · runs daily at 00:10", CollectorStaticCheck.contractText(m));
     }
+
+    // ── multi-device variants ────────────────────────────────────────────────
+
+    private static CollectorBundle variantsBundle(String linuxRequires, String windowsSources) throws Exception {
+        ObjectNode m = (ObjectNode) new ObjectMapper().readTree("""
+                {"schedule":"daily 00:10","window":"1d","unit":"min","aggregation":"sum","combine":"max",
+                 "variants":{
+                   "linux":{"requires":%s,"sources":[{"type":"activitywatch","buckets":["web"]}]},
+                   "windows":{"requires":[{"manager":"winget","id":"ActivityWatch.ActivityWatch","why":"w"}],"sources":%s}}}"""
+                .formatted(linuxRequires, windowsSources));
+        return new CollectorBundle(m, RunnerCollectorIntegrationTest.bundle(List.of("web")).files());
+    }
+
+    private static final String AW_SRC = "[{\"type\":\"activitywatch\",\"buckets\":[\"web\"]}]";
+    private static final String RELAY_AW = "[{\"manager\":\"relay\",\"id\":\"activitywatch\",\"why\":\"w\"}]";
+    private static final List<CollectorStaticCheck.Target> BOTH = List.of(
+            new CollectorStaticCheck.Target("linux", List.of("relay", "flatpak")),
+            new CollectorStaticCheck.Target("windows", List.of("relay", "winget")));
+
+    private static List<String> checkV(CollectorBundle b, List<CollectorStaticCheck.Target> t) {
+        return CollectorStaticCheck.check(b, AW, java.util.Map.of(), t);
+    }
+
+    @Test
+    void variants_goodBundle_passes() throws Exception {
+        assertEquals(List.of(), checkV(variantsBundle(RELAY_AW, AW_SRC), BOTH));
+    }
+
+    @Test
+    void variants_differentSourceCountOrOrder_isRejected() throws Exception {
+        List<String> two = checkV(variantsBundle(RELAY_AW, "[{\"type\":\"activitywatch\",\"buckets\":[\"web\"]},"
+                + "{\"type\":\"activitywatch\",\"buckets\":[\"afk\"]}]"), BOTH);
+        assertTrue(two.stream().anyMatch(x -> x.contains("same sources in the same type order")), two.toString());
+        List<String> order = CollectorStaticCheck.check(variantsBundle(RELAY_AW,
+                "[{\"type\":\"file\",\"glob\":\"~/.config/app/*.json\",\"why\":\"w\"}]"), List.of("activitywatch", "file"),
+                java.util.Map.of(), BOTH);
+        assertTrue(order.stream().anyMatch(x -> x.contains("same sources in the same type order")), order.toString());
+    }
+
+    @Test
+    void variants_missingTargetOs_isRejected() throws Exception {
+        List<CollectorStaticCheck.Target> t = List.of(new CollectorStaticCheck.Target("linux", List.of("relay")),
+                new CollectorStaticCheck.Target("darwin", List.of("brew")));
+        List<String> p = checkV(variantsBundle(RELAY_AW, AW_SRC), t);
+        assertTrue(p.stream().anyMatch(x -> x.contains("no variant for darwin")), p.toString());
+    }
+
+    @Test
+    void variants_managerNotOnThatDevice_isRejected() throws Exception {
+        // linux device has no flatpak, windows device has no winget
+        List<CollectorStaticCheck.Target> t = List.of(new CollectorStaticCheck.Target("linux", List.of("relay")),
+                new CollectorStaticCheck.Target("windows", List.of("relay")));
+        List<String> p = checkV(variantsBundle("[{\"manager\":\"flatpak\",\"id\":\"org.activitywatch.ActivityWatch\",\"why\":\"w\"}]", AW_SRC), t);
+        assertTrue(p.stream().anyMatch(x -> x.contains("variant linux: requires flatpak, which is not available")), p.toString());
+        assertTrue(p.stream().anyMatch(x -> x.contains("variant windows: requires winget, which is not available")), p.toString());
+    }
+
+    @Test
+    void variants_badRequiresIds_areRejected() throws Exception {
+        for (String id : List.of("-rf", "--force", "has space", "https://evil.example/x.exe", "a;b", "")) {
+            List<String> p = checkV(variantsBundle("[{\"manager\":\"flatpak\",\"id\":\"" + id + "\",\"why\":\"w\"}]", AW_SRC), BOTH);
+            assertFalse(p.isEmpty(), "id \"" + id + "\" should be rejected");
+        }
+        List<String> dash = checkV(variantsBundle("[{\"manager\":\"relay\",\"id\":\"-activitywatch\",\"why\":\"w\"}]", AW_SRC), BOTH);
+        assertTrue(dash.stream().anyMatch(x -> x.contains("may not start with a dash")), dash.toString());
+        for (String mgr : List.of("apt", "dnf", "sudo")) {
+            assertFalse(checkV(variantsBundle("[{\"manager\":\"" + mgr + "\",\"id\":\"curl\",\"why\":\"w\"}]", AW_SRC), BOTH).isEmpty(), mgr);
+        }
+        // a relay id other than activitywatch, a duplicate, and a missing why
+        assertFalse(checkV(variantsBundle("[{\"manager\":\"relay\",\"id\":\"other\",\"why\":\"w\"}]", AW_SRC), BOTH).isEmpty());
+        String dup = "[{\"manager\":\"relay\",\"id\":\"activitywatch\",\"why\":\"w\"},{\"manager\":\"relay\",\"id\":\"activitywatch\",\"why\":\"w\"}]";
+        assertFalse(checkV(variantsBundle(dup, AW_SRC), BOTH).isEmpty());
+        assertFalse(checkV(variantsBundle("[{\"manager\":\"relay\",\"id\":\"activitywatch\"}]", AW_SRC), BOTH).isEmpty());
+    }
+
+    @Test
+    void variants_needCombine() throws Exception {
+        CollectorBundle b = variantsBundle(RELAY_AW, AW_SRC);
+        b.manifest().remove("combine");
+        assertTrue(checkV(b, BOTH).stream().anyMatch(x -> x.contains("combine")));
+        b.manifest().put("combine", "median");
+        assertFalse(checkV(b, BOTH).isEmpty());
+    }
+
+    @Test
+    void legacyBundle_stillAcceptedForOneDevice_notForSeveral() {
+        CollectorBundle legacy = RunnerCollectorIntegrationTest.bundle(List.of("web", "afk"));
+        assertEquals(List.of(), checkV(legacy, List.of(new CollectorStaticCheck.Target("linux", List.of("relay")))));
+        assertEquals(List.of(), checkV(legacy, List.of()));
+        assertFalse(checkV(legacy, BOTH).isEmpty());
+    }
 }

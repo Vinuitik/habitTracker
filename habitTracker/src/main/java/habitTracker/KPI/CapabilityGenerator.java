@@ -56,9 +56,10 @@ public interface CapabilityGenerator {
     /**
      * A collector bundle (manifest + collector.py + fixtures). previousBundleJson/previousError are non-null when
      * seeding a retry or repair with a failure. credentials = the approved credentials (name + host) an "http" source
-     * may use; empty when the plan reads none.
+     * may use; empty when the plan reads none. targets = facts of every device the collector will run on (empty =
+     * unknown, legacy single-device bundle).
      */
     CollectorBundle generateCollector(String userId, String kpiName, String description, String proposal,
                                       List<String> sources, List<CredentialRef> credentials,
-                                      String previousBundleJson, String previousError);
+                                      String previousBundleJson, String previousError, List<DeviceFacts> targets);
 }

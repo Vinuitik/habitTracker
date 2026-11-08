@@ -68,7 +68,7 @@ public class CapabilityAgentService {
         return proposeAs(userId, kpiName, description, null);
     }
 
-    /** targetDeviceIds: the runners the user picked in the Automate dialog (already ownership-checked); null/empty = default. */
+    /** targetDeviceIds = the devices the collector will run on; null/empty = the one online runner (as before). */
     CapabilityDTO proposeAs(String userId, String kpiName, String description, List<String> targetDeviceIds) {
         KPI kpi = requireKpi(userId, kpiName);
         if (description == null || description.isBlank()) {
@@ -85,25 +85,18 @@ public class CapabilityAgentService {
 
         CapabilityProgress.step("Drafting a plan on your runner");
         // Names + hosts only; the values never leave the runner. null = mocked pipeline in tests.
-        RunnerCollectorPipeline.RunnerCredentials onRunner = runnerPipeline.runnerCredentials(userId);
-        List<CredentialRef> available = onRunner == null ? List.of() : onRunner.list();
-        CapabilityGenerator.Proposal p = generator.propose(userId, kpi.getName(), description.trim(), available);
-        Map<String, List<String>> granted = checkSources(p.sources(), p.credentials(), available);
-        // Credentials are per runner: build on the runner whose list the plan was checked against.
-        String pinDevice = granted.containsKey("credentials") && onRunner != null ? onRunner.deviceId() : null;
+        Targets targets = targets(userId, targetDeviceIds);
+        CapabilityGenerator.Proposal p = generator.propose(userId, kpi.getName(), description.trim(), targets.available());
+        Map<String, List<String>> granted = checkOnEveryDevice(p, targets);
 
-        KPIProxyCapability saved = saveProposed(userId, kpi, latest, description.trim(), p, granted, pinDevice, 1, null);
-        if (targetDeviceIds != null && !targetDeviceIds.isEmpty()) {
-            saved.setTargetDeviceIds(new java.util.ArrayList<>(targetDeviceIds));
-            saved = repository.save(saved);
-        }
-        return CapabilityDTO.from(saved);
+        return CapabilityDTO.from(saveProposed(userId, kpi, latest, description.trim(), p, granted,
+                targets.pin(granted), 1, null));
     }
 
     /** A newer proposal supersedes any unfinished older one; the new version is PROPOSED. */
     private KPIProxyCapability saveProposed(String userId, KPI kpi, Optional<KPIProxyCapability> latest, String description,
                                             CapabilityGenerator.Proposal p, Map<String, List<String>> granted,
-                                            String pinDevice, int planRevision, String refineFeedback) {
+                                            List<String> pinDevices, int planRevision, String refineFeedback) {
         for (KPIProxyCapability old : repository.findByKpiIdAndUserId(kpi.getId(), userId)) {
             if (old.getStatus() == CapabilityStatus.PROPOSED || old.getStatus() == CapabilityStatus.TEST_FAILED
                     || old.getStatus() == CapabilityStatus.PENDING_TEST || old.getStatus() == CapabilityStatus.AWAITING_CONFIRM
@@ -122,7 +115,7 @@ public class CapabilityAgentService {
                 .changeSummary(refineFeedback == null ? null : p.changeSummary())
                 .refineFeedback(refineFeedback)
                 .declaredCapabilities(granted)
-                .targetDeviceIds(pinDevice == null ? null : new java.util.ArrayList<>(List.of(pinDevice)))
+                .targetDeviceIds(pinDevices == null || pinDevices.isEmpty() ? null : new java.util.ArrayList<>(pinDevices))
                 .status(CapabilityStatus.PROPOSED)
                 .version(latest.map(c -> c.getVersion() == null ? 1 : c.getVersion() + 1).orElse(1))
                 .createdAt(LocalDateTime.now())
@@ -139,6 +132,11 @@ public class CapabilityAgentService {
     }
 
     CapabilityDTO refineAs(String userId, String kpiName, String capabilityId, String feedback) {
+        return refineAs(userId, kpiName, capabilityId, feedback, null);
+    }
+
+    /** targetDeviceIds null/empty = the previous plan's devices, else the one online runner. */
+    CapabilityDTO refineAs(String userId, String kpiName, String capabilityId, String feedback, List<String> targetDeviceIds) {
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability prev = requireCapability(userId, kpi, capabilityId);
         if (prev.getStatus() != CapabilityStatus.PROPOSED && prev.getStatus() != CapabilityStatus.TEST_FAILED) {
@@ -157,16 +155,70 @@ public class CapabilityAgentService {
         }
 
         CapabilityProgress.step("Revising the plan on your runner");
-        RunnerCollectorPipeline.RunnerCredentials onRunner = runnerPipeline.runnerCredentials(userId);
-        List<CredentialRef> available = onRunner == null ? List.of() : onRunner.list();
-        CapabilityGenerator.Proposal p = generator.refine(userId, kpi.getName(), prev, feedback.trim(), available);
-        Map<String, List<String>> granted = checkSources(p.sources(), p.credentials(), available);
-        String pinDevice = granted.containsKey("credentials") && onRunner != null ? onRunner.deviceId() : null;
+        Targets targets = targets(userId, targetDeviceIds != null && !targetDeviceIds.isEmpty() ? targetDeviceIds
+                : prev.getTargetDeviceIds());
+        CapabilityGenerator.Proposal p = generator.refine(userId, kpi.getName(), prev, feedback.trim(), targets.available());
+        Map<String, List<String>> granted = checkOnEveryDevice(p, targets);
         int revision = (prev.getPlanRevision() == null ? 1 : prev.getPlanRevision()) + 1;
         String change = p.changeSummary() == null ? "Plan updated from your feedback." : p.changeSummary();
         return CapabilityDTO.from(saveProposed(userId, kpi, latest, prev.getDescription(),
                 new CapabilityGenerator.Proposal(p.proposal(), p.measures(), p.dataSource(), p.sources(), p.credentials(),
-                        p.assumptions(), change), granted, pinDevice, revision, feedback.trim()));
+                        p.assumptions(), change), granted, targets.pin(granted), revision, feedback.trim()));
+    }
+
+    // ── target devices (multi-device collectors) ─────────────────────────────
+
+    /**
+     * explicit = the caller named the devices (always stored on the capability). available = the credentials shown to
+     * the planner: those on a single device, or only the ones present on every device. perDevice = each device's own list.
+     */
+    private record Targets(List<String> ids, boolean explicit, List<CredentialRef> available,
+                           Map<String, List<CredentialRef>> perDevice, Map<String, String> names) {
+        /** The devices to store: all named ones, else (as before) the one runner when the plan uses a credential. */
+        List<String> pin(Map<String, List<String>> granted) {
+            if (ids.isEmpty()) return null;
+            return explicit || granted.containsKey("credentials") ? ids : null;
+        }
+    }
+
+    private Targets targets(String userId, List<String> requested) {
+        List<String> ids = requested == null ? List.of() : requested.stream().filter(s -> s != null && !s.isBlank()).distinct().toList();
+        if (ids.isEmpty()) {
+            // null = mocked pipeline in tests. The default is the one online runner, exactly as before.
+            RunnerCollectorPipeline.RunnerCredentials onRunner = runnerPipeline.runnerCredentials(userId);
+            List<CredentialRef> list = onRunner == null ? List.of() : onRunner.list();
+            if (onRunner == null || onRunner.deviceId() == null) return new Targets(List.of(), false, list, Map.of(), Map.of());
+            return new Targets(List.of(onRunner.deviceId()), false, list, Map.of(onRunner.deviceId(), list), Map.of());
+        }
+        Map<String, List<CredentialRef>> per = new java.util.LinkedHashMap<>();
+        Map<String, String> names = new java.util.HashMap<>();
+        for (String id : ids) {
+            List<CredentialRef> c = runnerPipeline.credentialsOn(userId, id);
+            per.put(id, c == null ? List.of() : c);
+            String n = runnerPipeline.deviceName(userId, id);
+            names.put(id, n == null || n.isBlank() ? id : n);
+        }
+        List<CredentialRef> common = new java.util.ArrayList<>(per.values().iterator().next());
+        per.values().forEach(common::retainAll);
+        return new Targets(ids, true, List.copyOf(common), per, names);
+    }
+
+    /**
+     * checkSources on every target device: a credential the plan needs must exist on each of them, otherwise the
+     * rejection names the device that lacks it. The stored grant is the same for all devices.
+     */
+    private static Map<String, List<String>> checkOnEveryDevice(CapabilityGenerator.Proposal p, Targets t) {
+        if (t.perDevice().isEmpty()) return checkSources(p.sources(), p.credentials(), t.available());
+        Map<String, List<String>> granted = null;
+        for (var e : t.perDevice().entrySet()) {
+            try {
+                granted = checkSources(p.sources(), p.credentials(), e.getValue());
+            } catch (CapabilityRejectedException ex) {
+                if (t.perDevice().size() < 2 || !p.sources().contains(RunnerCollectorPipeline.HTTP)) throw ex;
+                throw new CapabilityRejectedException("On " + t.names().get(e.getKey()) + ": " + ex.getMessage());
+            }
+        }
+        return granted;
     }
 
     /** Stages 3-4. Approval is the permission grant for exactly the stored declaredCapabilities. */

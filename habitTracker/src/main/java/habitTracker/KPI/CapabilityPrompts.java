@@ -46,6 +46,12 @@ public class CapabilityPrompts {
     /** S3 RUNNER collector bundle prompt (kpi-collector-generate.md). */
     public String collectorPrompt(String kpiName, String description, String proposal, List<String> sources,
                                   List<CredentialRef> credentials, String previousBundleJson, String previousError) {
+        return collectorPrompt(kpiName, description, proposal, sources, credentials, previousBundleJson, previousError, List.of());
+    }
+
+    public String collectorPrompt(String kpiName, String description, String proposal, List<String> sources,
+                                  List<CredentialRef> credentials, String previousBundleJson, String previousError,
+                                  List<DeviceFacts> targets) {
         String previous = previousError == null || previousError.isEmpty() ? ""
                 : fill(previousFailureTemplate, Map.of(
                         "PREVIOUS_CODE", previousBundleJson == null || previousBundleJson.isEmpty() ? "(none)" : previousBundleJson,
@@ -56,8 +62,37 @@ public class CapabilityPrompts {
         vars.put("PROPOSAL", String.valueOf(proposal));
         vars.put("SOURCES", sources == null || sources.isEmpty() ? "(none declared)" : String.join(", ", sources));
         vars.put("CREDENTIALS", credentialList(credentials, "(none: this collector may not use an http source)"));
+        vars.put("DEVICES", deviceBlock(targets));
         vars.put("PREVIOUS_FAILURE", previous);
         return fill(collectorTemplate, vars);
+    }
+
+    /**
+     * The target devices, distinct OSes and per-OS managers for the collector prompt. Without a known OS (older runner,
+     * no targets) it tells the model to write the legacy single-device manifest.
+     */
+    static String deviceBlock(List<DeviceFacts> targets) {
+        if (targets == null || targets.isEmpty() || targets.stream().anyMatch(d -> d.os() == null)) {
+            return "(the target OS is unknown, so this overrides the variants rules below: write the legacy manifest with "
+                    + "top-level \"sources\" and no \"variants\", \"combine\" or \"requires\")";
+        }
+        StringBuilder sb = new StringBuilder("Devices (the same collector.py runs on all of them):");
+        for (DeviceFacts d : targets) {
+            sb.append("\n- ").append(d.name() == null || d.name().isBlank() ? d.deviceId() : d.name()).append(": ").append(d.os())
+                    .append(", package managers: ").append(d.managers().isEmpty() ? "none" : String.join(", ", d.managers()))
+                    .append("; credentials: ").append(credentialNames(d.credentials()));
+        }
+        Map<String, java.util.LinkedHashSet<String>> perOs = new java.util.LinkedHashMap<>();
+        for (DeviceFacts d : targets) perOs.computeIfAbsent(d.os(), k -> new java.util.LinkedHashSet<>()).addAll(d.managers());
+        sb.append("\nTarget OSes (write exactly one variant for each, no others): ").append(String.join(", ", perOs.keySet()));
+        sb.append("\nManagers a variant may use in \"requires\":");
+        perOs.forEach((os, m) -> sb.append("\n- ").append(os).append(": ").append(m.isEmpty() ? "none" : String.join(", ", m)));
+        return sb.toString();
+    }
+
+    private static String credentialNames(List<CredentialRef> refs) {
+        String s = refs.stream().filter(CredentialRef::valid).map(CredentialRef::name).collect(java.util.stream.Collectors.joining(", "));
+        return s.isEmpty() ? "none" : s;
     }
 
     /** Agent's final message → collector bundle (shape only; CollectorStaticCheck validates the content). */

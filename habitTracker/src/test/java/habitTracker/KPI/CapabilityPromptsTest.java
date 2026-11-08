@@ -103,4 +103,30 @@ class CapabilityPromptsTest {
         assertThrows(CapabilityGeneratorException.class, () -> prompts.parseProposal(new TextNode("no json here")));
         assertThrows(CapabilityGeneratorException.class, () -> prompts.parseProposal(null));
     }
+
+    @Test
+    void collectorPrompt_listsEveryTargetOsAndItsManagers() {
+        List<DeviceFacts> targets = List.of(
+                new DeviceFacts("d1", "Work laptop", "windows", List.of("relay", "winget"), List.of(new CredentialRef("github", "api.github.com"))),
+                new DeviceFacts("d2", "Home PC", "linux", List.of("relay", "flatpak"), List.of()),
+                new DeviceFacts("d3", "Second PC", "windows", List.of("relay", "winget"), List.of()));
+        String p = prompts.collectorPrompt("K", "d", "spec", List.of("activitywatch"), List.of(), null, null, targets);
+        assertTrue(p.contains("- Work laptop: windows, package managers: relay, winget; credentials: github"), p);
+        assertTrue(p.contains("- Home PC: linux, package managers: relay, flatpak; credentials: none"), p);
+        assertTrue(p.contains("Target OSes (write exactly one variant for each, no others): windows, linux"), p);
+        assertTrue(p.contains("- windows: relay, winget"), p);
+        assertTrue(p.contains("- linux: relay, flatpak"), p);
+        assertTrue(p.contains("\"combine\""), p);
+        assertTrue(p.contains("never apt, dnf, sudo"), p);
+        assertFalse(p.contains("{{"), p);
+    }
+
+    @Test
+    void collectorPrompt_withoutKnownOs_asksForTheLegacyManifest() {
+        String none = prompts.collectorPrompt("K", "d", "spec", List.of("file"), List.of(), null, null);
+        assertTrue(none.contains("target OS is unknown"), none);
+        String unknown = prompts.collectorPrompt("K", "d", "spec", List.of("file"), List.of(), null, null,
+                List.of(new DeviceFacts("d1", "Old", null, List.of(), List.of())));
+        assertTrue(unknown.contains("target OS is unknown"), unknown);
+    }
 }
