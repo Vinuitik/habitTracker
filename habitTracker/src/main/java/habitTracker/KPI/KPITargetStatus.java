@@ -9,7 +9,7 @@ import java.time.temporal.ChronoUnit;
  * State precedence: NO_DATA → REACHED (overshoot counts) → MISSED (past deadline) → AHEAD/BEHIND/ON_TRACK.
  */
 public record KPITargetStatus(String direction, Double gapPct, Double progress, Double expected,
-                              State state, Long daysLeft) {
+                              State state, Long daysLeft, Double current) {
 
     public static final double PACE_BAND = 0.10;
     private static final double EPS = 1e-9;
@@ -27,14 +27,14 @@ public record KPITargetStatus(String direction, Double gapPct, Double progress, 
                 : target > baseline ? "up" : target < baseline ? "down" : null;
 
         if (current == null || baseline == null) {
-            return new KPITargetStatus(direction, null, null, expected, State.NO_DATA, daysLeft);
+            return new KPITargetStatus(direction, null, null, expected, State.NO_DATA, daysLeft, current);
         }
 
         boolean reached = "up".equals(direction) ? current >= target
                 : "down".equals(direction) ? current <= target
                 : true; // baseline == target: nothing to travel
         if (reached) {
-            return new KPITargetStatus(direction, 0.0, 1.0, expected, State.REACHED, daysLeft);
+            return new KPITargetStatus(direction, 0.0, 1.0, expected, State.REACHED, daysLeft, current);
         }
 
         double gapPct = Math.abs(current - target) / Math.abs(baseline - target);
@@ -51,7 +51,7 @@ public record KPITargetStatus(String direction, Double gapPct, Double progress, 
         } else {
             state = State.ON_TRACK;
         }
-        return new KPITargetStatus(direction, gapPct, progress, expected, state, daysLeft);
+        return new KPITargetStatus(direction, gapPct, progress, expected, state, daysLeft, current);
     }
 
     private static Double expected(KPITarget t, LocalDate today) {

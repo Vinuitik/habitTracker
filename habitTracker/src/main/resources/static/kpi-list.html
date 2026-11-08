@@ -519,13 +519,6 @@
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    // KPIDTO carries no "current" reading; rebuild it from gapPct = |cur-target| / |baseline-target|.
-    function targetCurrent(target, st) {
-      if (!target || !st || st.gapPct == null || target.baseline == null || !st.direction) return null;
-      const span = Math.abs(target.baseline - target.value);
-      return st.direction === 'up' ? target.value - st.gapPct * span : target.value + st.gapPct * span;
-    }
-
     function el(tag, cls, text) {
       const n = document.createElement(tag);
       if (cls) n.className = cls;
@@ -545,7 +538,7 @@
 
       const head = el('div', 'kpi-target__head');
       const values = el('div', 'kpi-target__values');
-      const cur = st.state === 'REACHED' ? 'reached' : st.state === 'NO_DATA' ? '—' : fmtNum(targetCurrent(t, st));
+      const cur = st.current == null ? '—' : fmtNum(st.current);
       values.append(el('span', 'kpi-target__current', cur), el('span', 'kpi-target__arrow', '→'),
                     el('span', 'kpi-target__goal', fmtNum(t.value)));
       head.append(values, el('span', `badge badge--${meta.tone}`, meta.label));
