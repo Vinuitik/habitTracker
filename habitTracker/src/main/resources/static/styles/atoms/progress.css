@@ -13,3 +13,13 @@
 .progress::-webkit-progress-bar { background: var(--color-border); }
 .progress::-webkit-progress-value { background: var(--color-accent); border-radius: var(--radius-full); }
 .progress::-moz-progress-bar { background: var(--color-accent); border-radius: var(--radius-full); }
+
+/* Tones: tint the fill by semantic state. */
+.progress--success::-webkit-progress-value { background: var(--color-success); }
+.progress--success::-moz-progress-bar      { background: var(--color-success); }
+.progress--warning::-webkit-progress-value { background: var(--color-warning); }
+.progress--warning::-moz-progress-bar      { background: var(--color-warning); }
+.progress--danger::-webkit-progress-value  { background: var(--color-danger); }
+.progress--danger::-moz-progress-bar       { background: var(--color-danger); }
+.progress--muted::-webkit-progress-value   { background: var(--color-text-muted); }
+.progress--muted::-moz-progress-bar        { background: var(--color-text-muted); }

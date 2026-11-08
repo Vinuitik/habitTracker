@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/pages/kpi.css">
+  <link rel="stylesheet" href="/styles/molecules/kpi-target.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -61,21 +62,39 @@
         </div>
 
         <div class="form-group">
-          <label class="form-group__label">Direction <span style="color:var(--color-danger)">*</span></label>
+          <label class="form-group__label">Goal <span style="color:var(--color-danger)">*</span></label>
           <div class="radio-card-group">
             <label class="radio-card">
-              <input type="radio" name="higherIsBetter" value="true" required>
+              <input type="radio" name="goalType" value="TARGET" checked>
+              <span class="radio-card__icon">◎</span>
+              <span class="radio-card__label">Target</span>
+              <span class="radio-card__hint">Reach a value by a date</span>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="goalType" value="HIGHER">
               <span class="radio-card__icon">↑</span>
               <span class="radio-card__label">Higher is Better</span>
               <span class="radio-card__hint">Steps taken, books read…</span>
             </label>
             <label class="radio-card">
-              <input type="radio" name="higherIsBetter" value="false">
+              <input type="radio" name="goalType" value="LOWER">
               <span class="radio-card__icon">↓</span>
               <span class="radio-card__label">Lower is Better</span>
               <span class="radio-card__hint">Weight, phone time…</span>
             </label>
           </div>
+        </div>
+
+        <div class="kpi-target-fields" id="targetFields">
+          <div class="form-group">
+            <label class="form-group__label" for="targetValue">Target value</label>
+            <input class="input" type="number" step="any" id="targetValue" required>
+          </div>
+          <div class="form-group">
+            <label class="form-group__label" for="targetDeadline">Deadline</label>
+            <input class="input" type="date" id="targetDeadline" required>
+          </div>
+          <span class="form-group__hint kpi-target-fields__hint">Direction is inferred from your first reading.</span>
         </div>
 
         <div class="form-group">
@@ -179,8 +198,13 @@
 
     document.getElementById('kpi-form').addEventListener('submit', async function(e) {
       e.preventDefault();
-      const dirVal = document.querySelector('input[name="higherIsBetter"]:checked');
-      if (!dirVal) { alert('Please select a direction preference.'); return; }
+      const goalType = document.querySelector('input[name="goalType"]:checked').value;
+      const targetValueRaw = document.getElementById('targetValue').value;
+      const targetDeadline = document.getElementById('targetDeadline').value;
+      if (goalType === 'TARGET' && (targetValueRaw === '' || !targetDeadline)) {
+        showError('Enter a target value and a deadline.');
+        return;
+      }
 
       const checkedHabits = Array.from(document.querySelectorAll('input[name="habitIds"]:checked'))
         .map(cb => parseInt(cb.value, 10));
@@ -219,13 +243,19 @@
       const body = {
         name:            document.getElementById('name').value,
         description:     document.getElementById('description').value,
-        higherIsBetter:  dirVal.value === 'true',
+        goalType:        goalType,
         habitIds:        checkedHabits.length > 0 ? checkedHabits : null,
         autoFillEnabled: autoFillEnabled,
         defaultValue:    autoFillEnabled ? parseFloat(defaultValueRaw) : null,
         proxyType:       proxyType,
         proxyConfig:     proxyType === 'TRELLO_CARD_COUNT' ? { boardId: trelloBoardId, listId: trelloListId } : null
       };
+      if (goalType === 'TARGET') {
+        body.targetValue    = parseFloat(targetValueRaw);
+        body.targetDeadline = targetDeadline;
+      } else {
+        body.higherIsBetter = goalType === 'HIGHER';
+      }
 
       const res = await fetch('/api/kpis/create', {
         method: 'POST',
@@ -240,11 +270,30 @@
         window.location.href = ENV.ROUTES.KPI_LIST;
       } else {
         const err = await res.json().catch(() => ({ error: 'Failed to create KPI' }));
-        const msg = document.getElementById('error-message');
-        msg.textContent = err.error || 'Failed to create KPI.';
-        msg.style.display = 'block';
+        showError(err.error || 'Failed to create KPI.');
       }
     });
+
+    function showError(text) {
+      const msg = document.getElementById('error-message');
+      msg.textContent = text;
+      msg.style.display = 'block';
+    }
+
+    // Target goal: reveal + require value/deadline; deadline can't be in the past.
+    function localToday() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    function syncGoalType() {
+      const isTarget = document.querySelector('input[name="goalType"]:checked').value === 'TARGET';
+      document.getElementById('targetFields').hidden = !isTarget;
+      document.getElementById('targetValue').required = isTarget;
+      document.getElementById('targetDeadline').required = isTarget;
+    }
+    document.getElementById('targetDeadline').min = localToday();
+    document.querySelectorAll('input[name="goalType"]').forEach(r => r.addEventListener('change', syncGoalType));
+    syncGoalType();
 
     init();
   </script>

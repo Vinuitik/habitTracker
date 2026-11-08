@@ -21,6 +21,9 @@
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
   <link rel="stylesheet" href="/styles/pages/kpi.css">
+  <link rel="stylesheet" href="/styles/atoms/badge.css">
+  <link rel="stylesheet" href="/styles/atoms/progress.css">
+  <link rel="stylesheet" href="/styles/molecules/kpi-target.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -459,9 +462,11 @@
             <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap;">
               <span class="kpi-card__name">${kpi.name}</span>
               <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
-                <span class="kpi-card__direction ${kpi.higherIsBetter ? 'up' : 'down'}">
+                ${kpi.goalType === 'TARGET'
+                  ? `<span class="kpi-card__direction kpi-card__direction--target">◎ Target</span>`
+                  : `<span class="kpi-card__direction ${kpi.higherIsBetter ? 'up' : 'down'}">
                   ${kpi.higherIsBetter ? '↑ Higher better' : '↓ Lower better'}
-                </span>
+                </span>`}
                 ${autoFillBadge || ''}
                 ${needsRepairBadge || ''}
               </div>
@@ -487,10 +492,138 @@
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
             </div>
           </details>`;
+        if (kpi.goalType === 'TARGET') mountTarget(card, kpi);
         grid.appendChild(card);
       });
 
       container.appendChild(grid);
+    }
+
+    // ── TARGET goal block: current → target, gap, pace bar, days left, state badge, set/edit form ──
+    const TARGET_STATES = {
+      REACHED:  { label: 'Reached ✓',   tone: 'success' },
+      AHEAD:    { label: 'Ahead',       tone: 'success' },
+      ON_TRACK: { label: 'On track',    tone: 'warning' },
+      BEHIND:   { label: 'Behind',      tone: 'danger'  },
+      MISSED:   { label: 'Missed',      tone: 'danger'  },
+      NO_DATA:  { label: 'No data yet', tone: 'muted'   }
+    };
+
+    function fmtNum(v) {
+      if (v == null || !isFinite(v)) return '—';
+      return Number(v.toFixed(2)).toLocaleString('en-US');
+    }
+
+    function localTodayIso() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // KPIDTO carries no "current" reading; rebuild it from gapPct = |cur-target| / |baseline-target|.
+    function targetCurrent(target, st) {
+      if (!target || !st || st.gapPct == null || target.baseline == null || !st.direction) return null;
+      const span = Math.abs(target.baseline - target.value);
+      return st.direction === 'up' ? target.value - st.gapPct * span : target.value + st.gapPct * span;
+    }
+
+    function el(tag, cls, text) {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text != null) n.textContent = text;
+      return n;
+    }
+
+    function mountTarget(card, kpi) {
+      const st = kpi.targetStatus || { state: 'NO_DATA' };
+      const meta = TARGET_STATES[st.state] || TARGET_STATES.NO_DATA;
+      Object.keys(TARGET_STATES).forEach(k => card.classList.remove(`kpi-card--target-${TARGET_STATES[k].tone}`));
+      card.classList.add(`kpi-card--target-${meta.tone}`);
+
+      const old = card.querySelector('.kpi-target');
+      const block = el('div', 'kpi-target');
+      const t = kpi.target || {};
+
+      const head = el('div', 'kpi-target__head');
+      const values = el('div', 'kpi-target__values');
+      const cur = st.state === 'REACHED' ? 'reached' : st.state === 'NO_DATA' ? '—' : fmtNum(targetCurrent(t, st));
+      values.append(el('span', 'kpi-target__current', cur), el('span', 'kpi-target__arrow', '→'),
+                    el('span', 'kpi-target__goal', fmtNum(t.value)));
+      head.append(values, el('span', `badge badge--${meta.tone}`, meta.label));
+
+      const bar = el('progress', `progress progress--${meta.tone} kpi-target__bar`);
+      bar.max = 1;
+      bar.value = st.progress != null ? Math.max(0, Math.min(1, st.progress)) : 0;
+
+      const foot = el('div', 'kpi-target__foot');
+      const gap = st.state === 'NO_DATA' || st.gapPct == null ? '—' : `${Math.round(st.gapPct * 100)}%`;
+      const due = st.daysLeft == null ? (t.deadline ? `Due ${t.deadline}` : '')
+                : st.daysLeft < 0 ? 'Overdue'
+                : st.daysLeft === 0 ? 'Due today'
+                : `Due in ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'}`;
+      foot.append(el('span', null, `Gap ${gap}`), el('span', null, due));
+
+      const actions = el('div', 'kpi-target__actions');
+      const done = st.state === 'REACHED' || st.state === 'MISSED';
+      const toggle = el('button', done ? 'btn btn--primary btn--sm' : 'kpi-target__link', done ? 'Set next target' : 'Edit target');
+      toggle.type = 'button';
+      actions.append(toggle);
+
+      const form = buildTargetForm(kpi, card, done ? null : t);
+      form.hidden = true;
+      toggle.addEventListener('click', () => {
+        form.hidden = !form.hidden;
+        if (!form.hidden) form.querySelector('input').focus();
+      });
+
+      block.append(head, bar, foot, actions, form);
+      if (old) old.replaceWith(block);
+      else card.querySelector('.kpi-card__meta').before(block);
+    }
+
+    function buildTargetForm(kpi, card, prefill) {
+      const form = el('form', 'kpi-target__form');
+      const value = el('input', 'input');
+      value.type = 'number'; value.step = 'any'; value.required = true; value.placeholder = 'Target value';
+      value.setAttribute('aria-label', 'Target value');
+      const deadline = el('input', 'input');
+      deadline.type = 'date'; deadline.required = true; deadline.min = localTodayIso();
+      deadline.setAttribute('aria-label', 'Deadline');
+      if (prefill && prefill.value != null) value.value = prefill.value;
+      if (prefill && prefill.deadline && prefill.deadline >= deadline.min) deadline.value = prefill.deadline;
+      const save = el('button', 'btn btn--primary btn--sm', 'Save');
+      save.type = 'submit';
+      const cancel = el('button', 'btn btn--ghost btn--sm', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', () => { form.hidden = true; err.textContent = ''; });
+      const err = el('span', 'form-group__error kpi-target__error');
+      const row = el('div', 'kpi-target__form-row');
+      row.append(value, deadline, save, cancel);
+      form.append(row, err);
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        err.textContent = '';
+        save.disabled = true;
+        try {
+          const res = await fetch(`/api/kpis/${encodeURIComponent(kpi.name)}/target`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrf() },
+            body: JSON.stringify({ value: parseFloat(value.value), deadline: deadline.value })
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            err.textContent = body.error || 'Failed to save target.';
+            return;
+          }
+          mountTarget(card, await res.json());
+        } catch (_) {
+          err.textContent = 'Network error — target not saved.';
+        } finally {
+          save.disabled = false;
+        }
+      });
+      return form;
     }
 
     function openProxyModal(kpiName, proxyType, proxyConfig) {
