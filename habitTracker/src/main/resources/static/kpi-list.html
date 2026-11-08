@@ -17,6 +17,9 @@
   <link rel="stylesheet" href="/styles/molecules/modal.css">
   <link rel="stylesheet" href="/styles/molecules/step-list.css">
   <link rel="stylesheet" href="/styles/organisms/automate-dialog.css">
+  <link rel="stylesheet" href="/styles/organisms/automate-devices.css">
+  <link rel="stylesheet" href="/styles/organisms/kpi-deployments.css">
+  <link rel="stylesheet" href="/styles/atoms/lamp.css">
   <link rel="stylesheet" href="/styles/organisms/topbar.css">
   <link rel="stylesheet" href="/styles/organisms/tabbar.css">
   <link rel="stylesheet" href="/styles/atoms/toast.css">
@@ -230,6 +233,8 @@
   <script src="/js/atoms/toast.js"></script>
   <script src="/js/atoms/dom.js"></script>
   <script src="/js/molecules/step-list.js"></script>
+  <script src="/js/organisms/automate-devices.js"></script>
+  <script src="/js/organisms/kpi-deployments.js"></script>
   <script src="/js/offline/db.js"></script>
   <script src="/js/offline/crypto.js"></script>
   <script src="/js/offline/connectivity.js"></script>
@@ -493,6 +498,7 @@
             </div>
           </details>`;
         if (kpi.goalType === 'TARGET') mountTarget(card, kpi);
+        if (kpi.proxyType === 'RUNNER_COLLECTOR') KpiDeployments.mount(card.querySelector('.kpi-card__meta'), kpi.id);
         grid.appendChild(card);
       });
 

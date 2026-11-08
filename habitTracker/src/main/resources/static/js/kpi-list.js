@@ -223,7 +223,8 @@ async function openAutomateModal(kpiName, needsRepair) {
         const [cap, active, runner] = await Promise.all([
             automateFetch(E_KPI.KPI_CAP(kpiName)),
             automateFetch(E_KPI.KPI_CAP_ACTIVE(kpiName)).catch(() => null),
-            automateFetch(E_KPI.KPI_CAP_RUNNER(kpiName)).catch(() => null)
+            automateFetch(E_KPI.KPI_CAP_RUNNER(kpiName)).catch(() => null),
+            AutomateDevices.load()   // device chips (organisms/automate-devices.js)
         ]);
         if (gen !== AUTOMATE.gen) return;
         AUTOMATE.runnerOnline = runner ? !!runner.online : null;
@@ -623,6 +624,7 @@ function renderAutomateContract(body, cap) {
     body.append(automateEl('div', 'automate__sample', cap.contractText || 'Reads only what the plan declared · no internet'));
     body.append(automateEl('div', 'form-group__hint',
         'Your runner enforces this: the collector sees only these inputs, with no internet. A later fix that reads anything else will ask you again.'));
+    AutomateDevices.mountPlan(body, AUTOMATE.kpiName);   // "Runs on…" + installs per OS
     if (cap.failureReason) body.append(automateEl('div', 'automate__fail', describeFailure(cap).headline));
     renderAutomateTests(body, cap);
     renderAutomateSummary(body, cap);
@@ -792,6 +794,7 @@ function renderAutomate(cap, error) {
     }
 
     if (fresh) {
+        AutomateDevices.mountChips(body);   // device chips first
         const group = automateEl('div', 'form-group');
         const label = automateEl('label', 'form-group__label', 'What should be captured automatically?');
         label.htmlFor = 'automateDescription';
@@ -807,7 +810,7 @@ function renderAutomate(cap, error) {
         const propose = automateButton('Propose a plan', 'btn--primary', () => {
             const description = ta.value.trim();
             if (!description) { renderAutomate(cap, 'Describe what to capture first.'); return; }
-            automateStart('propose', { description });
+            automateStart('propose', { description, targetDeviceIds: AutomateDevices.targetIds() });
         });
         propose.disabled = AUTOMATE.runnerOnline === false;
         automateFoot(propose);

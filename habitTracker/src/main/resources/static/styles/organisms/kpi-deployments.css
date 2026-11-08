@@ -1,0 +1,17 @@
+/* Per-device rollout row on a KPI card (js/organisms/kpi-deployments.js). */
+.kpi-deploy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+}
+.kpi-deploy__item { display: inline-flex; align-items: center; gap: var(--space-1); }
+.kpi-deploy__name { color: var(--color-text-primary); }
+.kpi-deploy__item--ok .kpi-deploy__mark { color: var(--color-success); }
+.kpi-deploy__item--wait .kpi-deploy__mark { color: var(--color-warning); }
+.kpi-deploy__item--bad .kpi-deploy__mark, .kpi-deploy__item--bad .kpi-deploy__text { color: var(--color-danger); }
+.kpi-deploy__sep { color: var(--color-text-muted); }
+.kpi-deploy__hint { flex-basis: 100%; font-size: var(--text-sm); color: var(--color-warning); }
+.kpi-deploy__retry { margin-left: var(--space-1); }
