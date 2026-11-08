@@ -89,10 +89,16 @@ window.ENV = {
     RELAY_INSTALL:   '/relay#/install',   // install-a-runner guide (not /install = PWA install page)
     TWOFA_VERIFY:    '/2fa/verify',       // + ?next=<url>
   },
+  RELAY: {
+    WINDOWS_SETUP_URL: 'https://github.com/Vinuitik/relay/releases/latest/download/Relay-Setup.exe',
+    SOURCE_URL:        'https://github.com/Vinuitik/relay',
+  },
   EXTERNAL: {
     TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',
   },
   TIMING: {
+    RELAY_INSTALL_POLL_MS: 3000,       // #/install waiting panel: GET /relay/api/devices cadence
+    RELAY_INSTALL_WAIT_MS: 900000,     // ...gives up after 15 min
     RELAY_RAIL_POLL_MS: 10000, // relay shell: waiting/busy sessions poll for the rail lamps + Needs-you strip
     RELAY_CONTAINERS_LAMP_MS: 30000, // relay shell: per-project GET /containers for the rail lamps (one call per project)
     VIEW_FADE_MS: 180,

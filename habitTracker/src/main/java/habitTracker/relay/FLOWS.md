@@ -1,6 +1,6 @@
 # Relay (web) — second factor + runner hub
 
-Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, RunnerCollectorClient.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,shell,claim,install,chat,chats,files,git,containers}.js, static/styles/organisms/relay-shell.css, static/styles/atoms/lamp.css, static/js/molecules/folder-picker.js (FolderPicker.pick), static/styles/pages/relay.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
+Files: ClaimService.java, ClaimController.java, Device.java, DeviceRepository.java, DeviceService.java, DeviceController.java, UplinkConfig.java, UplinkHandler.java, UplinkRegistry.java, RelayProxyController.java, RunnerClient.java, RunnerJobService.java, RunnerCollectorClient.java, OnlineRunnerSelector.java, RunnerUnavailableException.java, RunnerCallException.java, TotpService.java, TwoFactorService.java, TwoFactorController.java, TwoFactorInterceptor.java, TrustedDevice.java, TrustedDeviceService.java, RelayController.java, ../WebConfig.java, ../auth/User.java, templates/twofa-setup.html, templates/twofa-verify.html, static/js/twofa.js, static/css/auth.css, templates/relay.html, static/js/relay/relay.js (shared kit), static/js/relay/router.js, static/js/relay/organisms/relay-{devices,shell,claim,install,chat,chats,files,git,containers}.js, static/styles/organisms/relay-shell.css, static/styles/atoms/lamp.css, static/js/molecules/folder-picker.js (FolderPicker.pick), static/styles/pages/relay.css, static/styles/organisms/relay-install.css, static/js/topbar.js (nav), static/js/env.js (ROUTES.RELAY)
 
 ## Gate
 GET /relay/** → Spring Security (logged in? else /login) → TwoFactorInterceptor.preHandle() → TwoFactorService.isVerified(session)
@@ -107,17 +107,18 @@ To change: router.js remember() / restore(); storage helper: relay.js store.
 
 ### Devices `#/`
 showDevices() → GET /relay/api/devices → rows (dot = `online`, "last seen" = Dom.timeAgo(lastSeenAt)) → row → `#/d/<id>`; empty list → "Install your first runner" CTA → `#/install`
-"Add device" → addDevice() → two cards: **Recommended · with your phone** = pairCmd() for this browser's OS (OS from navigator.userAgent: `Windows` → `& "$env:LOCALAPPDATA\Relay\bin\relay-runner.exe" pair`, else `/opt/relay/bin/relay-runner pair`; + `--hub <origin>` unless origin == DEFAULT_HUB), what to do with the QR, link "New machine? Install guide" → `#/install`; **Desktop alternative** → "Get a code" → getCode() → POST /relay/api/devices/pairing-code → code + same command with `--code <CODE>` (OS from `#code-box[data-os]`)
+"Add device" → addDevice() → `location.hash = #/install` (single onboarding flow; no pair command on the devices page).
 Copy buttons: any `.relay-cmd` → copyCommand() copies its `<code>` (navigator.clipboard; no clipboard API (plain http) → selects the text)
 
 ### Install guide `#/install`
-Entry: empty device list CTA · Add-device card link · static/install.html "Install a runner" (`/relay#/install`)
-showInstall() → OS tabs (guideOs, preselected = OS; `data-act="os"` re-renders) → GUIDE[os] text → steps: open shell → INSTALL_CMD[os] (copy) → scan the QR the script prints (phone → `/relay/claim/<id>` → QR pairing above; Ctrl-C skips) → online under Devices
-→ "Already installed" card: Linux `sudo -u <your user> /opt/relay/bin/relay-runner pair` / Windows PAIR_CMD.windows (+ `--hub`), code fallback (codeBox(guideOs) → getCode(), Linux adds the `sudo -u` prefix inside the guide)
-→ Troubleshooting `<details>`: QR expired / Ctrl-C → rerun pair · offline → Linux `systemctl status relay-runner@<user>` + `journalctl -u relay-runner@<user> -f`, Windows Task Scheduler "Relay keeper" · pair run as the wrong user · machine asleep
-Origin ≠ DEFAULT_HUB → extra hint: Ctrl-C the installer's QR, use the pair command (it carries `--hub`).
-Commands are a contract with the Relay repo's release scripts (install.sh / install.ps1, Linux service `relay-runner@<user>`, Windows task "Relay keeper"); the page only displays them.
-To change commands: relay.js INSTALL_CMD, PAIR_CMD, LINUX_AS_USER. Guide text per OS: relay-install.js GUIDE. OS guess: relay.js OS.
+Entry: devices empty-state CTA · "Add device" · static/install.html (`/relay#/install`) · folder-picker "Install a runner"
+Windows (default when UA says Windows): hero → `<a data-act="download" href=ENV.RELAY.WINDOWS_SETUP_URL>` Relay-Setup.exe (built in the Relay repo) → 3 steps (Download → Run it, SmartScreen callout + source link `ENV.RELAY.SOURCE_URL` → Confirm in browser) → installer opens `/relay/claim/<id>` at Finish → RelayClaim "Connect <name>?" → Confirm.
+Linux: hero with INSTALL_CMD.linux + Copy (`copy-start`) + terminal hint → script prints QR/link → same claim page. OS switch = text link ("Using Linux?/Windows?"), `guideOs` survives navigation.
+Waiting panel (`#wait-box`): starts on Download click, Copy click or "I already ran it" → startWaiting() → snapshot() baseline of GET /relay/api/devices (also taken at mount) → tick() every `ENV.TIMING.RELAY_INSTALL_POLL_MS` (3s) → done when an id not in the baseline appears, or a known one goes offline → online → "✓ <name> is connected" + Open devices. Stops on unmount; after `ENV.TIMING.RELAY_INSTALL_WAIT_MS` (15 min) → "Taking longer" + Keep waiting.
+One collapsed `<details class="relay-more">` "Advanced & troubleshooting": advanced() → Windows `relay-runner pair` (new terminal; PATH set by the installer) + labelled full-path fallbacks PAIR_CMD_FULL.cmd / .powershell; Linux `sudo -u <your user> /opt/relay/bin/relay-runner pair`; `--hub` appended when origin ≠ DEFAULT_HUB; pairing-code box (codeBox → getCode()); FAQ incl. PowerShell one-liner install, "Re-connect without a terminal" (Start menu → "Connect Relay to HabitTracker"), expired link, offline, wrong user.
+Claim page (`/relay/claim/<id>`): centered card (`.relay-claim`), Confirm → "✓ <name> connected. You can close this tab" + Open devices. Login redirect: SecurityConfig formLogin/oauth2 `defaultSuccessUrl("/today", false)` so the saved claim URL is restored after login (was forced to /today); 2FA keeps `?next=`.
+Commands are a contract with the Relay repo (Relay-Setup.exe, install.sh / install.ps1, Linux service `relay-runner@<user>`, Windows task "Relay keeper"); the page only displays them.
+To change: URLs → env.js ENV.RELAY; commands → relay.js INSTALL_CMD, PAIR_CMD, PAIR_CMD_FULL, LINUX_AS_USER; wizard copy → relay-install.js windowsView()/linuxView()/advanced(); polling → env.js TIMING.RELAY_INSTALL_*; OS guess: relay.js OS.
 "Revoke" → confirm() → DELETE /relay/api/devices/{id} → re-render. New device shows after Refresh (no auto-poll on this view).
 
 ### Shell `#/d/<id>[/p/<pid>[/<tab>] | /s/<sid>]` (layout A)
@@ -241,12 +242,15 @@ Not in the UI (API.md has them, proxy would carry them): agent-chats (open a VS 
 | Last-route restore (PWA) | router.js remember() / restore(); relay.js store |
 | Remembered chat mode / model / effort | relay-chat.js setMode() / setConfig() / applyPrefs(), PREFS |
 | Hub status → message / 2FA redirect | relay.js call() |
-| Pair command text | relay-devices.js addDevice(); relay.js getCode(), PAIR_CMD (per OS), pairCmd(), DEFAULT_HUB |
+| Pair command text | relay-install.js advanced(); relay.js getCode(), PAIR_CMD, PAIR_CMD_FULL, pairCmd(), hubFlag, DEFAULT_HUB |
 | Installer commands (contract with Relay release scripts) | relay.js INSTALL_CMD |
-| Install guide text / troubleshooting per OS | relay-install.js GUIDE, render() |
+| Windows installer / source URLs | env.js ENV.RELAY.WINDOWS_SETUP_URL, SOURCE_URL |
+| Install page views, waiting panel (detect new device) | relay-install.js windowsView(), linuxView(), advanced(), startWaiting(), tick(); env.js TIMING.RELAY_INSTALL_POLL_MS / _WAIT_MS |
+| Claim page card / success state | relay-claim.js load(), claimAction(); relay-install.css `.relay-claim` |
+| Post-login return to claim URL | SecurityConfig `defaultSuccessUrl("/today", false)` |
 | OS preselect (userAgent) | relay.js OS |
-| Install guide entry points | relay-devices.js mount() (empty CTA), addDevice() (link); static/install.html (card) |
-| Install guide look | relay.css `.relay-steps`, `.relay-step`, `.relay-tabs`, `.relay-faq`, `.relay-empty__cta`, `.relay-link` |
+| Install guide entry points | relay-devices.js mount() (empty CTA), addDevice() (→ #/install); static/install.html (card) |
+| Install guide look | relay-install.css (`.relay-hero`, `.relay-callout`, `.relay-wait`, `.relay-more`), relay.css `.relay-steps`, `.relay-step`, `.relay-faq`, `.relay-empty__cta`, `.relay-link` |
 | QR claim TTL / cap / id length | ClaimService.TTL_SECONDS, MAX_PENDING, ID_LENGTH |
 | QR confirm page | relay-claim.js mount(), claimAction(); route RelayController `/relay/claim/{id}` |
 | QR runner endpoints (permitAll, CSRF-ignored, 2FA-excluded) | SecurityConfig, WebConfig (`/relay/pair/start`, `/relay/pair/poll`) |

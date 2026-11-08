@@ -1,4 +1,4 @@
-// #/ devices: list (online dot, last seen), Add device (QR command + pairing code), Revoke,
+// #/ devices: list (online dot, last seen), Add device (→ #/install), Revoke,
 // trusted-browsers footer. RelayDevices.mount(el, ctx) → unmount (contract: js/relay/router.js).
 window.RelayDevices = (() => {
   const { $, esc, timeAgo } = Dom;
@@ -25,7 +25,7 @@ window.RelayDevices = (() => {
       $('device-list').innerHTML = list.length ? list.map(deviceRow).join('')
         : `<div class="relay-empty">No machines yet. A runner lets Relay start agent sessions on your computer.
             <a class="btn btn--primary relay-empty__cta" href="#/install">Install your first runner</a>
-            <span class="relay-hint">Already installed? Use Add device.</span></div>`;
+            <span class="relay-hint">Takes about a minute. No terminal on Windows.</span></div>`;
     } catch (e) {
       if (alive()) $('device-list').innerHTML = R.errorHtml(e);
     }
@@ -53,22 +53,8 @@ window.RelayDevices = (() => {
     }
   }
 
-  // Phone first (runner shows a QR, this phone confirms); the code is the fallback for a desktop browser.
-  function addDevice() {
-    $('pair-box').innerHTML = `
-      <div class="relay-card">
-        <div class="relay-card__label">Recommended · with your phone</div>
-        ${R.cmdBlock(R.pairCmd())}
-        <p class="relay-hint">Run this on the machine${R.OS === 'linux' ? ' as your normal user (not root)' : ''}
-          (a fresh install runs it for you at the end). It shows a QR code:
-          scan it with your phone camera and tap Confirm. The machine comes online by itself.</p>
-        <a class="relay-link" href="#/install">New machine? Install guide →</a>
-      </div>
-      <div class="relay-card">
-        <div class="relay-card__label">Desktop alternative · pairing code</div>
-        ${R.codeBox(R.OS)}
-      </div>`;
-  }
+  // One onboarding flow: Add device = the install page (download / one-liner, then wait for the machine).
+  const addDevice = () => { location.hash = '#/install'; };
 
   async function revoke(id, name, refresh) {
     if (!confirm(`Revoke "${name || id}"? It disconnects now and has to be paired again.`)) return;
@@ -85,13 +71,11 @@ window.RelayDevices = (() => {
     const alive = () => mounted;
     el.innerHTML = R.header('Relay', null,
       '<button class="btn btn--ghost" data-act="refresh">Refresh</button><button class="btn btn--primary" data-act="add">Add device</button>')
-      + '<div id="pair-box"></div><div class="relay-list" id="device-list"><div class="relay-empty">Loading…</div></div>'
+      + '<div class="relay-list" id="device-list"><div class="relay-empty">Loading…</div></div>'
       + '<div id="trust-box"></div>';
     const off = R.onAct(el, {
       refresh: () => ctx.refresh(),
       add: addDevice,
-      code: R.getCode,
-      copy: R.copyCommand,
       revoke: (b) => revoke(b.dataset.id, b.dataset.name, ctx.refresh),
       'forget-trusted': forgetTrusted,
     });

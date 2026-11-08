@@ -16,11 +16,17 @@ window.Relay = (() => {
   };
   const PAIR_CMD = {
     linux: '/opt/relay/bin/relay-runner pair',
-    windows: '& "$env:LOCALAPPDATA\\Relay\\bin\\relay-runner.exe" pair',
+    windows: 'relay-runner pair',   // on PATH after Relay-Setup.exe (new terminal needed)
+  };
+  // Full-path forms per shell, for when the PATH entry isn't live yet.
+  const PAIR_CMD_FULL = {
+    cmd: '"%LOCALAPPDATA%\\Relay\\bin\\relay-runner.exe" pair',
+    powershell: '& "$env:LOCALAPPDATA\\Relay\\bin\\relay-runner.exe" pair',
   };
   const LINUX_AS_USER = 'sudo -u <your user> ';   // guide shows the explicit form: pair must run as the service's user
   const ownHub = location.origin === DEFAULT_HUB;
-  const pairCmd = (extra = '', os = OS) => PAIR_CMD[os] + (ownHub ? '' : ` --hub ${location.origin}`) + extra;
+  const hubFlag = ownHub ? '' : ` --hub ${location.origin}`;
+  const pairCmd = (extra = '', os = OS) => PAIR_CMD[os] + hubFlag + extra;
   const STATES = {
     busy:     ['Working', ''],
     waiting:  ['Needs you', 'badge--warning'],
@@ -139,7 +145,7 @@ window.Relay = (() => {
   }
 
   return {
-    enc, OS, INSTALL_CMD, PAIR_CMD, LINUX_AS_USER, ownHub, pairCmd, deviceNames, store,
+    enc, OS, INSTALL_CMD, PAIR_CMD, PAIR_CMD_FULL, hubFlag, LINUX_AS_USER, ownHub, pairCmd, deviceNames, store,
     call, errorHtml, stateBadge, ctxTag, ctxLevel, ctxText, header, md, cmdBlock, codeBox, getCode, copyCommand, onAct,
   };
 })();

@@ -135,7 +135,6 @@
 
 /* ── install guide (#/install) ── */
 .relay-intro { margin-bottom: var(--space-4); line-height: 1.6; }
-.relay-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
 .relay-steps {
   list-style: none;
   counter-reset: relay-step;

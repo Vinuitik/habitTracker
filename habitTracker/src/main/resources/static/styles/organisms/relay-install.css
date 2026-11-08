@@ -1,0 +1,85 @@
+/* #/install onboarding (js/relay/organisms/relay-install.js): hero, callout, waiting panel, advanced fold. */
+.relay-in { animation: relay-in 200ms ease-out both; }
+.relay-in:nth-child(2) { animation-delay: 50ms; }
+.relay-in:nth-child(3) { animation-delay: 100ms; }
+.relay-in:nth-child(4) { animation-delay: 150ms; }
+@keyframes relay-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.relay-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.relay-hero__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-2xl);
+  letter-spacing: -0.02em;
+}
+.relay-hero__lede { max-width: 56ch; color: var(--color-text-secondary); line-height: 1.6; }
+.relay-hero__cta { height: 48px; padding: 0 var(--space-6); font-size: var(--text-md); }
+.relay-hero kbd { font-family: var(--font-mono); font-size: var(--text-xs); }
+
+.relay-cmd--big { width: 100%; margin: 0; padding: var(--space-3) var(--space-4); }
+.relay-cmd--big code { font-size: var(--text-base); }
+
+.relay-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-warning-dim);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.relay-wait {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.relay-wait--idle { padding: 0; background: none; border: 0; }
+.relay-wait--done { border-color: var(--color-success); }
+.relay-wait__title { display: flex; align-items: center; gap: var(--space-3); font-weight: 600; }
+.relay-dot--pulse { animation: relay-pulse 2400ms ease-in-out infinite; }
+@keyframes relay-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-success-dim); background: var(--color-text-muted); }
+  50%      { box-shadow: 0 0 0 4px var(--color-accent-dim); background: var(--color-accent); }
+}
+
+.relay-switch-row { margin-bottom: var(--space-6); }
+.relay-switch { background: none; border: 0; padding: 0; cursor: pointer; }
+
+.relay-more { border-top: 1px solid var(--color-border); padding-top: var(--space-4); }
+.relay-more > summary { cursor: pointer; font-weight: 600; color: var(--color-text-secondary); }
+.relay-more__body { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+
+@media (max-width: 768px) {
+  .relay-hero { padding: var(--space-4); }
+  .relay-hero__cta { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .relay-in, .relay-dot--pulse { animation: none; }
+}
+
+/* /relay/claim/<id>: centered confirm card, readable on desktop and on a phone. */
+.relay-claim { max-width: 480px; margin: var(--space-8) auto; padding: var(--space-6); gap: var(--space-3); }
+.relay-claim__title { font-family: var(--font-heading); font-size: var(--text-2xl); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.relay-claim__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
+.relay-claim--done { border-color: var(--color-success); }

@@ -80,12 +80,12 @@ public class SecurityConfig {
             )
             .formLogin(form -> form
                 .loginPage("/login")
-                .defaultSuccessUrl("/today", true)
+                .defaultSuccessUrl("/today", false)
                 .permitAll()
             )
             .oauth2Login(oauth -> oauth
                 .loginPage("/login")
-                .defaultSuccessUrl("/today", true)
+                .defaultSuccessUrl("/today", false)
                 .userInfoEndpoint(ui -> ui.oidcUserService(this::loadOidcUser))
             )
             // Relay JSON API: 401 instead of a 302 to /login, so fetch() callers can tell.
