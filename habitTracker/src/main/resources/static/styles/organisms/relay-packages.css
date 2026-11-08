@@ -1,0 +1,17 @@
+/* Runner home "Installed by KPIs" section (js/relay/organisms/relay-packages.js). */
+.pkg__intro { margin-bottom: var(--space-3); }
+
+.pkg-row__why {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: normal;
+}
+
+.pkg-row__confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}

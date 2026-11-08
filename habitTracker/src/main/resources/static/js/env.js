@@ -71,6 +71,13 @@ window.ENV = {
     // KPI credentials held on the runner (names + hosts only come back; the secret is PUT once, never read)
     RELAY_CREDENTIALS: (dev) => relayV1(dev, '/credentials'),
     RELAY_CREDENTIAL:  (dev, name) => relayV1(dev, `/credentials/${encodeURIComponent(name)}`),
+    // Programs KPIs installed on a runner ("Installed by KPIs"): hub joins the runner ledger with KPI names
+    RELAY_KPI_PACKAGES:  (dev) => `/relay/api/devices/${encodeURIComponent(dev)}/kpi-packages`,
+    RELAY_KPI_PACKAGE_UNINSTALL: (dev) => `/relay/api/devices/${encodeURIComponent(dev)}/kpi-packages/uninstall`,
+    // Stop automating a KPI (by id) + uninstall offer; per-device readings behind a combined point
+    KPI_RETIRE:           (id) => `/api/kpi/${encodeURIComponent(id)}/retire`,
+    KPI_RETIRE_UNINSTALL: (id) => `/api/kpi/${encodeURIComponent(id)}/retire/uninstall`,
+    KPI_DEVICE_READINGS:  (id, from, to) => `/api/kpi/${encodeURIComponent(id)}/device-readings?from=${from}&to=${to}`,
   },
   ROUTES: {
     HOME:            '/today',
@@ -124,6 +131,7 @@ window.ENV = {
     CONTAINERS_POLL_IDLE_MS: 10000,  // ...and otherwise (containers can die on their own)
   },
   LIMITS: {
+    KPI_DEVICE_DAYS: 30,      // days of per-device readings loaded for the expandable KPI breakdown
     RELAY_CHATS_PAGE: 10,     // Relay Chats tab: rows shown per "Show older" step
     RELAY_CTX_WARN: 80000,    // chat context (tokens re-sent per message) shown amber from here...
     RELAY_CTX_HIGH: 150000,   // ...red from here, and resuming such a chat needs a second tap

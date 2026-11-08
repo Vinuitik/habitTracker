@@ -76,6 +76,20 @@ public class RunnerCollectorClient {
         jobs.send(userId, deviceId, "POST", "/v1/sensors/install", json.createObjectNode().put("name", name).toString());
     }
 
+    /**
+     * Packages Relay installed (or found) on the runner → [{manager, id, installedAt, installedByRelay, usedBy:[collectorId],
+     * state: installed|installing|failed|awaiting_confirm, error}]. 404 = a runner older than the package ledger.
+     */
+    public JsonNode packages(String userId, String deviceId) {
+        return jobs.send(userId, deviceId, "GET", "/v1/packages", "");
+    }
+
+    /** 202 async. 400 = Relay did not install it (never removed), 409 = a collector still uses it. */
+    public void uninstallPackage(String userId, String deviceId, String manager, String id) {
+        jobs.send(userId, deviceId, "POST", "/v1/packages/uninstall",
+                json.createObjectNode().put("manager", manager).put("id", id).toString());
+    }
+
     /** → [{id, kpiName, version, contractHash, approved, state, lastRunAt, lastError}]. */
     public JsonNode list(String userId, String deviceId) {
         return jobs.send(userId, deviceId, "GET", "/v1/collectors", "");

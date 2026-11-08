@@ -1,0 +1,11 @@
+/* "Stop automating" dialog (js/organisms/kpi-retire.js); layout from molecules/modal.css. */
+.kpi-retire__body { display: flex; flex-direction: column; gap: var(--space-4); }
+.kpi-retire__text { color: var(--color-text-primary); }
+.kpi-retire__hint { color: var(--color-text-muted); font-size: var(--text-sm); }
+.kpi-retire__error { color: var(--color-danger); }
+.kpi-retire__pkg { display: flex; flex-direction: column; gap: var(--space-1); }
+.kpi-retire__results { list-style: none; display: flex; flex-direction: column; gap: var(--space-2); }
+.kpi-retire__result { color: var(--color-text-secondary); }
+.kpi-retire__result--uninstalling { color: var(--color-success); }
+.kpi-retire__result--failed,
+.kpi-retire__result--still_needed { color: var(--color-warning); }
