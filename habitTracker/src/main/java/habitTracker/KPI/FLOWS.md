@@ -1,6 +1,6 @@
 # KPI Flows
 
-Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`, `RunnerOnlyKpiMigration.java`, `CapabilityLifecycleService.java`, `CapabilityOutput.java`, `ReadingPlausibility.java`, `RunnerCollectorPipeline.java`, `RunnerCollectorProvider.java`, `CollectorBundle.java`, `CollectorStaticCheck.java`, `ProxyReadingRecorder.java`, `CapabilityWentLive.java`
+Files: `CapabilityAgentController.java`, `CapabilityAgentService.java`, `CapabilityTaskService.java`, `CapabilityProgress.java`, `CapabilityGenerator.java`, `RunnerCapabilityGenerator.java`, `CapabilityPrompts.java`, `AgentCapabilityRepairTrigger.java`, `KPI.java`, `KPIData.java`, `KPIDTO.java`, `KPIDataDTO.java`, `KPIController.java`, `KPIService.java`, `KPIRepository.java`, `KPIHabitMappingRepository.java`, `KPICollectionNameUtil.java`, `DynamicKPIDataRepository.java`, `KPIProxyCapability.java`, `KPIProxyCapabilityRepository.java`, `CapabilityStatus.java`, `CapabilityPlatform.java`, `RunnerOnlyKpiMigration.java`, `CapabilityLifecycleService.java`, `CapabilityOutput.java`, `ReadingPlausibility.java`, `RunnerCollectorPipeline.java`, `RunnerCollectorProvider.java`, `CollectorBundle.java`, `CollectorStaticCheck.java`, `ProxyReadingRecorder.java`, `CapabilityWentLive.java`, `GoalType.java`, `KPITarget.java`, `KPITargetStatus.java`
 
 ## Storage model
 
@@ -235,6 +235,44 @@ To change the attempt cap: `CapabilityAgentService.MAX_ATTEMPTS`. To change what
 
 Intake: one description → one proposal, then a refine loop (feedback → revised plan, above); a full multi-turn chat is [NOT IMPLEMENTED] (each refine is stateless: previous plan + one feedback text, no history beyond the last revision). Disabling/removing an ACTIVE capability (propose is 409 while one is ACTIVE). Stage 6-7 scrutiny/confirm-rate tapering for new capabilities. More than one page per http source (no pagination), POST APIs, OAuth flows (the user pastes a token).
 
+## Targets (goalType TARGET)
+
+Files: `GoalType.java`, `KPITarget.java`, `KPITargetStatus.java`, `KPI.java` (`goalType`, `target`, `resolveGoalType()`), `KPIService.java`, `KPIController.java`, `KPIDTO.java`; UI `static/kpi-create.html`, `static/kpi-list.html`, `static/kpi-dashboard.html` + `static/js/kpi-dashboard.js`.
+
+A KPI is judged one of three ways (`GoalType`): `HIGHER` / `LOWER` (open-ended, = legacy `higherIsBetter`) or `TARGET` (reach `target.value` by `target.deadline`).
+
+```
+CREATE   POST /api/kpis/create {goalType?, targetValue?, targetDeadline? (yyyy-MM-dd), higherIsBetter?, ...}
+         → KPIController.createKPI(): goalType absent + targetValue sent → TARGET; absent + none → null; bad date → 400
+         → KPIService.createKPI(.., goalType, targetValue, targetDeadline)
+             TARGET → validateTarget() (both required, deadline not in the past, else 400)
+                    → KPITarget{value, deadline, baseline = null, setAt = today}; higherIsBetter = null (inferred later)
+             HIGHER/LOWER → higherIsBetter = (goalType == HIGHER);  null goalType → GoalType.fromHigherIsBetter()
+BASELINE first reading of any kind (manual, auto-fill, proxy) → KPIService.saveKPIDataPoint()
+         → TARGET && target.baseline == null → baseline = value, higherIsBetter = KPITarget.inferredHigherIsBetter(), save KPI
+RESET    PUT /api/kpis/{name}/target {value, deadline} → KPIController.updateTarget() → KPIService.updateTarget()
+         → validateTarget() → new KPITarget{baseline = latestValue(kpi) (null if no readings), setAt = today}
+         → goalType = TARGET (also switches a HIGHER/LOWER KPI), higherIsBetter re-inferred → KPIDTO
+READ     GET /api/kpis, /api/kpis/dashboard → KPIService.convertToDTO()
+         → goalType = kpi.resolveGoalType(); TARGET → target + KPITargetStatus.of(target, latestValue(kpi), today)
+STATUS   KPITargetStatus.of() (pure, no I/O):
+         direction = target > baseline ? "up" : target < baseline ? "down" : null
+         no reading / no baseline → NO_DATA
+         reached (up: cur ≥ target, down: cur ≤ target; overshoot counts; baseline == target) → REACHED, gapPct 0, progress 1
+         gapPct = |cur − target| / |baseline − target|, progress = clamp01(1 − gapPct)
+         expected = clamp01(days(setAt → today) / days(setAt → deadline))   (total ≤ 0 → 1.0)
+         today > deadline → MISSED
+         progress ≥ expected + PACE_BAND → AHEAD · progress < expected − PACE_BAND → BEHIND · else ON_TRACK   (PACE_BAND 0.10)
+         daysLeft = days(today → deadline) (negative after the deadline)
+UI       kpi-create.html: 3-way choice Higher / Lower / Target (target value + deadline inputs) → POST create
+         kpi-list.html: card state badge from targetStatus.state + "set next target" form → PUT .../target
+         kpi-dashboard.js: renderChart() adds targetDataset() = dashed horizontal line at target.value (accent colour);
+           trend colours / arrow use targetStatus.direction ("up" = higher better) via resolveHigherIsBetter(), else higherIsBetter
+```
+To change the pace tolerance: `KPITargetStatus.PACE_BAND`. To change state precedence or the math: `KPITargetStatus.of()`. To change validation: `KPIService.validateTarget()`. To change the dashboard line: `kpi-dashboard.js targetDataset()` / `TARGET_LINE_COLOR`.
+
+[NOT IMPLEMENTED] target history (a new target replaces the old one; past targets and their outcomes are not kept); an explicit direction for TARGET (always inferred from baseline vs target).
+
 ## Technology Notes
 
 - **Generated code is untrusted (M8).** It is LLM output steered by a free-text user description; it is only ever executed by the user's own runner in its OS sandbox (never in `javaapp`, never on the hub host), with no network and only its declared, approved inputs. The UI renders it and all LLM text with `textContent` (no HTML injection). Approval gates *what is read*; the runner sandbox, not the review, is the actual safety boundary. A malicious collector can only hurt its own user's machine within that sandbox.
@@ -254,6 +292,8 @@ Intake: one description → one proposal, then a refine loop (feedback → revis
 - **Web-API KPIs (H3):** the hub sees credential names + hosts only (GET /v1/credentials). It checks host == credential host twice (`checkSources` at propose, `CollectorStaticCheck.httpProblem` on every bundle), but the runner's install-time URL check + fetch are authoritative. The list is fetched from the runner `OnlineRunnerSelector` picks at propose time: with two runners the other one's credentials are invisible, and the build is pinned to that runner. A credential removed after approval → the dry run / nightly run gets 503 → AWAITING_SENSOR "Add or fix the credential in Relay → <runner> → KPI credentials". A token's scope is the real limit: a collector can GET anything the token reads on its host.
 - **"Connect a runner" in the Automate dialog** is a snapshot at open (`GET .../capability/runner` → `RunnerCapabilityGenerator.runnerAvailable`, in-memory uplink registry of this JVM); "Check again" re-asks. A job that still fails with `NO_RUNNER_MESSAGE` shows the same link.
 - **RUNNER collectors (S3):** the runner sandbox (bwrap / AppContainer) is the boundary, not the hub's static check (regex over import lines, deny-list mirror). Approval binds to the runner-computed contract hash; the hub trusts the runner's `approved` flag + its own `approvedContractHash` to skip re-approval. Readings live on the runner until pulled (data-dir wipe = lost unpulled readings and lost approvals → collector 403 until re-approved; the pull then logs `PULL_ERROR`). The pull cursor is `recordedAt`, so a re-run of an old window re-writes that day (overwrites a value the user edited). `/test` and `/run` wait up to `kpi.runner.long-call-timeout-ms` (180s; other runner calls `relay.proxy.timeout-ms`, 30s): a runner slower than that is reported as offline (not an attempt) while it may still finish the run. Sensor install polling holds a capability worker thread up to 10 min.
+
+- **Targets:** direction is inferred, not stored by the user: with no baseline yet (KPI created before its first reading) `direction` is null, the state is NO_DATA and the dashboard falls back to `higherIsBetter` (null → treated as lower-is-better server-side, `Boolean.TRUE.equals`). A target equal to the baseline counts as REACHED immediately. Pace is linear in calendar days from `setAt` (server `LocalDate.now()`, hub time zone). Resetting a target overwrites the old one: no history. Legacy KPIs have no `goalType` in Mongo; `KPI.resolveGoalType()` derives it from `higherIsBetter` on every read (no migration — always read via `resolveGoalType()`, never `getGoalType()`). Cost: `convertToDTO()` runs one extra latest-reading query (`findTopNOrderByDateDesc(1, ..)`) per TARGET KPI per list/dashboard request (N TARGET KPIs = N extra queries). The dashboard line is a constant dataset, not the Chart.js annotation plugin (not loaded); it spans only the selected period's x-range and stretches the y-axis to include the target.
 
 ## Change Index
 
@@ -314,3 +354,11 @@ Intake: one description → one proposal, then a refine loop (feedback → revis
 | Activate on go-live | `CapabilityWentLive` event, `RunnerCollectorProvider.onLive()` | |
 | Sensor install polling | `kpi.runner.sensor-poll-ms` (3000), `kpi.runner.sensor-install-timeout-ms` (600000) | |
 | RUNNER UI (contract / sensor / tests / fetch) | `kpi-list.js renderAutomateContract()`, `renderAutomateSensor()`, `renderAutomateTests()`, `renderAutomatePull()`, `ENV.ENDPOINTS.KPI_CAP_PULL` | job actions `contract`, `sensor` |
+| Goal type (TARGET / HIGHER / LOWER), legacy derivation | `GoalType.fromHigherIsBetter()`, `KPI.resolveGoalType()` | no migration; old docs derive on read |
+| Target create / validation | `KPIController.createKPI()` (`goalType`, `targetValue`, `targetDeadline`), `KPIService.createKPI()` / `validateTarget()` | deadline not in the past |
+| Target reset | `KPIService.updateTarget()`, `PUT /api/kpis/{name}/target` | baseline = latest reading, setAt = today; replaces old target |
+| Target baseline from first reading | `KPIService.saveKPIDataPoint()` | only while `target.baseline == null` |
+| Target progress / state math | `KPITargetStatus.of()`, `PACE_BAND` (0.10) | REACHED → MISSED → AHEAD/ON_TRACK/BEHIND |
+| Target fields in API | `KPIDTO.goalType/target/targetStatus`, `KPIService.convertToDTO()` / `latestValue()` | one extra query per TARGET KPI |
+| Dashboard target line / trend direction | `static/js/kpi-dashboard.js` `targetDataset()`, `resolveHigherIsBetter()`, `TARGET_LINE_COLOR`; `kpi-dashboard.html` `kpiMeta` fill + `upIsBetter()` | dashed constant dataset |
+| Target UI (create / list) | `static/kpi-create.html` goal choice, `static/kpi-list.html` state badge + next-target form | |

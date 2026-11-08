@@ -15,7 +15,19 @@ var currentPeriod     = (typeof currentPeriod     !== 'undefined') ? currentPeri
 var customRangeStart  = (typeof customRangeStart  !== 'undefined') ? customRangeStart  : null;
 var customRangeEnd    = (typeof customRangeEnd    !== 'undefined') ? customRangeEnd    : null;
 var charts            = (typeof charts            !== 'undefined') ? charts            : {};
-var kpiMeta           = (typeof kpiMeta           !== 'undefined') ? kpiMeta           : {}; // name → {higherIsBetter}
+var kpiMeta           = (typeof kpiMeta           !== 'undefined') ? kpiMeta           : {}; // name → {higherIsBetter, goalType, target, direction}
+
+var TARGET_LINE_COLOR = '#6c86f5'; // --color-accent (tokens.css); Chart.js needs a literal colour
+
+// TARGET KPIs: targetStatus.direction ("up" = higher better) wins over higherIsBetter when known.
+function resolveHigherIsBetter(kpiName, data) {
+    const meta = kpiMeta[kpiName];
+    if (meta) {
+        if (meta.goalType === 'TARGET' && meta.direction) return meta.direction === 'up';
+        if (meta.higherIsBetter != null) return meta.higherIsBetter;
+    }
+    return data[0] && data[0].higherIsBetter != null ? data[0].higherIsBetter : true;
+}
 
 function initializeDashboard() {
     loadAllCharts();
@@ -89,7 +101,7 @@ function renderChart(kpiName, data) {
     const emaValues = data.map(d => d.exponentialMovingAverage);
     
     // Determine colors based on trend
-    const higherIsBetter = kpiMeta[kpiName] != null ? kpiMeta[kpiName].higherIsBetter : (data[0] ? data[0].higherIsBetter : true);
+    const higherIsBetter = resolveHigherIsBetter(kpiName, data);
     const borderColors = data.map(d => getTrendColor(d, higherIsBetter));
     
     // Shift colors so that each segment uses the destination point's color
@@ -135,7 +147,7 @@ function renderChart(kpiName, data) {
                     pointRadius: 2,
                     pointHoverRadius: 4
                 }
-            ]
+            ].concat(targetDataset(kpiName, labels.length))
         },
         options: {
             responsive: true,
@@ -174,6 +186,8 @@ function renderChart(kpiName, data) {
                             if (context.datasetIndex === 0) {
                                 const autoFilled = dataPoint.autoFilled ? ' — auto-filled' : '';
                                 return `Value: ${context.parsed.y.toFixed(2)} (${getTrendText(dataPoint)})${autoFilled}`;
+                            } else if (context.dataset.isTarget) {
+                                return `Target: ${context.parsed.y.toFixed(2)}`;
                             } else {
                                 return `Trend: ${context.parsed.y.toFixed(2)}`;
                             }
@@ -190,6 +204,25 @@ function renderChart(kpiName, data) {
     };
     
     charts[kpiName] = new Chart(ctx, config);
+}
+
+// Dashed horizontal line at target.value (TARGET KPIs only): a constant extra dataset, no annotation plugin.
+function targetDataset(kpiName, pointCount) {
+    const meta = kpiMeta[kpiName];
+    if (!meta || meta.goalType !== 'TARGET' || !meta.target || meta.target.value == null || pointCount === 0) return [];
+    return [{
+        label: 'Target',
+        isTarget: true,
+        data: new Array(pointCount).fill(meta.target.value),
+        borderColor: TARGET_LINE_COLOR,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [8, 6],
+        fill: false,
+        tension: 0,
+        pointRadius: 0,
+        pointHoverRadius: 0
+    }];
 }
 
 function updateKPIStats(kpiName, data) {
@@ -216,7 +249,7 @@ function updateKPIStats(kpiName, data) {
     if (trendElement) {
         const trendText = getTrendText(latest);
         trendElement.textContent = trendText;
-        const hib = kpiMeta[kpiName] != null ? kpiMeta[kpiName].higherIsBetter : (data[0] ? data[0].higherIsBetter : true);
+        const hib = resolveHigherIsBetter(kpiName, data);
         trendElement.className = `trend-badge ${getTrendClass(latest, hib)}`;
     }
 }

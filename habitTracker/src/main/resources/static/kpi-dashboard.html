@@ -146,12 +146,24 @@
       if (typeof setCustomRange === 'function') setCustomRange(start, end);
     }
 
+    function upIsBetter(kpi) {
+      if (kpi.goalType === 'TARGET' && kpi.targetStatus && kpi.targetStatus.direction) return kpi.targetStatus.direction === 'up';
+      return !!kpi.higherIsBetter;
+    }
+
     async function init() {
       if (!(await checkAuth())) return;
       initTopbar('/kpis/dashboard');
 
       kpis = await fetch('/api/kpis/dashboard', { credentials: 'include' }).then(r => r.json());
-      kpis.forEach(k => { kpiMeta[k.name] = { higherIsBetter: k.higherIsBetter }; });
+      kpis.forEach(k => {
+        kpiMeta[k.name] = {
+          higherIsBetter: k.higherIsBetter,
+          goalType: k.goalType,
+          target: k.target || null,
+          direction: k.targetStatus ? k.targetStatus.direction : null
+        };
+      });
       const container = document.getElementById('dashboard-container');
 
       if (!kpis || kpis.length === 0) {
@@ -172,7 +184,7 @@
           <div class="chart-header">
             <h3 class="chart-title">${kpi.name}</h3>
             <div class="chart-meta">
-              <span class="direction-indicator ${kpi.higherIsBetter ? 'up' : 'down'}">${kpi.higherIsBetter ? '↑' : '↓'}</span>
+              <span class="direction-indicator ${upIsBetter(kpi) ? 'up' : 'down'}">${upIsBetter(kpi) ? '↑' : '↓'}</span>
               <span class="trend-badge neutral" id="trend-${kpi.name}">Loading…</span>
             </div>
           </div>
