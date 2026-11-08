@@ -20,7 +20,8 @@ window.Planner = (() => {
   const api = () => (ENV.FEATURES.PLANNER_MOCK && window.PlannerMock ? window.PlannerMock : Real);
   // Server error codes → readable text (Api uses the {error} code as the message).
   const ERR_TEXT = { project_not_linked: 'Link a folder to this board first.', planner_busy: 'The AI is still working on the last message.',
-    runner_not_found: 'The linked runner was removed. Link the folder again.', runner_timeout: "Runner didn't answer. Try again." };
+    runner_not_found: 'The linked runner was removed. Link the folder again.', runner_timeout: "Runner didn't answer. Try again.",
+    usage_exhausted: 'Your Claude usage is exhausted. Try again once it resets.' };
   const errText = (e) => ERR_TEXT[e.code] || e.message;
   const isOffline = (e) => !!e && (e.status === 409 || e.status === 503) && e.code === 'runner_offline';
 

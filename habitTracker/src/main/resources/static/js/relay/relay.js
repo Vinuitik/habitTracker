@@ -51,6 +51,9 @@ window.Relay = (() => {
     },
   };
 
+  // Claude CLI "subscription used up" wording (mirror of relay/UsageLimit.PHRASES); generic "rate limit" excluded on purpose.
+  const USAGE_RE = /usage limit|hit your (usage )?limit|limit reached|out of (extra )?usage|credit balance is too low|rate_limit_error|usage[ _-]?exhausted|quota (exceeded|exhausted)/i;
+
   // Api.raw + hub status mapping. 401 = 2FA expired (or logged out) → verify, then come back here.
   async function call(url, method, body) {
     try {
@@ -59,7 +62,8 @@ window.Relay = (() => {
       if (e.status === 401) {
         location.href = ENV.ROUTES.TWOFA_VERIFY + '?next=' + enc(location.pathname + location.hash);
         e.message = 'Two-factor check expired — redirecting…';
-      } else if (e.status === 503) e.message = 'Device offline (machine asleep?)';
+      } else if (USAGE_RE.test(e.message || '')) e.message = 'Your Claude usage is exhausted. Try again once it resets.';
+      else if (e.status === 503) e.message = 'Device offline (machine asleep?)';
       else if (e.status === 504) e.message = "Device didn't answer";
       else if (!e.status) e.message = 'Network error — HabitTracker unreachable';
       throw e;

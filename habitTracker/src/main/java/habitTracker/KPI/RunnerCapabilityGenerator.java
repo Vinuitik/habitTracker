@@ -5,6 +5,7 @@ import habitTracker.aiusage.AiUsage;
 import habitTracker.aiusage.AiUsageService;
 import habitTracker.relay.OnlineRunnerSelector;
 import habitTracker.relay.RunnerCallException;
+import habitTracker.relay.UsageLimit;
 import habitTracker.relay.RunnerJobService;
 import habitTracker.relay.RunnerUnavailableException;
 import org.slf4j.Logger;
@@ -116,7 +117,10 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
             if (!"running".equals(state) && !"queued".equals(state)) CapabilityProgress.usage(snap.get("usage"));
             if ("done".equals(state)) return snap.get("result");
             if (!"running".equals(state) && !"queued".equals(state) && !state.isEmpty()) {
-                String err = snap.path("error").asText("");
+                java.util.Optional<String> limit = UsageLimit.message(snap);
+                if (limit.isPresent()) throw new CapabilityGeneratorException(limit.get(), false, null);
+                // isTextual: a JSON null error must not render as the word "null".
+                String err = snap.path("error").isTextual() ? snap.path("error").asText() : "";
                 throw new CapabilityGeneratorException("The AI on your runner stopped (" + state + ")"
                         + (err.isBlank() ? "" : ": " + truncate(err)) + ". Check the runner, then try again", false, null);
             }
@@ -157,6 +161,8 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
     }
 
     private static CapabilityGeneratorException fromCall(RunnerCallException e) {
+        java.util.Optional<String> limit = UsageLimit.message(e.getBody());
+        if (limit.isPresent()) return new CapabilityGeneratorException(limit.get(), false, e);
         boolean busy = e.getStatus() == 409 || e.getStatus() == 429;
         // The body is runner JSON: logged, never shown to the user.
         if (!busy) log.warn("runner call failed: {} {}", e.getStatus(), truncate(e.getBody()));

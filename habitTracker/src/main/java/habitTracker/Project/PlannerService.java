@@ -6,6 +6,7 @@ import habitTracker.auth.SecurityUtils;
 import habitTracker.integrations.trello.TrelloApiClient;
 import habitTracker.integrations.trello.TrelloGatewayException;
 import habitTracker.relay.RunnerCallException;
+import habitTracker.relay.UsageLimit;
 import habitTracker.aiusage.AiUsageService;
 import habitTracker.relay.RunnerJobService;
 import jakarta.annotation.PostConstruct;
@@ -173,7 +174,8 @@ public class PlannerService {
                 storeResult(c, jobId, snap.get("result"));
                 c = conversations.findById(c.getId()).orElse(c);
             } else if (isFailed(state)) {
-                String err = snap.path("error").isTextual() ? snap.path("error").asText() : "planner job " + state;
+                String err = UsageLimit.message(snap).orElse(
+                        snap.path("error").isTextual() ? snap.path("error").asText() : "planner job " + state);
                 storeFailure(c, jobId, err);
                 c = conversations.findById(c.getId()).orElse(c);
             }

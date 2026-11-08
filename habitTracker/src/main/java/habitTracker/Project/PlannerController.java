@@ -5,6 +5,7 @@ import habitTracker.integrations.trello.TrelloAuthException;
 import habitTracker.integrations.trello.TrelloGatewayException;
 import habitTracker.integrations.trello.TrelloNotConnectedException;
 import habitTracker.relay.RunnerCallException;
+import habitTracker.relay.UsageLimit;
 import habitTracker.relay.RunnerUnavailableException;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -88,6 +89,10 @@ public class PlannerController {
     @ExceptionHandler(RunnerCallException.class)
     ResponseEntity<Map<String, Object>> runnerError(RunnerCallException e) {
         log.warn("Runner call failed: status {} body {}", e.getStatus(), abbreviate(e.getBody()));
+        if (UsageLimit.matches(e.getBody())) {
+            return ResponseEntity.status(429).body(Map.of("error", UsageLimit.CODE,
+                    "message", UsageLimit.message(e.getBody()).orElse(UsageLimit.MESSAGE)));
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", "runner_error");
         body.put("runnerStatus", e.getStatus());
