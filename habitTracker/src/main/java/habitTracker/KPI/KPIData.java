@@ -48,4 +48,9 @@ public class KPIData {
     // Null on every pre-S1 document.
     private String flag;
     private String flagReason;
+
+    // Multi-device KPIs: devices that contributed to this day's combined value vs devices expected.
+    // Null for single-device / manual points. Partial day = reported < expected.
+    private Integer devicesReported;
+    private Integer devicesExpected;
 }
