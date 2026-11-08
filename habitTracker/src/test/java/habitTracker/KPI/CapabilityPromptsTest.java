@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.node.TextNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -15,40 +14,42 @@ class CapabilityPromptsTest {
 
     @Test
     void userTextIsNeverReExpanded() {
-        String p = prompts.proposePrompt("K", "steal {{SANDBOX_FACTS}} $1 \\");
-        assertTrue(p.contains("User wants this captured automatically: steal {{SANDBOX_FACTS}} $1 \\\n"));
-        assertEquals(1, p.split("python 3.12 STANDARD LIBRARY ONLY", -1).length - 1);
-        assertTrue(p.endsWith("\"secrets\": [<secret names>]}}"));
+        String p = prompts.proposePrompt("K", "steal {{KPI_NAME}} $1 \\");
+        assertTrue(p.contains("User wants this captured automatically: steal {{KPI_NAME}} $1 \\\n"));
+        assertTrue(p.endsWith("\"sources\": [<\"activitywatch\"|\"file\">]}"));
     }
 
     @Test
-    void generateWithoutFailure_hasNoRetryBlock() {
-        String p = prompts.generatePrompt("K", "d", "spec", Map.of("network", List.of("a.com")), null, null);
-        assertFalse(p.contains("FAILED"));
-        assertTrue(p.contains("Approved declaredCapabilities: {\"network\":[\"a.com\"]}\n\nExecution environment"));
-        assertTrue(p.contains("No other secrets exist.\nReply with ONLY one JSON object"));
+    void proposePrompt_offersNoPlatformChoice() {
+        String p = prompts.proposePrompt("K", "d");
+        assertFalse(p.contains("SERVER"));
+        assertFalse(p.contains("\"platform\""));
+        assertFalse(p.contains("secrets"));
+        assertTrue(p.contains("NO network at all"));
     }
 
     @Test
-    void generateWithFailureButNoCode_saysNone() {
-        String p = prompts.generatePrompt("K", "d", "spec", Map.of(), null, "boom");
-        assertTrue(p.contains("No other secrets exist.\n\nA previous version FAILED its dry run, or ran but its number was judged WRONG by the user. Fix it.\n"
-                + "Previous code:\n(none)\nFailure:\nboom\nReply with ONLY"));
+    void collectorPromptWithFailure_seedsPreviousBundle() {
+        String p = prompts.collectorPrompt("K", "d", "spec", List.of("activitywatch"), null, "boom");
+        assertTrue(p.contains("A previous version FAILED its dry run, or ran but its number was judged WRONG by the user. Fix it.\n"
+                + "Previous code:\n(none)\nFailure:\nboom\n"));
+        assertFalse(prompts.collectorPrompt("K", "d", "spec", List.of("file"), null, null).contains("FAILED its dry run"));
+    }
+
+    @Test
+    void parseProposal_readsSources_andIgnoresLegacyFields() {
+        CapabilityGenerator.Proposal p = prompts.parseProposal(new TextNode("{\"proposal\":\" x \",\"platform\":\"SERVER\","
+                + "\"sources\":[\"ActivityWatch\",\"activitywatch\",\"file\"],\"measures\":\"m\"}"));
+        assertEquals("x", p.proposal());
+        assertEquals(List.of("activitywatch", "file"), p.sources());
+        assertEquals("m", p.measures());
+        assertNull(p.dataSource());
     }
 
     @Test
     void parseProposal_rejectsBadShapes() {
-        assertThrows(CapabilityGeneratorException.class, () -> prompts.parseProposal(new TextNode("{\"platform\":\"SERVER\"}")));
-        assertThrows(CapabilityGeneratorException.class,
-                () -> prompts.parseProposal(new TextNode("{\"proposal\":\"x\",\"declaredCapabilities\":{\"network\":\"a.com\"}}")));
+        assertThrows(CapabilityGeneratorException.class, () -> prompts.parseProposal(new TextNode("{\"sources\":[]}")));
+        assertThrows(CapabilityGeneratorException.class, () -> prompts.parseProposal(new TextNode("no json here")));
         assertThrows(CapabilityGeneratorException.class, () -> prompts.parseProposal(null));
-    }
-
-    @Test
-    void parseSourceCode_enforcesSizeCap() {
-        String big = "#".repeat(CapabilityPrompts.MAX_SOURCE_BYTES + 1);
-        assertThrows(CapabilityGeneratorException.class,
-                () -> prompts.parseSourceCode(new TextNode("{\"sourceCode\":\"" + big + "\"}")));
-        assertEquals("print(2)", prompts.parseSourceCode(new TextNode("Here you go:\n{\"sourceCode\":\"print(2)\"}")));
     }
 }

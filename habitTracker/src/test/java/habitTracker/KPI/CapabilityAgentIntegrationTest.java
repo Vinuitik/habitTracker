@@ -8,7 +8,6 @@ import habitTracker.auth.User;
 import habitTracker.auth.UserPrincipal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,14 +22,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,10 +37,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * M8: intake -> proposal -> approve -> generate -> sandbox test gate -> ACTIVE, over the real
- * controller + service + Mongo. The LLM (CapabilityGenerator) and the sandbox sidecar
- * (SandboxClient) are mocked; no CLI or docker is involved. Also covers failure/retry cap,
- * ungrantable-host rejection, M12 repair, and cross-user isolation.
+ * M8 agent loop over the real controller + CapabilityAgentService + CapabilityLifecycleService + Mongo:
+ * intake -> proposal (runner-only, no platform choice) -> approve -> build/test gate -> confirm -> SHADOW -> ACTIVE.
+ * The LLM (CapabilityGenerator) and the runner build (RunnerCollectorPipeline.attempt) are mocked; the pipeline
+ * itself is covered end to end by RunnerCollectorIntegrationTest. Also covers source rejection, the attempt cap,
+ * M12 repair and cross-user isolation.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -53,7 +53,7 @@ class CapabilityAgentIntegrationTest {
     static MongoDBContainer mongo = new MongoDBContainer("mongo:7");
 
     @MockitoBean CapabilityGenerator generator;
-    @MockitoBean SandboxClient sandboxClient;
+    @MockitoBean RunnerCollectorPipeline pipeline;
 
     @Autowired MockMvc mockMvc;
     @Autowired MongoTemplate mongoTemplate;
@@ -61,13 +61,16 @@ class CapabilityAgentIntegrationTest {
     @Autowired KPIRepository kpiRepository;
     @Autowired KPIProxyCapabilityRepository capabilityRepository;
     @Autowired CapabilityAgentService service;
+    @Autowired CapabilityLifecycleService lifecycle;
     final ObjectMapper mapper = new ObjectMapper();
 
     AuthTestHelper auth;
     UserPrincipal alice;
     UserPrincipal bob;
+    /** failureReason of the capability at the moment each build attempt started (the prompt feedback). */
+    final List<String> attemptFeedback = new ArrayList<>();
 
-    static final Map<String, List<String>> NO_ACCESS = Map.of("network", List.of(), "secrets", List.of());
+    static final List<String> AW = List.of("activitywatch");
 
     @BeforeEach
     void setUp() {
@@ -75,7 +78,8 @@ class CapabilityAgentIntegrationTest {
         mongoTemplate.dropCollection(KPI.class);
         mongoTemplate.dropCollection(KPIProxyCapability.class);
         mongoTemplate.dropCollection(User.class);
-        reset(generator, sandboxClient);
+        reset(generator, pipeline);
+        attemptFeedback.clear();
         alice = auth.register("alice@example.com");
         bob = auth.register("bob@example.com");
     }
@@ -86,17 +90,31 @@ class CapabilityAgentIntegrationTest {
         return kpiRepository.save(KPI.builder().name(name).userId(u.getId()).active(true).higherIsBetter(true).build());
     }
 
-    private static SandboxClient.Result ok(String stdout) {
-        return new SandboxClient.Result(SandboxClient.Outcome.OK, 0, stdout, "");
-    }
-
-    private static SandboxClient.Result nonZero(String stderr) {
-        return new SandboxClient.Result(SandboxClient.Outcome.NONZERO_EXIT, 1, "", stderr);
-    }
-
-    private void generatorProposes(Map<String, List<String>> declared) {
+    private void generatorProposes(List<String> sources) {
         when(generator.propose(anyString(), anyString(), anyString()))
-                .thenReturn(new CapabilityGenerator.Proposal("Count the things", "SERVER", declared));
+                .thenReturn(new CapabilityGenerator.Proposal("Count the things", sources));
+    }
+
+    /** One runner build+test outcome per call: a CapabilityOutput passes the gate, a String fails it with that reason. */
+    private void builds(Object... outcomes) {
+        List<Object> queue = new ArrayList<>(List.of(outcomes));
+        doAnswer(inv -> {
+            KPIProxyCapability cap = inv.getArgument(0);
+            KPI k = inv.getArgument(1);
+            attemptFeedback.add(cap.getFailureReason());
+            Object o = queue.size() > 1 ? queue.remove(0) : queue.get(0);
+            cap.setAttempts((cap.getAttempts() == null ? 0 : cap.getAttempts()) + 1);
+            if (o instanceof CapabilityOutput out) {
+                return lifecycle.testGatePassed(cap, k, out, LocalDate.now().minusDays(1), Boolean.TRUE.equals(cap.getRepair()));
+            }
+            cap.setStatus(CapabilityStatus.TEST_FAILED);
+            cap.setFailureReason("Fixture test failed: " + o);
+            return capabilityRepository.save(cap);
+        }).when(pipeline).attempt(any(), any(), anyInt());
+    }
+
+    private static CapabilityOutput value(double v) {
+        return new CapabilityOutput(v, null, List.of());
     }
 
     private JsonNode call(RequestPostProcessor user, String method, String path, String body, int expected) throws Exception {
@@ -131,15 +149,15 @@ class CapabilityAgentIntegrationTest {
     void asyncJobs_proposeThenApprove_streamStepsAndReturnParsedCapability() throws Exception {
         kpi(alice, "Widgets");
         when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
-                "Count the things", "SERVER", NO_ACCESS, "Widgets made per day", "Computed locally"));
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(5)");
-        when(sandboxClient.run(any())).thenReturn(ok("5\n"));
+                "Count the things", "Widgets made per day", "Computed locally", AW));
+        builds(value(5));
 
         String jobId = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/jobs",
                 "{\"action\":\"propose\",\"description\":\"count my widgets\"}", 202).get("jobId").asText();
         JsonNode done = waitJob(alice, "Widgets", jobId);
         assertEquals("done", done.get("state").asText());
         assertEquals("PROPOSED", done.at("/result/status").asText());
+        assertEquals("RUNNER", done.at("/result/platform").asText());
         assertEquals("Widgets made per day", done.at("/result/measures").asText());
         assertEquals("Drafting a plan on your runner", done.at("/events/0/text").asText());
         assertEquals("step", done.at("/events/0/kind").asText());
@@ -151,26 +169,24 @@ class CapabilityAgentIntegrationTest {
                 "{\"action\":\"approve\",\"id\":\"" + capId + "\"}", 202).get("jobId").asText();
         JsonNode approved = waitJob(alice, "Widgets", approveJob);
         assertEquals("AWAITING_CONFIRM", approved.at("/result/status").asText());
-        assertEquals(2, approved.get("events").size()); // writing + testing
         call(auth.session(alice), "GET", "/api/kpis/Widgets/capability/jobs/active", null, 204);
     }
 
     // ── S1 confirm gate / shadow ─────────────────────────────────────────────
 
-    private String builtAwaitingConfirm(String stdout) throws Exception {
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
-        when(sandboxClient.run(any())).thenReturn(ok(stdout));
+    private String builtAwaitingConfirm(CapabilityOutput out) throws Exception {
+        generatorProposes(AW);
+        builds(out);
         String id = propose(alice, "Widgets", 200).get("id").asText();
         assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "approve", 200).get("status").asText());
         return id;
     }
 
     @Test
-    void jsonOutput_storesSampleAndEvidence_forTheConfirmScreen() throws Exception {
+    void sampleAndEvidence_areStoredForTheConfirmScreen() throws Exception {
         kpi(alice, "Widgets");
-        String id = builtAwaitingConfirm("{\"value\": 47, \"unit\": \"min\", \"evidence\": [{\"label\": \"YouTube\", \"value\": \"40 min\"},"
-                + " {\"label\": \"Docs\", \"value\": \"7 min\"}]}\n");
+        String id = builtAwaitingConfirm(new CapabilityOutput(47, "min", List.of(
+                new CapabilityOutput.Row("YouTube", "40 min"), new CapabilityOutput.Row("Docs", "7 min"))));
         JsonNode cap = call(auth.session(alice), "GET", "/api/kpis/Widgets/capability", null, 200);
         assertEquals("47 min", cap.get("sampleText").asText());
         assertEquals(LocalDate.now().minusDays(1).toString(), cap.get("sampleDate").asText());
@@ -181,11 +197,10 @@ class CapabilityAgentIntegrationTest {
     }
 
     @Test
-    void wrong_feedsReasonIntoNextGeneration_andComesBackForConfirmation() throws Exception {
+    void wrong_feedsReasonIntoNextBuild_andComesBackForConfirmation() throws Exception {
         kpi(alice, "Widgets");
-        String id = builtAwaitingConfirm("{\"value\": 47, \"unit\": \"min\"}");
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(2)");
-        when(sandboxClient.run(any())).thenReturn(ok("{\"value\": 120, \"unit\": \"min\"}"));
+        String id = builtAwaitingConfirm(new CapabilityOutput(47, "min", List.of()));
+        builds(new CapabilityOutput(120, "min", List.of()));
 
         JsonNode res = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong",
                 "{\"reason\":\"Shorts were not counted\"}", 200);
@@ -193,16 +208,15 @@ class CapabilityAgentIntegrationTest {
         assertEquals("AWAITING_CONFIRM", res.get("status").asText());
         assertEquals("120 min", res.get("sampleText").asText());
         assertEquals(1, res.get("confirmRounds").asInt());
-        ArgumentCaptor<String> previousError = ArgumentCaptor.forClass(String.class);
-        verify(generator).generate(any(), any(), any(), any(), any(), eq("print(1)"), previousError.capture());
-        assertTrue(previousError.getValue().contains("Shorts were not counted"));
-        assertTrue(previousError.getValue().contains("47 min"));
+        String feedback = attemptFeedback.get(attemptFeedback.size() - 1);
+        assertTrue(feedback.contains("Shorts were not counted"), feedback);
+        assertTrue(feedback.contains("47 min"), feedback);
     }
 
     @Test
     void wrong_thirdTime_failsWithClearSentence_andNothingIsWired() throws Exception {
         KPI k = kpi(alice, "Widgets");
-        String id = builtAwaitingConfirm("5");
+        String id = builtAwaitingConfirm(value(5));
         for (int round = 1; round < CapabilityAgentService.MAX_CONFIRM_ROUNDS; round++) {
             assertEquals("AWAITING_CONFIRM", call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong",
                     "{\"reason\":\"nope\"}", 200).get("status").asText());
@@ -217,19 +231,17 @@ class CapabilityAgentIntegrationTest {
     @Test
     void wrong_needsAReason_andOnlyWhenAwaitingConfirm() throws Exception {
         kpi(alice, "Widgets");
-        String id = builtAwaitingConfirm("5");
+        String id = builtAwaitingConfirm(value(5));
         call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong", "{\"reason\":\" \"}", 400);
         act(alice, "Widgets", id, "confirm", 200);
         call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/" + id + "/wrong", "{\"reason\":\"x\"}", 409);
         act(alice, "Widgets", id, "confirm", 409); // already SHADOW
     }
 
-    @Autowired CapabilityLifecycleService lifecycle;
-
     @Test
     void shadow_becomesActive_afterShadowDays_andNotBefore() throws Exception {
         kpi(alice, "Widgets");
-        String id = builtAwaitingConfirm("5");
+        String id = builtAwaitingConfirm(value(5));
         act(alice, "Widgets", id, "confirm", 200);
         KPIProxyCapability shadow = capabilityRepository.findById(id).orElseThrow();
         assertEquals(CapabilityStatus.SHADOW, shadow.getStatus());
@@ -269,86 +281,63 @@ class CapabilityAgentIntegrationTest {
     // ── happy path ───────────────────────────────────────────────────────────
 
     @Test
-    void fullFlow_proposeApproveGenerateTestGate_becomesActiveAndWiresKpi() throws Exception {
+    void fullFlow_proposeApproveBuild_confirm_wiresKpiToTheRunnerCollector() throws Exception {
         KPI k = kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), eq("Widgets"), anyString(), anyString(), any(), isNull(), isNull())).thenReturn("print(5)");
-        when(sandboxClient.run(any())).thenReturn(ok("noise\n5\n"));
+        generatorProposes(AW);
+        builds(value(5));
 
         JsonNode proposed = propose(alice, "Widgets", 200);
         assertEquals("PROPOSED", proposed.get("status").asText());
+        assertEquals("RUNNER", proposed.get("platform").asText());
         assertEquals("Count the things", proposed.get("proposal").asText());
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
-        verifyNoInteractions(sandboxClient);
+        assertEquals("activitywatch", proposed.at("/declaredCapabilities/sources/0").asText());
+        verifyNoInteractions(pipeline);
         assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType(), "not wired before approval");
 
         JsonNode approved = act(alice, "Widgets", proposed.get("id").asText(), "approve", 200);
         assertEquals("AWAITING_CONFIRM", approved.get("status").asText());
         assertEquals(5.0, approved.get("sampleValue").asDouble());
-        assertEquals("print(5)", approved.get("sourceCode").asText());
         assertEquals(1, approved.get("attempts").asInt());
-
-        ArgumentCaptor<SandboxClient.Request> req = ArgumentCaptor.forClass(SandboxClient.Request.class);
-        verify(sandboxClient).run(req.capture());
-        assertEquals(alice.getId(), req.getValue().userId());
-        assertTrue(req.getValue().sourceCode().startsWith("TARGET_DATE = \"" + LocalDate.now().minusDays(1) + "\""));
-        assertTrue(req.getValue().sourceCode().endsWith("print(5)"));
 
         assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType(), "not wired before the user confirms");
         assertEquals("SHADOW", act(alice, "Widgets", proposed.get("id").asText(), "confirm", 200).get("status").asText());
         KPI after = kpiRepository.findById(k.getId()).orElseThrow();
-        assertEquals(ProxyType.SANDBOX_CAPABILITY, after.getProxyType());
+        assertEquals(ProxyType.RUNNER_COLLECTOR, after.getProxyType());
         assertEquals(ProxyStatus.ACTIVE, after.getProxyStatus());
         assertEquals("SHADOW", call(auth.session(alice), "GET", "/api/kpis/Widgets/capability", null, 200).get("status").asText());
     }
 
-    // ── enforcement: what the sandbox cannot grant ───────────────────────────
+    // ── enforcement: only what a runner collector can read ───────────────────
 
     @Test
-    void proposalWithUngrantableHostsOrSecretNames_isRejectedBeforeAnythingIsStoredOrGenerated() throws Exception {
+    void proposalWithNoLocalSource_isRejectedBeforeAnythingIsStoredOrBuilt() throws Exception {
         kpi(alice, "Widgets");
-        for (String host : List.of("127.0.0.1", "localhost", "javaapp", "mongodbHabit", "egress-proxy", "x.internal",
-                "*.example.com", "api.example.com:8080", "10.0.0.5", "foo.local")) {
-            generatorProposes(Map.of("network", List.of(host), "secrets", List.of()));
-            JsonNode err = propose(alice, "Widgets", 422);
-            assertTrue(err.get("error").asText().contains("cannot be granted"), host + " -> " + err);
-        }
-        for (String secret : List.of("HTTPS_PROXY", "PATH", "bad name", "1ABC", "PYTHONPATH")) {
-            generatorProposes(Map.of("network", List.of(), "secrets", List.of(secret)));
+        generatorProposes(List.of());
+        JsonNode err = propose(alice, "Widgets", 422);
+        assertTrue(err.get("error").asText().contains("can't be captured yet"), err.toString());
+
+        for (List<String> bad : List.of(List.of("http"), List.of("activitywatch", "network"))) {
+            generatorProposes(bad);
             propose(alice, "Widgets", 422);
         }
-
         assertEquals(0, capabilityRepository.count());
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
-        verifyNoInteractions(sandboxClient);
+        verifyNoInteractions(pipeline);
     }
 
     @Test
-    void nonServerPlatformProposal_isRejected() throws Exception {
-        kpi(alice, "Widgets");
-        when(generator.propose(anyString(), anyString(), anyString()))
-                .thenReturn(new CapabilityGenerator.Proposal("Read steps", "ANDROID", NO_ACCESS));
-        propose(alice, "Widgets", 422);
-        assertEquals(0, capabilityRepository.count());
-    }
-
-    @Test
-    void scriptNeedingNetwork_failsTheTestGate_inTheSandboxPath() throws Exception {
-        // The proposal lied (declared nothing) but the script reaches for the network. The sandbox is
-        // --network none (verified for real in sandbox/real_run_check.py), so the dry run fails
-        // and the capability never goes live.
+    void retiredServerCapability_cannotBeApprovedOrRegenerated_andANewProposalStartsOver() throws Exception {
         KPI k = kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn("import urllib.request\nprint(urllib.request.urlopen('https://api.example.com').read())");
-        when(sandboxClient.run(any())).thenReturn(nonZero("URLError: <urlopen error [Errno -3] Temporary failure in name resolution>"));
+        KPIProxyCapability retired = capabilityRepository.save(KPIProxyCapability.builder().userId(alice.getId())
+                .kpiId(k.getId()).platform(null).status(CapabilityStatus.RETIRED).version(1).build());
+        act(alice, "Widgets", retired.getId(), "approve", 409);
+        act(alice, "Widgets", retired.getId(), "regenerate", 409);
+        assertEquals("RETIRED", call(auth.session(alice), "GET", "/api/kpis/Widgets/capability", null, 200).get("status").asText());
 
-        String id = propose(alice, "Widgets", 200).get("id").asText();
-        JsonNode res = act(alice, "Widgets", id, "approve", 200);
-
-        assertEquals("TEST_FAILED", res.get("status").asText());
-        assertTrue(res.get("failureReason").asText().contains("name resolution"), res.toString());
-        assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType());
+        generatorProposes(AW);
+        JsonNode fresh = propose(alice, "Widgets", 200);
+        assertEquals(2, fresh.get("version").asInt());
+        assertEquals("RUNNER", fresh.get("platform").asText());
+        verifyNoInteractions(pipeline);
     }
 
     // ── test gate failure + retry cap ────────────────────────────────────────
@@ -356,55 +345,35 @@ class CapabilityAgentIntegrationTest {
     @Test
     void failedGate_storesVisibleReason_regenerateFeedsErrorBack_andCapsAttempts() throws Exception {
         KPI k = kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("raise SystemExit(1)");
-        when(sandboxClient.run(any())).thenReturn(nonZero("Traceback: boom"));
+        generatorProposes(AW);
+        builds("busy-day expected 47 got 12");
 
         String id = propose(alice, "Widgets", 200).get("id").asText();
         JsonNode first = act(alice, "Widgets", id, "approve", 200);
         assertEquals("TEST_FAILED", first.get("status").asText());
-        assertTrue(first.get("failureReason").asText().contains("boom"));
+        assertTrue(first.get("failureReason").asText().contains("got 12"));
         assertEquals("TEST_FAILED", call(auth.session(alice), "GET", "/api/kpis/Widgets/capability", null, 200).get("status").asText());
 
         JsonNode second = act(alice, "Widgets", id, "regenerate", 200);
         assertEquals(2, second.get("attempts").asInt());
-        verify(generator).generate(any(), eq("Widgets"), anyString(), anyString(), any(),
-                eq("raise SystemExit(1)"), org.mockito.ArgumentMatchers.contains("boom"));
+        assertTrue(attemptFeedback.get(1).contains("got 12"), "the failure is fed into the next build");
 
         JsonNode third = act(alice, "Widgets", id, "regenerate", 200);
         assertEquals(3, third.get("attempts").asInt());
         act(alice, "Widgets", id, "regenerate", 409); // cap reached
-        verify(generator, times(3)).generate(any(), any(), any(), any(), any(), any(), any());
+        verify(pipeline, times(3)).attempt(any(), any(), anyInt());
         assertEquals(ProxyType.NONE, kpiRepository.findById(k.getId()).orElseThrow().getProxyType());
     }
 
     @Test
-    void regenerateThatPasses_goesActive() throws Exception {
+    void regenerateThatPasses_comesBackForConfirmation() throws Exception {
         kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print('x')", "print(2)");
-        when(sandboxClient.run(any())).thenReturn(ok("not a number"), ok("2"));
+        generatorProposes(AW);
+        builds("not a number", value(2));
 
         String id = propose(alice, "Widgets", 200).get("id").asText();
-        JsonNode first = act(alice, "Widgets", id, "approve", 200);
-        assertEquals("TEST_FAILED", first.get("status").asText());
-        assertTrue(first.get("failureReason").asText().contains("not a number"));
+        assertEquals("TEST_FAILED", act(alice, "Widgets", id, "approve", 200).get("status").asText());
         assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "regenerate", 200).get("status").asText());
-    }
-
-    @Test
-    void generatorOutage_isFailureWithReason_notCountedAsAttempt() throws Exception {
-        kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any()))
-                .thenThrow(new CapabilityGeneratorException("Generator upstream 502: auth expired", false, null));
-
-        String id = propose(alice, "Widgets", 200).get("id").asText();
-        JsonNode res = act(alice, "Widgets", id, "approve", 200);
-        assertEquals("TEST_FAILED", res.get("status").asText());
-        assertEquals(0, res.get("attempts").asInt());
-        assertTrue(res.get("failureReason").asText().contains("auth expired"));
-        verifyNoInteractions(sandboxClient);
     }
 
     @Test
@@ -423,72 +392,53 @@ class CapabilityAgentIntegrationTest {
     }
 
     @Test
-    void approveWithNoRunnerOnline_failsWithoutCountingAnAttempt_thenRegenerates() throws Exception {
-        kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any()))
-                .thenThrow(CapabilityGeneratorException.noRunner(null)).thenReturn("print(4)");
-        when(sandboxClient.run(any())).thenReturn(ok("4\n"));
-        String id = propose(alice, "Widgets", 200).get("id").asText();
-
-        JsonNode failed = act(alice, "Widgets", id, "approve", 200);
-        assertEquals("TEST_FAILED", failed.get("status").asText());
-        assertEquals("Code generation failed: " + CapabilityGeneratorException.NO_RUNNER_MESSAGE,
-                failed.get("failureReason").asText());
-        assertEquals(0, capabilityRepository.findById(id).orElseThrow().getAttempts() == null ? 0
-                : capabilityRepository.findById(id).orElseThrow().getAttempts());
-
-        assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "regenerate", 200).get("status").asText());
-    }
-
-    @Test
     void rejectedProposal_cannotBeApproved() throws Exception {
         kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
+        generatorProposes(AW);
         String id = propose(alice, "Widgets", 200).get("id").asText();
         assertEquals("REJECTED", act(alice, "Widgets", id, "reject", 200).get("status").asText());
         act(alice, "Widgets", id, "approve", 409);
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
+        verify(pipeline, never()).attempt(any(), any(), anyInt());
     }
 
     // ── M12 repair ───────────────────────────────────────────────────────────
 
     private KPI brokenActiveKpi(UserPrincipal u) {
         KPI k = kpiRepository.save(KPI.builder().name("Widgets").userId(u.getId()).active(true)
-                .proxyType(ProxyType.SANDBOX_CAPABILITY).proxyStatus(ProxyStatus.NEEDS_REPAIR)
+                .proxyType(ProxyType.RUNNER_COLLECTOR).proxyStatus(ProxyStatus.NEEDS_REPAIR)
                 .consecutiveProxyFailures(3).build());
         capabilityRepository.save(KPIProxyCapability.builder().userId(u.getId()).kpiId(k.getId())
-                .description("count widgets").proposal("spec").declaredCapabilities(NO_ACCESS)
-                .sourceCode("print(old)").status(CapabilityStatus.ACTIVE).version(1)
-                .lastResult("NONZERO_EXIT exit=1: NameError old").build());
+                .platform(CapabilityPlatform.RUNNER).description("count widgets").proposal("spec")
+                .declaredCapabilities(Map.of("sources", AW)).collectorId("kpi-" + k.getId()).runnerDeviceId("dev-1")
+                .status(CapabilityStatus.ACTIVE).version(1)
+                .lastResult("FAILED on runner: NameError old").build());
         return k;
     }
 
     @Test
     void manualRepair_createsNewVersionSeededWithFailure_clearsNeedsRepairOnPass() throws Exception {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(9)");
-        when(sandboxClient.run(any())).thenReturn(ok("9"));
+        builds(value(9));
 
         JsonNode res = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/repair", null, 200);
 
         assertEquals("ACTIVE", res.get("status").asText());
         assertEquals(2, res.get("version").asInt());
-        verify(generator).generate(any(), eq("Widgets"), eq("count widgets"), eq("spec"), any(),
-                eq("print(old)"), org.mockito.ArgumentMatchers.contains("NameError old"));
+        assertTrue(attemptFeedback.get(0).contains("NameError old"), attemptFeedback.toString());
         KPI after = kpiRepository.findById(k.getId()).orElseThrow();
         assertEquals(ProxyStatus.ACTIVE, after.getProxyStatus());
         assertEquals(0, after.getConsecutiveProxyFailures());
         List<KPIProxyCapability> caps = capabilityRepository.findByKpiIdAndUserId(k.getId(), alice.getId());
         assertEquals(1, caps.stream().filter(c -> c.getStatus() == CapabilityStatus.ACTIVE).count());
         assertTrue(caps.stream().anyMatch(c -> c.getVersion() == 1 && c.getStatus() == CapabilityStatus.DISABLED));
+        KPIProxyCapability v2 = caps.stream().filter(c -> c.getVersion() == 2).findFirst().orElseThrow();
+        assertEquals("kpi-" + k.getId(), v2.getCollectorId(), "a repair re-installs under the same collector id");
     }
 
     @Test
     void repairThatFailsTestGate_keepsKpiNeedingRepair() throws Exception {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(nope)");
-        when(sandboxClient.run(any())).thenReturn(nonZero("still broken"));
+        builds("still broken");
 
         JsonNode res = call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/repair", null, 200);
 
@@ -502,14 +452,13 @@ class CapabilityAgentIntegrationTest {
         k.setProxyStatus(ProxyStatus.ACTIVE);
         kpiRepository.save(k);
         call(auth.session(alice), "POST", "/api/kpis/Widgets/capability/repair", null, 409);
-        verifyNoInteractions(generator);
+        verifyNoInteractions(generator, pipeline);
     }
 
     @Test
     void autoRepair_retriesUpToCap_untilTestGatePasses() {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("a", "b", "c");
-        when(sandboxClient.run(any())).thenReturn(nonZero("x"), nonZero("y"), ok("1"));
+        builds("x", "y", value(1));
 
         KPIProxyCapability res = service.repairFor(alice.getId(), k, true);
 
@@ -521,13 +470,12 @@ class CapabilityAgentIntegrationTest {
     @Test
     void autoRepair_givesUpAtCap_leavingKpiNeedingRepair() {
         KPI k = brokenActiveKpi(alice);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("a");
-        when(sandboxClient.run(any())).thenReturn(nonZero("x"));
+        builds("x");
 
         KPIProxyCapability res = service.repairFor(alice.getId(), k, true);
 
         assertEquals(CapabilityStatus.TEST_FAILED, res.getStatus());
-        verify(generator, times(3)).generate(any(), any(), any(), any(), any(), any(), any());
+        verify(pipeline, times(3)).attempt(any(), any(), anyInt());
         assertEquals(ProxyStatus.NEEDS_REPAIR, kpiRepository.findById(k.getId()).orElseThrow().getProxyStatus());
     }
 
@@ -536,7 +484,7 @@ class CapabilityAgentIntegrationTest {
     @Test
     void anotherUser_cannotSeeOrDriveMyCapability() throws Exception {
         KPI aliceKpi = kpi(alice, "Widgets");
-        generatorProposes(NO_ACCESS);
+        generatorProposes(AW);
         String id = propose(alice, "Widgets", 200).get("id").asText();
 
         // Bob has no KPI of that name: every endpoint is a 400, nothing leaks.
@@ -552,7 +500,7 @@ class CapabilityAgentIntegrationTest {
         act(bob, "Widgets", id, "approve", 400);
         act(bob, "Widgets", id, "reject", 400);
 
-        verify(generator, never()).generate(any(), any(), any(), any(), any(), any(), any());
+        verifyNoInteractions(pipeline);
         KPIProxyCapability stored = capabilityRepository.findById(id).orElseThrow();
         assertEquals(CapabilityStatus.PROPOSED, stored.getStatus());
         assertEquals(alice.getId(), stored.getUserId());
@@ -560,9 +508,7 @@ class CapabilityAgentIntegrationTest {
         assertEquals(ProxyType.NONE, kpiRepository.findById(aliceKpi.getId()).orElseThrow().getProxyType());
 
         // Alice still can.
-        generatorProposes(NO_ACCESS);
-        when(generator.generate(any(), any(), any(), any(), any(), any(), any())).thenReturn("print(1)");
-        when(sandboxClient.run(any())).thenReturn(ok("1"));
+        builds(value(1));
         assertEquals("AWAITING_CONFIRM", act(alice, "Widgets", id, "approve", 200).get("status").asText());
     }
 

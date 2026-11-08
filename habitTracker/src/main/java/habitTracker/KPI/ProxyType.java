@@ -9,8 +9,6 @@ package habitTracker.KPI;
 public enum ProxyType {
     NONE,
     TRELLO_CARD_COUNT,
-    /** M7: runs a stored KPIProxyCapability script in the sandbox sidecar (SandboxCapabilityProvider). */
-    SANDBOX_CAPABILITY,
     /** S3: a collector on the user's Relay runner; readings are pulled by RunnerCollectorProvider (not the nightly fill). */
     RUNNER_COLLECTOR,
     MANUAL_PROMPT

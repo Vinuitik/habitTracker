@@ -148,62 +148,17 @@ class KPIProxyFillServiceTest {
         verify(proxyHealthService, never()).flagAnomaly(any());
     }
 
-    private KPI capabilityKpi() {
-        return KPI.builder().id("k9").userId("alice").name("Watch").proxyType(ProxyType.SANDBOX_CAPABILITY).build();
-    }
-
-    // S1: a plausibility-guard hit goes to the confirm-inbox flagged, counts as a success, never trips the breaker.
+    // Runner collectors are pulled by RunnerCollectorProvider, never by the nightly fill.
     @Test
-    void fillFromProxies_implausibleCapabilityValue_isFlaggedNotSilentlyStored_andDoesNotTripBreaker() {
-        KPI k = capabilityKpi();
+    void fillFromProxies_runnerCollectorKpi_isSkipped() {
+        KPI k = KPI.builder().id("k9").userId("alice").name("Watch").proxyType(ProxyType.RUNNER_COLLECTOR).build();
         when(kpiRepository.findByActive(true)).thenReturn(List.of(k));
-        when(registry.resolve(ProxyType.SANDBOX_CAPABILITY)).thenReturn(Optional.of(trelloProvider));
-        when(trelloProvider.fetchValue(eq(k), any())).thenReturn(Optional.of(900.0));
-        when(trelloProvider.context(k)).thenReturn(new ProxyProvider.Context(false, "min"));
-        when(proxyHealthService.plausibilityReason(k, 900.0, "min")).thenReturn(Optional.of("way too big"));
 
         service().fillFromProxies();
 
-        LocalDate yesterday = LocalDate.now().minusDays(1);
-        verify(kpiService).addFlaggedProxyDataForUser("alice", "Watch", yesterday, 900.0,
-                KPIDataSource.PROXY_CAPABILITY, "IMPLAUSIBLE", "way too big");
-        verify(kpiService, never()).addKPIDataForUser(any(), any(), any(), any(), any());
-        verify(proxyHealthService, never()).flagAnomaly(any());
+        verifyNoInteractions(registry);
         verify(proxyHealthService, never()).recordFailure(any());
-        verify(proxyHealthService).recordSuccess(k);
-    }
-
-    // S1: readings of a capability on SHADOW trial are stored unconfirmed (pending + SHADOW flag).
-    @Test
-    void fillFromProxies_shadowCapability_storesReadingFlaggedShadow() {
-        KPI k = capabilityKpi();
-        when(kpiRepository.findByActive(true)).thenReturn(List.of(k));
-        when(registry.resolve(ProxyType.SANDBOX_CAPABILITY)).thenReturn(Optional.of(trelloProvider));
-        when(trelloProvider.fetchValue(eq(k), any())).thenReturn(Optional.of(30.0));
-        when(trelloProvider.context(k)).thenReturn(new ProxyProvider.Context(true, "min"));
-        when(proxyHealthService.plausibilityReason(k, 30.0, "min")).thenReturn(Optional.empty());
-
-        service().fillFromProxies();
-
-        verify(kpiService).addFlaggedProxyDataForUser(eq("alice"), eq("Watch"), any(), eq(30.0),
-                eq(KPIDataSource.PROXY_CAPABILITY), eq("SHADOW"), any());
-        verify(proxyHealthService).recordSuccess(k);
-    }
-
-    // An ACTIVE (non-shadow), plausible capability value keeps the old path: plain write + anomaly check.
-    @Test
-    void fillFromProxies_activePlausibleCapabilityValue_usesTheNormalPath() {
-        KPI k = capabilityKpi();
-        when(kpiRepository.findByActive(true)).thenReturn(List.of(k));
-        when(registry.resolve(ProxyType.SANDBOX_CAPABILITY)).thenReturn(Optional.of(trelloProvider));
-        when(trelloProvider.fetchValue(eq(k), any())).thenReturn(Optional.of(30.0));
-        when(trelloProvider.context(k)).thenReturn(ProxyProvider.Context.NONE);
-        when(proxyHealthService.plausibilityReason(k, 30.0, null)).thenReturn(Optional.empty());
-
-        service().fillFromProxies();
-
-        verify(kpiService).addKPIDataForUser("alice", "Watch", LocalDate.now().minusDays(1), 30.0, KPIDataSource.PROXY_CAPABILITY);
-        verify(proxyHealthService).recordSuccess(k);
+        verify(kpiService, never()).addKPIDataForUser(any(), any(), any(), any(), any());
     }
 
     // A successfully fetched but anomalous value is still written (it may be real data) but trips

@@ -16,7 +16,7 @@ class CapabilityOutputTest {
         assertEquals(47.5, o.value());
         assertNull(o.unit());
         assertTrue(o.evidence().isEmpty());
-        assertEquals(12.0, SandboxCapabilityProvider.parseLastLine("12"));
+        assertEquals(12.0, CapabilityOutput.parse("12").value());
     }
 
     @Test
@@ -26,7 +26,7 @@ class CapabilityOutputTest {
         assertEquals(47.0, o.value());
         assertEquals("min", o.unit());
         assertEquals(List.of(new CapabilityOutput.Row("YouTube", "40 min"), new CapabilityOutput.Row("n", "3")), o.evidence());
-        assertEquals(47.0, SandboxCapabilityProvider.parseLastLine("{\"value\": 47}"));
+        assertEquals(47.0, CapabilityOutput.parse("{\"value\": 47}").value());
     }
 
     @Test
@@ -56,7 +56,7 @@ class CapabilityOutputTest {
         assertNull(CapabilityOutput.parse("{\"value\": \"lots\"}"));
         assertNull(CapabilityOutput.parse("{\"value\": [1]}"));
         assertNull(CapabilityOutput.parse("{broken"));
-        assertNull(SandboxCapabilityProvider.parseLastLine("{\"value\": \"NaN\"}"));
+        assertNull(CapabilityOutput.parse("{\"value\": \"NaN\"}"));
     }
 
     @Test

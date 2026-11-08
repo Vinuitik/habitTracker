@@ -457,32 +457,14 @@ function renderAutomateConfirm(body, cap) {
     body.append(group);
 }
 
-// Plain-language summary of a capability: what / where from / how often / what it needs.
+// Plain-language summary of a capability: what / where from / how often / what it needs. Runner collectors only.
 function renderAutomateSummary(body, cap) {
-    const declared = cap.declaredCapabilities || {};
-    const hosts = declared.network || [];
-    const secrets = declared.secrets || [];
     const facts = automateEl('dl', 'automate__facts');
     const fact = (label, value) => facts.append(automateEl('dt', null, label), automateEl('dd', null, value));
     fact('Measures', cap.measures || cap.description || 'See the plan below.');
-    if (cap.platform === 'RUNNER') {
-        fact('Data comes from', cap.dataSource || 'Your own computer, read by your runner.');
-        fact('Updates', 'Once a day on your runner. Values reach this site whenever your runner is online.');
-        fact('Needs from you', 'Your runner switched on now and then. No passwords or API keys.');
-        body.append(facts);
-        if (cap.proposal) {
-            const plan = automateEl('details', 'automate__source');
-            plan.append(automateEl('summary', null, 'Full plan'), automateEl('div', 'automate__text', cap.proposal));
-            body.append(plan);
-        }
-        return;
-    }
-    fact('Data comes from', cap.dataSource
-        || (hosts.length ? `The internet: ${hosts.join(', ')}` : 'Computed inside the sandbox, without internet access.'));
-    fact('Updates', 'Once a day, overnight, recording the previous day’s value.');
-    fact('Needs from you', secrets.length
-        ? `${secrets.length === 1 ? 'One secret' : secrets.length + ' secrets'} (API key or token): ${secrets.join(', ')}. Set below.`
-        : 'Nothing. No passwords or API keys.');
+    fact('Data comes from', cap.dataSource || 'Your own computer, read by your runner.');
+    fact('Updates', 'Once a day on your runner. Values reach this site whenever your runner is online.');
+    fact('Needs from you', 'Your runner switched on now and then. No passwords or API keys.');
     body.append(facts);
     if (cap.proposal) {
         const plan = automateEl('details', 'automate__source');
@@ -491,88 +473,22 @@ function renderAutomateSummary(body, cap) {
     }
 }
 
-// Declared hosts + secret inputs. Secret inputs are write-only: the server never returns a value,
-// only which names are set. All text via textContent (names/hosts are LLM output).
+// What the collector may read (declared local sources). All text via textContent (LLM output).
 function renderAutomateAccess(body, cap) {
-    if (cap.platform === 'RUNNER') {
-        const SOURCE_TEXT = { activitywatch: 'ActivityWatch (which apps, windows and sites were in use)', file: 'files of an app on your computer' };
-        const sources = ((cap.declaredCapabilities || {}).sources || []).map(s => SOURCE_TEXT[s] || s);
-        const box = automateEl('div', 'automate__access');
-        box.append(automateEl('div', 'form-group__hint',
-            `Runs on your runner in a sandbox with no internet. It may read only: ${sources.join(', ') || 'nothing'}. You approve exactly what it reads before it touches real data.`));
-        body.append(box);
-        return;
-    }
-    const declared = cap.declaredCapabilities || {};
-    const hosts = declared.network || [];
-    const secrets = declared.secrets || [];
+    const SOURCE_TEXT = { activitywatch: 'ActivityWatch (which apps, windows and sites were in use)', file: 'files of an app on your computer' };
+    const sources = ((cap.declaredCapabilities || {}).sources || []).map(s => SOURCE_TEXT[s] || s);
     const box = automateEl('div', 'automate__access');
-    box.append(automateEl('div', 'form-group__hint', hosts.length
-        ? 'Internet access: the script may reach ONLY these sites. Approving grants exactly this.'
-        : 'Internet access: none.'));
-    if (hosts.length) {
-        const chips = automateEl('div', 'automate__chips');
-        hosts.forEach(h => chips.append(automateEl('span', 'automate__chip', h)));
-        box.append(chips);
-    }
-    if (secrets.length) {
-        box.append(automateEl('div', 'form-group__hint',
-            'Secrets are given to this script only, as environment variables with these names.'));
-    }
-    secrets.forEach(name => {
-        const row = automateEl('div', 'automate__secret');
-        const status = automateEl('span', 'automate__secret-state', 'checking...');
-        const input = automateEl('input', 'input input--sm');
-        input.type = 'password';
-        input.autocomplete = 'new-password';
-        input.placeholder = 'Paste value (write-only)';
-        input.setAttribute('aria-label', `Value for ${name}`);
-        const save = automateButton('Save', 'btn--ghost btn--sm', async () => {
-            const value = input.value;
-            if (!value) return;
-            const ok = await automateSecretCall(name, 'PUT', { value }, status);
-            if (ok) input.value = '';
-        });
-        const remove = automateButton('Remove', 'btn--ghost btn--sm', () => automateSecretCall(name, 'DELETE', null, status));
-        row.append(automateEl('span', 'automate__secret-name', name), status, input, save, remove);
-        box.append(row);
-        automateSecretNames().then(names => setSecretState(status, names.includes(name)))
-            .catch(() => { status.textContent = 'unknown'; });
-    });
+    box.append(automateEl('div', 'form-group__hint',
+        `Runs on your runner in a sandbox with no internet. It may read only: ${sources.join(', ') || 'nothing'}. You approve exactly what it reads before it touches real data.`));
     body.append(box);
 }
 
 function renderAutomateCode(body, cap) {
     if (!cap.sourceCode) return;
     const d = automateEl('details', 'automate__source');
-    d.append(automateEl('summary', null, cap.platform === 'RUNNER' ? 'View the collector (Python)' : 'View the script (Python)'),
+    d.append(automateEl('summary', null, 'View the collector (Python)'),
         automateEl('pre', 'automate__code automate__code--source', cap.sourceCode));
     body.append(d);
-}
-
-function setSecretState(el, isSet) {
-    el.textContent = isSet ? 'set' : 'not set';
-    el.className = 'automate__secret-state ' + (isSet ? 'automate__secret-state--set' : 'automate__secret-state--unset');
-}
-
-async function automateSecretNames() {
-    const data = await automateFetch(E_KPI.KPI_SECRETS);
-    return (data && data.names) || [];
-}
-
-async function automateSecretCall(name, method, body, statusEl) {
-    const errEl = document.getElementById('automateError');
-    try {
-        await automateFetch(E_KPI.KPI_SECRET(name), method, body);
-        errEl.hidden = true;
-        setSecretState(statusEl, method === 'PUT');
-        return true;
-    } catch (e) {
-        errEl.textContent = e.status ? `Could not save the secret: ${e.message}` : 'Could not save the secret. Check your connection.';
-        errEl.hidden = false;
-        statusEl.textContent = 'unknown';
-        return false;
-    }
 }
 
 // failureReason (server text) → {headline, action, detail?}. detail = raw script/runner output, shown collapsed.
@@ -599,14 +515,7 @@ function describeFailure(cap) {
     }
     if (reason.startsWith(gate)) {
         const why = reason.slice(gate.length);
-        if (/secret .* not set/i.test(why)) {
-            const names = (why.match(/secret (.*?) not set/i) || [])[1] || 'a secret';
-            return { headline: `The script needs ${names}, which is not set yet.`, action: 'Set it below, then press Regenerate.' };
-        }
         if (why.startsWith('TIMEOUT')) return { headline: 'The script took longer than the time limit.', action: retry, detail: why };
-        if (why.startsWith('SIDECAR_ERROR')) {
-            return { headline: 'The sandbox that tests scripts is not reachable right now.', action: 'Try Regenerate again in a few minutes.', detail: why };
-        }
         if (why.startsWith('script exited 0')) return { headline: 'The script ran but did not print a number on its last line.', action: retry, detail: why };
         return { headline: 'The script crashed when tested.', action: retry, detail: why };
     }
@@ -668,8 +577,7 @@ function renderAutomateSensor(body, cap) {
 
 // S3 RUNNER: fetch the runner's stored readings now instead of waiting for the hourly pull.
 function renderAutomatePull(body, cap) {
-    if (cap.platform !== 'RUNNER') return;
-    const PULL_TEXT = {
+        const PULL_TEXT = {
         PULLED: (n) => n ? `Fetched ${n} new value${n === 1 ? '' : 's'} from your runner.` : 'Your runner had no new values yet.',
         SKIPPED_OFFLINE: () => 'Your runner is offline. Values wait there until it is back.',
         NOT_RUNNABLE: () => 'This collector is not running yet.',
@@ -712,9 +620,9 @@ function renderAutomateRail(cap) {
     const rail = document.getElementById('automateRail');
     rail.replaceChildren();
     const status = cap ? cap.status : null;
-    const fresh = !cap || status === 'REJECTED' || status === 'DISABLED';
+    const fresh = !cap || status === 'REJECTED' || status === 'DISABLED' || status === 'RETIRED';
     const running = automateRunning();
-    const stages = AUTOMATE_STAGES.filter(([key]) => key !== 'access' || (cap && cap.platform === 'RUNNER'));
+    const stages = AUTOMATE_STAGES.filter(([key]) => key !== 'access' || cap);
     let currentKey = fresh ? (running ? 'plan' : 'describe') : (running ? AUTOMATE_STAGE_WORKING[status] : AUTOMATE_STAGE_AT[status]);
     if (!currentKey) currentKey = 'describe';
     const cur = Math.max(0, stages.findIndex(([key]) => key === currentKey));
@@ -753,7 +661,8 @@ const AUTOMATE_STATUS_TEXT = {
     PROPOSED: 'Waiting for your approval', TEST_FAILED: 'The test did not pass', ACTIVE: 'Active',
     PENDING_TEST: 'In progress', NEEDS_REPAIR: 'Needs a fix',
     AWAITING_CONFIRM: 'Check the number', SHADOW: 'Trial run',
-    AWAITING_SENSOR: 'Needs ActivityWatch', AWAITING_CONTRACT: 'Approve what it reads'
+    AWAITING_SENSOR: 'Needs ActivityWatch', AWAITING_CONTRACT: 'Approve what it reads',
+    RETIRED: 'Retired (server scripts were removed)'
 };
 
 function renderAutomateStatus(cap, fresh) {
@@ -782,7 +691,7 @@ function renderAutomate(cap, error) {
     errEl.hidden = !errText;
 
     const status = cap ? cap.status : null;
-    const fresh = !cap || status === 'REJECTED' || status === 'DISABLED';
+    const fresh = !cap || status === 'REJECTED' || status === 'DISABLED' || status === 'RETIRED';
     renderAutomateStatus(cap, fresh);
     renderAutomateRail(cap);
     renderAutomateDiscard(cap);
@@ -807,7 +716,7 @@ function renderAutomate(cap, error) {
         if (cap && cap.description && status === 'REJECTED') ta.value = cap.description;
         group.append(label, ta,
             automateEl('span', 'form-group__hint',
-                'The AI proposes a plan first. Nothing runs until you approve it. Scripts run in a sandbox, with internet access only to sites you approve.'));
+                'The AI proposes a plan first. Nothing runs until you approve it. Collectors run on your own runner, in a sandbox with no internet, reading only what you approve.'));
         automateFoot(automateButton('Propose a plan', 'btn--primary', () => {
             const description = ta.value.trim();
             if (!description) { renderAutomate(cap, 'Describe what to capture first.'); return; }

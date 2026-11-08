@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Async wrapper for the UI around the blocking CapabilityAgentService calls (propose / approve / regenerate /
- * repair can take minutes while the runner writes code and the sandbox tests it).
+ * repair can take minutes while the runner writes code and the runner tests it).
  * start → jobId; the call runs on a small worker pool with a CapabilityProgress sink bound, so stage changes
  * and runner events land in the task's event list; poll(after) → {state, events, nextSeq, result?, error?,
  * code?, usage?}. result is the CapabilityDTO (already parsed, never raw model text).

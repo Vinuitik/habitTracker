@@ -38,14 +38,13 @@ class RunnerCapabilityGeneratorTest {
         when(jobs.startJob(eq("u"), eq("dev1"), any())).thenReturn("j1");
         when(jobs.pollJob("u", "dev1", "j1", 0)).thenReturn(snap("{\"state\":\"running\",\"nextSeq\":3}"));
         when(jobs.pollJob("u", "dev1", "j1", 3)).thenReturn(snap("{\"state\":\"done\",\"nextSeq\":4,\"result\":"
-                + "\"```json\\n{\\\"proposal\\\":\\\" Count PRs \\\",\\\"platform\\\":\\\"server\\\","
-                + "\\\"declaredCapabilities\\\":{\\\"network\\\":[\\\"api.github.com\\\"]}}\\n```\"}"));
+                + "\"```json\\n{\\\"proposal\\\":\\\" Count PRs \\\","
+                + "\\\"sources\\\":[\\\"file\\\"]}\\n```\"}"));
 
         CapabilityGenerator.Proposal p = gen.propose("u", "PRs", "count my PRs");
 
         assertEquals("Count PRs", p.proposal());
-        assertEquals("SERVER", p.platform());
-        assertEquals(Map.of("network", List.of("api.github.com"), "secrets", List.of()), p.declaredCapabilities());
+        assertEquals(List.of("file"), p.sources());
         ArgumentCaptor<RunnerJobService.JobSpec> spec = ArgumentCaptor.forClass(RunnerJobService.JobSpec.class);
         verify(jobs).startJob(eq("u"), eq("dev1"), spec.capture());
         assertEquals("kpi", spec.getValue().kind());
@@ -54,31 +53,6 @@ class RunnerCapabilityGeneratorTest {
         assertTrue(spec.getValue().prompt().contains("KPI name: PRs\nUser wants this captured automatically: count my PRs"));
         verify(selector).markUsed("dev1");
         verify(usage, atLeastOnce()).record(eq("u"), eq("j1"), any(), eq(AiUsageService.Source.kpi(AiUsage.KPI_PROPOSE, "PRs")));
-    }
-
-    @Test
-    void generate_parsesObjectResult_andSeedsPreviousFailure() throws Exception {
-        when(selector.pick("u")).thenReturn(Optional.of("dev1"));
-        when(jobs.startJob(eq("u"), eq("dev1"), any())).thenReturn("j1");
-        when(jobs.pollJob(any(), any(), any(), anyLong()))
-                .thenReturn(snap("{\"state\":\"done\",\"result\":{\"sourceCode\":\"```python\\nprint(1)\\n```\"}}"));
-
-        assertEquals("print(1)", gen.generate("u", "K", "d", "spec", Map.of(), "old", "boom"));
-        ArgumentCaptor<RunnerJobService.JobSpec> spec = ArgumentCaptor.forClass(RunnerJobService.JobSpec.class);
-        verify(jobs).startJob(any(), any(), spec.capture());
-        assertTrue(spec.getValue().prompt().contains("judged WRONG by the user. Fix it.\nPrevious code:\nold\nFailure:\nboom\n"));
-        verify(usage).record(eq("u"), eq("j1"), any(), eq(AiUsageService.Source.kpi(AiUsage.KPI_GENERATE, "K")));
-    }
-
-    @Test
-    void generate_insideRepair_isRecordedAsRepair() throws Exception {
-        when(selector.pick("u")).thenReturn(Optional.of("dev1"));
-        when(jobs.startJob(eq("u"), eq("dev1"), any())).thenReturn("j1");
-        when(jobs.pollJob(any(), any(), any(), anyLong()))
-                .thenReturn(snap("{\"state\":\"done\",\"result\":{\"sourceCode\":\"print(1)\"}}"));
-
-        CapabilityProgress.repairing(() -> gen.generate("u", "K", "d", "spec", Map.of(), "old", "boom"));
-        verify(usage).record(eq("u"), eq("j1"), any(), eq(AiUsageService.Source.kpi(AiUsage.KPI_REPAIR, "K")));
     }
 
     @Test
@@ -132,6 +106,6 @@ class RunnerCapabilityGeneratorTest {
         when(selector.pick("u")).thenReturn(Optional.of("dev1"));
         when(jobs.startJob(any(), any(), any())).thenReturn("j1");
         when(jobs.pollJob(any(), any(), any(), anyLong())).thenReturn(snap("{\"state\":\"done\",\"result\":\"sorry, no\"}"));
-        assertThrows(CapabilityGeneratorException.class, () -> gen.generate("u", "K", "d", "s", Map.of(), null, null));
+        assertThrows(CapabilityGeneratorException.class, () -> gen.propose("u", "K", "d"));
     }
 }

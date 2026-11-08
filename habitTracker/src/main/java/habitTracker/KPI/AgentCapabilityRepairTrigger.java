@@ -13,8 +13,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
- * M12 auto-repair: when ProxyHealthService trips a KPI to NEEDS_REPAIR and that KPI runs a sandbox
- * capability, kick off CapabilityAgentService.repairFor (new version seeded with the failure, same
+ * M12 auto-repair: when ProxyHealthService trips a KPI to NEEDS_REPAIR and that KPI runs a runner
+ * collector, kick off CapabilityAgentService.repairFor (new version seeded with the failure, same
  * test gate as M8, up to MAX_ATTEMPTS). Runs on a single background thread so the nightly job is
  * not blocked by LLM calls. Other proxy types (e.g. Trello) have no generated code to repair: logged only.
  * Failure is never fatal: the KPI simply stays NEEDS_REPAIR for the manual "fix it" button.
@@ -107,9 +107,9 @@ public class AgentCapabilityRepairTrigger implements CapabilityRepairTrigger {
         });
     }
 
-    /** Agent-built proxies: sandbox scripts and (S3) runner collectors. */
+    /** Agent-built proxies: runner collectors (S3). */
     static boolean repairable(ProxyType t) {
-        return t == ProxyType.SANDBOX_CAPABILITY || t == ProxyType.RUNNER_COLLECTOR;
+        return t == ProxyType.RUNNER_COLLECTOR;
     }
 
     private void park(String kpiId, String userId) {

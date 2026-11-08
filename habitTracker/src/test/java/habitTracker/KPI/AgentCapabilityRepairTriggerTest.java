@@ -19,8 +19,8 @@ class AgentCapabilityRepairTriggerTest {
     // Direct executor: runs inline so the test is deterministic.
     AgentCapabilityRepairTrigger trigger = new AgentCapabilityRepairTrigger(service, generator, kpis, Runnable::run);
 
-    private static KPI sandboxKpi() {
-        return KPI.builder().id("k").userId("u").proxyType(ProxyType.SANDBOX_CAPABILITY)
+    private static KPI collectorKpi() {
+        return KPI.builder().id("k").userId("u").proxyType(ProxyType.RUNNER_COLLECTOR)
                 .proxyStatus(ProxyStatus.NEEDS_REPAIR).build();
     }
 
@@ -30,8 +30,8 @@ class AgentCapabilityRepairTriggerTest {
     }
 
     @Test
-    void sandboxKpi_triggersRepairWithAutoRetry() {
-        KPI kpi = sandboxKpi();
+    void collectorKpi_triggersRepairWithAutoRetry() {
+        KPI kpi = collectorKpi();
         when(generator.runnerAvailable("u")).thenReturn(true);
         when(service.repairFor("u", kpi, true)).thenReturn(KPIProxyCapability.builder()
                 .version(2).status(CapabilityStatus.ACTIVE).build());
@@ -41,7 +41,7 @@ class AgentCapabilityRepairTriggerTest {
     }
 
     @Test
-    void nonSandboxKpi_isNotRepaired() {
+    void nonCollectorKpi_isNotRepaired() {
         trigger.attemptRepair(KPI.builder().id("k").userId("u").proxyType(ProxyType.TRELLO_CARD_COUNT).build());
         verifyNoInteractions(service, generator);
     }
@@ -50,12 +50,12 @@ class AgentCapabilityRepairTriggerTest {
     void repairFailureNeverPropagates() {
         when(generator.runnerAvailable("u")).thenReturn(true);
         when(service.repairFor(any(), any(), anyBoolean())).thenThrow(new IllegalStateException("nope"));
-        trigger.attemptRepair(sandboxKpi()); // must not throw into the nightly job
+        trigger.attemptRepair(collectorKpi()); // must not throw into the nightly job
     }
 
     @Test
     void noRunnerOnline_parksWithoutRunningRepair_thenResumesWhenRunnerConnects() {
-        KPI kpi = sandboxKpi();
+        KPI kpi = collectorKpi();
         when(generator.runnerAvailable("u")).thenReturn(false);
         trigger.attemptRepair(kpi);
         verifyNoInteractions(service);
@@ -76,7 +76,7 @@ class AgentCapabilityRepairTriggerTest {
 
     @Test
     void runnerDropsMidRepair_isParkedAgain() {
-        KPI kpi = sandboxKpi();
+        KPI kpi = collectorKpi();
         when(generator.runnerAvailable("u")).thenReturn(true);
         when(service.repairFor("u", kpi, true)).thenReturn(waitingResult());
         trigger.attemptRepair(kpi);
@@ -86,10 +86,10 @@ class AgentCapabilityRepairTriggerTest {
     @Test
     void parkedKpiNoLongerNeedingRepair_isDropped() {
         when(generator.runnerAvailable("u")).thenReturn(false);
-        trigger.attemptRepair(sandboxKpi());
+        trigger.attemptRepair(collectorKpi());
         when(generator.runnerAvailable("u")).thenReturn(true);
         when(kpis.findById("k")).thenReturn(Optional.of(KPI.builder().id("k").userId("u")
-                .proxyType(ProxyType.SANDBOX_CAPABILITY).proxyStatus(ProxyStatus.ACTIVE).build()));
+                .proxyType(ProxyType.RUNNER_COLLECTOR).proxyStatus(ProxyStatus.ACTIVE).build()));
         trigger.retryWaiting();
         verifyNoInteractions(service);
         assertTrue(trigger.waitingKpiIds().isEmpty());

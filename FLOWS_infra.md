@@ -71,6 +71,10 @@ git push origin master
 - Deploy runs only from the machine that pushes. A push from another machine deploys nothing.
 - `git push --no-verify` skips tests and deploy; the server then keeps running the previous build.
 - Downtime: `javaapp` is recreated in place (single container) — a few seconds of 530s through the tunnel.
+- Removed services are NOT cleaned up by auto-deploy (it only touches `javaapp`). After the 2026-11 removal of the
+  KPI `sandbox` + `egress-proxy` sidecars (docs/designs/runner-only-kpis.md H2) the old containers keep running until
+  a one-time manual `docker compose up -d --remove-orphans` (then `docker network rm habit_sandbox_egress`). `SANDBOX_EGRESS_SECRET`
+  in `.env` is now unused and can be deleted.
 
 ---
 
@@ -84,8 +88,7 @@ git push origin master
 | `jwt.expiration-ms` | JWT token lifetime | `application.properties` or `.env` |
 | `MONGO_USER` / `MONGO_PASS` / `MONGO_DB` | All MongoDB connections | `.env` → `javaapp` + `mongo-backup` |
 | Cloudflare tunnel token | `cloudflared` auth | `.env` → `cloudflared` |
-| `SANDBOX_EGRESS_SECRET` | HMAC key (>=32 chars) for per-run egress tokens; unset = networked capabilities fail closed. NOT auto-deployed: auto-deploy only rebuilds `javaapp`, so set it in `.env` and run `docker compose up -d --build sandbox egress-proxy` by hand (see `egress-proxy/FLOWS.md`) | `.env` → `sandbox` + `egress-proxy` |
-| `KPI_SECRETS_KEY` | Optional base64 AES key for users' capability secrets (blank = derived from `JWT_SECRET`) | `.env` → `javaapp` |
+| `KPI_SECRETS_KEY` | Optional base64 AES key for the server at-rest vault: Trello creds, Drive sync secrets, TOTP (blank = derived from `JWT_SECRET`) | `.env` → `javaapp` |
 | `habitbackup.json` | Google Drive backup | File mounted into `mongo-backup` container |
 
 ---

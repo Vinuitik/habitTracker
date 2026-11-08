@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Capability LLM calls run on the KPI owner's own Claude Code via their paired Relay runner
@@ -67,14 +66,6 @@ public class RunnerCapabilityGenerator implements CapabilityGenerator {
     public Proposal propose(String userId, String kpiName, String description) {
         return prompts.parseProposal(run(userId, AiUsageService.Source.kpi(AiUsage.KPI_PROPOSE, kpiName),
                 prompts.proposePrompt(kpiName, description)));
-    }
-
-    @Override
-    public String generate(String userId, String kpiName, String description, String proposal,
-                           Map<String, List<String>> declaredCapabilities, String previousCode, String previousError) {
-        String kind = CapabilityProgress.isRepair() ? AiUsage.KPI_REPAIR : AiUsage.KPI_GENERATE;
-        return prompts.parseSourceCode(run(userId, AiUsageService.Source.kpi(kind, kpiName), prompts.generatePrompt(kpiName, description, proposal,
-                declaredCapabilities, previousCode, previousError)));
     }
 
     @Override

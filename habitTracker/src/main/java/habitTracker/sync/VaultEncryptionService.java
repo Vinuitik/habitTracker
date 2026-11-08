@@ -79,7 +79,7 @@ public class VaultEncryptionService {
     }
 
     /**
-     * The server's own at-rest key (capability secrets, TOTP secrets): KPI_SECRETS_KEY if set, else derived
+     * The server's own at-rest key (Trello / Drive sync secrets, TOTP secrets): KPI_SECRETS_KEY if set, else derived
      * from jwt.secret. The derivation label predates other users of this key; changing it would make
      * already-stored secrets undecryptable.
      */
@@ -99,8 +99,8 @@ public class VaultEncryptionService {
     }
 
     /**
-     * Encrypts a secret for storage in Mongo under the server key: base64 of the wire format (same
-     * as CapabilitySecretService). null stays null. Used for UserSyncSettings / TrelloCredential.
+     * Encrypts a secret for storage in Mongo under the server key: base64 of the wire format.
+     * null stays null. Used for UserSyncSettings / TrelloCredential.
      */
     public String encryptAtRest(String plaintext) {
         if (plaintext == null) return null;

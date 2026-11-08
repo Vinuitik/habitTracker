@@ -23,7 +23,7 @@ class CapabilityTaskServiceTest {
     }
 
     private static CapabilityDTO dto(CapabilityStatus status) {
-        return new CapabilityDTO("c1", "k1", 1, status, "d", "p", "Open PRs", "GitHub API", CapabilityPlatform.SERVER,
+        return new CapabilityDTO("c1", "k1", 1, status, "d", "p", "Open PRs", "GitHub API", CapabilityPlatform.RUNNER,
                 Map.of("network", List.of("api.github.com"), "secrets", List.of()), null, 0, 3, null, null);
     }
 

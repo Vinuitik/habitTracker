@@ -50,7 +50,6 @@ class RunnerCollectorIntegrationTest {
     @MockitoBean CapabilityGenerator generator;
     @MockitoBean RunnerClient runnerClient;
     @MockitoBean OnlineRunnerSelector selector;
-    @MockitoBean SandboxClient sandboxClient;
 
     @Autowired MongoTemplate mongoTemplate;
     @Autowired KPIRepository kpiRepository;
@@ -153,7 +152,7 @@ class RunnerCollectorIntegrationTest {
     void setUp() {
         mongoTemplate.dropCollection(KPI.class);
         mongoTemplate.dropCollection(KPIProxyCapability.class);
-        reset(generator, runnerClient, selector, sandboxClient);
+        reset(generator, runnerClient, selector);
         runner = new FakeRunner();
         when(selector.pick(USER)).thenReturn(Optional.of(DEVICE));
         org.mockito.stubbing.Answer<UplinkRegistry.Response> route = inv -> {
@@ -166,8 +165,7 @@ class RunnerCollectorIntegrationTest {
         when(runnerClient.call(anyString(), anyString(), anyString(), anyString(), any(), org.mockito.ArgumentMatchers.anyLong())).thenAnswer(route);
         when(generator.runnerAvailable(USER)).thenReturn(true);
         when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
-                "Sum YouTube watch time from ActivityWatch web events", "RUNNER",
-                Map.of("network", List.of(), "secrets", List.of()), "Minutes of YouTube per day",
+                "Sum YouTube watch time from ActivityWatch web events", "Minutes of YouTube per day",
                 "ActivityWatch on your computer", List.of("activitywatch")));
         when(generator.generateCollector(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(bundle(List.of("web")));
@@ -409,10 +407,9 @@ class RunnerCollectorIntegrationTest {
     }
 
     @Test
-    void runnerProposalWithNetwork_isRejected() {
+    void proposalWithAnUnknownSource_isRejected() {
         when(generator.propose(anyString(), anyString(), anyString())).thenReturn(new CapabilityGenerator.Proposal(
-                "x", "RUNNER", Map.of("network", List.of("api.example.com"), "secrets", List.of()), null, null,
-                List.of("activitywatch")));
+                "x", List.of("activitywatch", "http")));
         KPI kpi = kpi();
         assertThrows(CapabilityRejectedException.class, () -> service.proposeAs(USER, kpi.getName(), "x"));
     }
