@@ -27,6 +27,10 @@ window.ENV = {
     KPI_CAP_ACTIVE:  (name) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/active`,
     KPI_CAP_PULL:    (name) => `/api/kpis/${encodeURIComponent(name)}/capability/pull`,
     KPI_CAP_JOB:     (name, id, after) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/${encodeURIComponent(id)}?after=${after}`,
+    KPI_AUTOMATE_DEVICES: '/api/kpi/automate/devices',   // [{deviceId, name, os, online}]
+    KPI_AUTOMATE_PLAN:    (name) => `/api/kpi/automate/plan?kpiName=${encodeURIComponent(name)}`,   // {runsOn, variants}
+    KPI_DEPLOYMENTS:      (kpiId) => `/api/kpi/${encodeURIComponent(kpiId)}/deployments`,
+    KPI_DEPLOYMENT_RETRY: (kpiId, id) => `/api/kpi/${encodeURIComponent(kpiId)}/deployments/${encodeURIComponent(id)}/retry`,
     PROJECTS:        '/api/projects',
     PROJECT:         (id) => `/api/projects/${id}`,
     PROJECTS_IMPORT: '/api/projects/import',
@@ -93,6 +97,12 @@ window.ENV = {
     WINDOWS_SETUP_URL: 'https://github.com/Vinuitik/relay/releases/latest/download/Relay-Setup.exe',
     SOURCE_URL:        'https://github.com/Vinuitik/relay',
   },
+  KPI_DEVICES: {
+    LOCAL_CONFIRM_URL: 'http://127.0.0.1:7777/local/confirm',   // runner default port (runner.env); opened ON the device itself
+    OS_NAMES: { windows: 'Windows', linux: 'Linux', darwin: 'Mac' },
+    MANAGER_NAMES: { relay: 'Relay', winget: 'winget', brew: 'Homebrew', flatpak: 'Flatpak', pip: 'pip' },
+    SOURCE_NAMES: { activitywatch: 'ActivityWatch (app and site usage)', file: 'files of an app on the computer' },
+  },
   EXTERNAL: {
     TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',
   },
@@ -107,6 +117,7 @@ window.ENV = {
     BOARD_POLL_MS: 60000,     // open-board poll for changes made directly in Trello
     PLANNER_POLL_MS: 1200,    // planner conversation poll while the AI is working
     MAP_POLL_MS: 2000,        // repo-map job progress poll
+    KPI_DEPLOY_POLL_MS: 15000, // KPI card deployment row refresh while a device is not done yet
     KPI_CAP_POLL_MS: 1500,    // KPI Automate job poll while the runner works
     // containers
     CONTAINERS_POLL_BUSY_MS: 2000,   // Relay Containers tab poll while start/stop runs
