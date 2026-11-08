@@ -27,5 +27,8 @@ public enum CapabilityStatus {
     AWAITING_SENSOR,
     /** S3 RUNNER: fixtures passed; the user approves the data-access contract before real data is read. A repair
      *  whose contract hash changed stops here too (never auto-approved). */
-    AWAITING_CONTRACT
+    AWAITING_CONTRACT,
+    /** A capability of a removed platform (the old SERVER sandbox / WINDOWS), retired by RunnerOnlyKpiMigration.
+     *  Never executed; the UI treats it like REJECTED (start over). */
+    RETIRED
 }

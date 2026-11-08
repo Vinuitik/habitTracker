@@ -29,7 +29,7 @@ public record CapabilityDTO(
         int confirmRounds,
         int maxConfirmRounds,
         String shadowUntil,
-        // S3 RUNNER: the data-access contract in plain language + per-case fixture results (null / empty for SERVER)
+        // S3 RUNNER: the data-access contract in plain language + per-case fixture results (null / empty when none)
         String contractText,
         List<KPIProxyCapability.CollectorTestCase> collectorTests,
         boolean repair) {

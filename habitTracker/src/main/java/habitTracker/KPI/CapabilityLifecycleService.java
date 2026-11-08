@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * Post-test-gate state machine, platform-agnostic (kpi-sensors.md "Test pipeline" steps 5-7). Knows nothing about
- * the sandbox or the runner: a platform's test gate hands over a sample and this class moves the version through
+ * the runner: a platform's test gate hands over a sample and this class moves the version through
  *   (test gate passed) -> AWAITING_CONFIRM -> SHADOW -> ACTIVE
  * "Looks right" = confirmRight(); "Wrong" is handled by the caller (it needs the generator) which only uses
  * recordWrong() for the round bookkeeping. A repair of an already live capability skips the confirm step
@@ -143,7 +143,7 @@ public class CapabilityLifecycleService {
             }
         }
         KPI fresh = kpiRepository.findById(kpi.getId()).orElse(kpi);
-        fresh.setProxyType(cap.getPlatform() == CapabilityPlatform.RUNNER ? ProxyType.RUNNER_COLLECTOR : ProxyType.SANDBOX_CAPABILITY);
+        fresh.setProxyType(ProxyType.RUNNER_COLLECTOR); // RUNNER is the only generated platform
         fresh.setProxyStatus(ProxyStatus.ACTIVE);
         fresh.setConsecutiveProxyFailures(0);
         fresh.setUpdatedAt(LocalDateTime.now());

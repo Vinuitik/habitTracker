@@ -1,5 +1,6 @@
 package habitTracker.updater;
 
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
@@ -7,6 +8,7 @@ import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 
 @Component
+@DependsOn("runnerOnlyKpiMigration") // startup pass reads KPIs: legacy SANDBOX_CAPABILITY docs must be migrated first
 public class UpdateScheduler {
 
     private final LastRunDateService lastRunDateService;

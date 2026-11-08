@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * M8 agent loop API. Every call resolves the KPI by (name, current user) and capabilities by
  * (id, user, kpi) inside CapabilityAgentService, so one user can never see or drive another's.
- * propose/approve/regenerate/repair block while the LLM + sandbox run (up to a few minutes); kept for API
+ * propose/approve/regenerate/repair block while the LLM + runner test run (up to a few minutes); kept for API
  * callers and tests. The UI uses the async /jobs endpoints (CapabilityTaskService): start → {jobId}, then
  * poll ?after=nextSeq → {state, events, nextSeq, result?, error?, code?, usage?}.
  */

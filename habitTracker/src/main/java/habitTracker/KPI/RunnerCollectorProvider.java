@@ -27,8 +27,8 @@ import java.util.TreeMap;
  *   pull(kpi) → latest version must be SHADOW/ACTIVE + RUNNER → POST /activate if not yet confirmed
  *     → GET /v1/collectors: our collector state "failed" → ProxyHealthService.recordFailure (breaker → M12 repair)
  *     → GET .../readings?since=<readingsSince> (runner filters on recordedAt) → per local day (from's date; a day
- *       recorded twice keeps the newest) → ProxyReadingRecorder.record (SHADOW / plausibility / anomaly, same as
- *       the sandbox path) → readingsSince = max recordedAt, lastPulledOn = today.
+ *       recorded twice keeps the newest) → ProxyReadingRecorder.record (SHADOW / plausibility / anomaly)
+ *       → readingsSince = max recordedAt, lastPulledOn = today.
  *   Runner offline / unreachable → skipped, nothing counted (no breaker trip); tried again next hour.
  * Activation listener: CapabilityWentLive for a RUNNER version → POST /activate (best effort; the pull retries).
  */

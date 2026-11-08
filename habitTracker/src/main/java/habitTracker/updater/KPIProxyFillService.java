@@ -7,7 +7,6 @@ import habitTracker.KPI.KPIService;
 import habitTracker.KPI.ProxyHealthService;
 import habitTracker.KPI.ProxyProvider;
 import habitTracker.KPI.ProxyProviderRegistry;
-import habitTracker.KPI.ProxyReadingRecorder;
 import habitTracker.KPI.ProxyType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,8 +33,8 @@ import java.util.Optional;
  * isAnomalous) is still written — it may be real data — but also trips the breaker so the proxy
  * isn't hit again until reviewed.
  *
- * S1: for SANDBOX_CAPABILITY KPIs a SHADOW-state capability's readings and plausibility-guard hits are stored via
- * KPIService.addFlaggedProxyDataForUser (pending + flag) instead of silently; they count as successes (breaker untouched).
+ * RUNNER_COLLECTOR KPIs are skipped here: RunnerCollectorProvider pulls their readings (with the S1 SHADOW /
+ * plausibility guards of ProxyReadingRecorder). Today this step only fills TRELLO_CARD_COUNT.
  *
  * Mirrors KPIDefaultFillService's scan-all-users-then-filter pattern (no request context on a
  * cron thread); every write is scoped to that KPI's own id-keyed collection via KPIService, so
@@ -50,7 +49,6 @@ public class KPIProxyFillService {
     private final KPIService kpiService;
     private final ProxyProviderRegistry registry;
     private final ProxyHealthService proxyHealthService;
-    private final ProxyReadingRecorder recorder;
 
     public KPIProxyFillService(KPIRepository kpiRepository, KPIService kpiService, ProxyProviderRegistry registry,
                                 ProxyHealthService proxyHealthService) {
@@ -58,7 +56,6 @@ public class KPIProxyFillService {
         this.kpiService = kpiService;
         this.registry = registry;
         this.proxyHealthService = proxyHealthService;
-        this.recorder = new ProxyReadingRecorder(kpiService, proxyHealthService);
     }
 
     public void fillFromProxies() {
@@ -98,14 +95,6 @@ public class KPIProxyFillService {
 
             if (value.isEmpty()) {
                 proxyHealthService.recordFailure(kpi);
-                continue;
-            }
-
-            // S1 (capability proxies only): SHADOW trial / plausibility guard via the shared recorder
-            // (stored pending + flagged, breaker untouched); same path as the RUNNER pull.
-            if (type == ProxyType.SANDBOX_CAPABILITY) {
-                recorder.record(kpi, targetDate, value.get(), provider.get().context(kpi), sourceFor(type));
-                filled++;
                 continue;
             }
 

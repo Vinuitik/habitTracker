@@ -15,8 +15,8 @@ import java.util.Map;
 
 /**
  * Stored, user-scoped script that produces a KPI value (design doc "Data model"). Read fresh
- * from Mongo right before every run, so editing it needs no redeploy. M7 only executes
- * platform=SERVER, language="python", status=ACTIVE capabilities.
+ * from Mongo right before every run, so editing it needs no redeploy. Only RUNNER collectors are built and
+ * run (RunnerCollectorPipeline / RunnerCollectorProvider); platform is null on RETIRED ex-SERVER documents.
  */
 @Document(collection = "kpi_proxy_capabilities")
 @CompoundIndex(def = "{'kpiId': 1, 'userId': 1}")
@@ -31,14 +31,13 @@ public class KPIProxyCapability {
     private String kpiId;
 
     @Builder.Default
-    private CapabilityPlatform platform = CapabilityPlatform.SERVER;
+    private CapabilityPlatform platform = CapabilityPlatform.RUNNER;
     @Builder.Default
     private String language = "python";
     private String sourceCode;
 
-    // e.g. {"network": ["api.trello.com"], "secrets": ["TRELLO_TOKEN"]}. Approval = the grant: at run time
-    // exactly these hosts become reachable (via the egress proxy) and exactly these secrets are injected
-    // as env vars; no declared hosts => --network none. Validated by CapabilityGrants.
+    // RUNNER: {"sources": ["activitywatch", "file"]}, the local source types the collector may read (validated by
+    // CapabilityAgentService.checkSources). Older documents may also carry empty "network"/"secrets" lists.
     private Map<String, List<String>> declaredCapabilities;
 
     @Builder.Default
@@ -75,7 +74,7 @@ public class KPIProxyCapability {
     // Unit of the last production run (set by the provider); feeds the plausibility guard.
     private String lastUnit;
 
-    // S3 RUNNER platform (additive, null for SERVER capabilities).
+    // S3 RUNNER platform.
     // The paired runner (relay Device id) the collector is installed on, and its id there ("kpi-<kpiId>", same
     // across versions: a repair re-installs under the same id).
     private String runnerDeviceId;

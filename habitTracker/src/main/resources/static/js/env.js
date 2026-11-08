@@ -19,8 +19,6 @@ window.ENV = {
     KPI_CONFIRM:     (name, date) => `/api/kpis/${encodeURIComponent(name)}/data/${date}/confirm`,
     KPI_EDIT_DATA:   (name, date) => `/api/kpis/${encodeURIComponent(name)}/data/${date}`,
     KPI_PROXY:       (name) => `/api/kpis/${encodeURIComponent(name)}/proxy`,
-    KPI_SECRETS:     '/api/kpi-secrets',
-    KPI_SECRET:      (name) => `/api/kpi-secrets/${encodeURIComponent(name)}`,
     KPI_CAP:         (name) => `/api/kpis/${encodeURIComponent(name)}/capability`,
     KPI_CAP_REJECT:  (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/reject`,
     KPI_CAP_CONFIRM: (name, id) => `/api/kpis/${encodeURIComponent(name)}/capability/${encodeURIComponent(id)}/confirm`,
@@ -99,7 +97,7 @@ window.ENV = {
     BOARD_POLL_MS: 60000,     // open-board poll for changes made directly in Trello
     PLANNER_POLL_MS: 1200,    // planner conversation poll while the AI is working
     MAP_POLL_MS: 2000,        // repo-map job progress poll
-    KPI_CAP_POLL_MS: 1500,    // KPI Automate job poll while the runner/sandbox works
+    KPI_CAP_POLL_MS: 1500,    // KPI Automate job poll while the runner works
     // containers
     CONTAINERS_POLL_BUSY_MS: 2000,   // Relay Containers tab poll while start/stop runs
     CONTAINERS_POLL_IDLE_MS: 10000,  // ...and otherwise (containers can die on their own)

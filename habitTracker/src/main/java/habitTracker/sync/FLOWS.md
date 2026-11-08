@@ -109,7 +109,7 @@ a migration path if this becomes necessary.
 
 ### Secrets at rest (`driveRefreshToken`, `encryptionKey`)
 Both fields are stored as base64 `VaultEncryptionService.encryptAtRest()` ciphertext under the server key
-(`serverKey(KPI_SECRETS_KEY, JWT_SECRET)`, same key as `CapabilitySecretService`); `secretsEncrypted=true` marks a sealed row.
+(`serverKey(KPI_SECRETS_KEY, JWT_SECRET)`, same key as Trello creds and TOTP); `secretsEncrypted=true` marks a sealed row.
 - Write: `DriveOAuthService.handleCallback()` → `UserSyncSettings.storeDriveRefreshToken()/storeEncryptionKey()` (seals any legacy raw fields first)
 - Read (decrypt only here): `plainDriveRefreshToken()` → `DriveService.getAccessToken*()` in `MailboxConsumeService.consumeForUser()`, `CapabilityDeployService.deployCapability()`, `SyncController.status()`; `plainEncryptionKey()` → mailbox decrypt/deploy encrypt, `SyncController.status()` (browser) and `SyncController.pair()` (companion). Unflagged rows are read raw.
 - Migration: `UserSyncSettingsSecretsMigration` (`ApplicationRunner`, every startup) → rows with `secretsEncrypted != true` → `sealSecrets()` → conditional `updateFirst` (flag still unset) → logs counts only. Idempotent.

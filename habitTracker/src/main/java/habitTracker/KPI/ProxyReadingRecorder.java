@@ -6,9 +6,8 @@ import java.time.LocalDate;
 import java.util.Optional;
 
 /**
- * Stores one automatic reading of a capability-backed KPI through the S1 guards, shared by the nightly fill
- * (SANDBOX_CAPABILITY, habitTracker.updater.KPIProxyFillService) and the runner pull (RUNNER_COLLECTOR,
- * RunnerCollectorProvider):
+ * Stores one automatic reading of a capability-backed KPI through the S1 guards, used by the runner pull
+ * (RUNNER_COLLECTOR, RunnerCollectorProvider):
  *   implausible (ProxyHealthService.plausibilityReason) → pending + flag IMPLAUSIBLE, breaker untouched
  *   capability on SHADOW trial                           → pending + flag SHADOW, breaker untouched
  *   else → KPIService.addKPIDataForUser; anomalous → flagAnomaly (breaker trips → repair), else recordSuccess

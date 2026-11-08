@@ -29,6 +29,7 @@ public final class CollectorStaticCheck {
     static final int MAX_FILES = 60;
     static final int MAX_TOTAL_BYTES = 1024 * 1024;
     static final int MAX_SOURCES = 10;
+    static final int MAX_SOURCE_BYTES = 64 * 1024; // collector.py cap
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private static final Pattern DAILY = Pattern.compile("daily ([01][0-9]|2[0-3]):([0-5][0-9])");
@@ -152,7 +153,7 @@ public final class CollectorStaticCheck {
             if (!ok) p.add("unexpected file \"" + clip(path) + "\" (only collector.py and fixtures/<case>/inputs/... + expected.json)");
         }
         if (total > MAX_TOTAL_BYTES) p.add("bundle is larger than 1 MB");
-        if (b.collectorPy() != null && b.collectorPy().getBytes(StandardCharsets.UTF_8).length > CapabilityPrompts.MAX_SOURCE_BYTES) {
+        if (b.collectorPy() != null && b.collectorPy().getBytes(StandardCharsets.UTF_8).length > MAX_SOURCE_BYTES) {
             p.add("collector.py exceeds 64 KB");
         }
         List<String> cases = b.fixtureCases();

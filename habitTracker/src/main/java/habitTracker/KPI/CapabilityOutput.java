@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * What a capability script prints on its last non-blank stdout line. Two accepted shapes (platform-agnostic:
- * SERVER sandbox stdout today, RUNNER collector stdout later):
+ * RUNNER collector stdout):
  *   1. the old plain number            47
  *   2. a JSON object                   {"value": 47, "unit": "min", "evidence": [{"label": "...", "value": "..."}]}
  * Evidence is capped at MAX_EVIDENCE rows. Anything else (or a non-finite value) parses to null.
