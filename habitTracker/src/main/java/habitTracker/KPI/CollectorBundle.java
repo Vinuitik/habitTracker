@@ -15,7 +15,12 @@ import java.util.Map;
  * "fixtures/<case>/expected.json"}. Stored on the capability as one JSON string (toJson / fromJson).
  * Untrusted LLM output: CollectorStaticCheck validates it before it is sent anywhere.
  */
-public record CollectorBundle(ObjectNode manifest, Map<String, String> files) {
+public record CollectorBundle(ObjectNode manifest, Map<String, String> files, String combineWhy) {
+
+    /** Without the model's one-sentence reason for the combine rule. */
+    public CollectorBundle(ObjectNode manifest, Map<String, String> files) {
+        this(manifest, files, null);
+    }
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -26,6 +31,7 @@ public record CollectorBundle(ObjectNode manifest, Map<String, String> files) {
     public String toJson() {
         ObjectNode n = JSON.createObjectNode();
         n.set("manifest", manifest);
+        if (combineWhy != null && !combineWhy.isBlank()) n.put("combineWhy", combineWhy);
         ObjectNode f = n.putObject("files");
         files.forEach(f::put);
         return n.toString();
@@ -54,7 +60,8 @@ public record CollectorBundle(ObjectNode manifest, Map<String, String> files) {
             // models sometimes inline fixture JSON as an object instead of a string: keep its text
             files.put(e.getKey(), v.isTextual() ? v.asText() : v.toString());
         });
-        return new CollectorBundle(((ObjectNode) m).deepCopy(), files);
+        String why = n.path("combineWhy").isTextual() ? n.get("combineWhy").asText().strip() : null;
+        return new CollectorBundle(((ObjectNode) m).deepCopy(), files, why == null || why.isEmpty() ? null : why);
     }
 
     /** Distinct fixture case names, in file order. */
@@ -135,6 +142,6 @@ public record CollectorBundle(ObjectNode manifest, Map<String, String> files) {
         variant.set("sources", m.has("sources") ? m.remove("sources") : JSON.createArrayNode());
         m.put("combine", combine == null || combine.isBlank() ? "sum" : combine);
         m.putObject("variants").set(os, variant);
-        return new CollectorBundle(m, files);
+        return new CollectorBundle(m, files, combineWhy);
     }
 }

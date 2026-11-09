@@ -47,7 +47,7 @@ import java.util.TreeMap;
  * Activation listener: CapabilityWentLive for a RUNNER version → POST /activate (best effort; the pull retries).
  */
 @Component
-public class RunnerCollectorProvider {
+public class RunnerCollectorProvider implements habitTracker.KPI.deploy.KpiCollectorDrain {
 
     private static final Logger log = LoggerFactory.getLogger(RunnerCollectorProvider.class);
 
@@ -140,24 +140,8 @@ public class RunnerCollectorProvider {
                 return new PullResult(Outcome.FAILED, 0);
             }
             JsonNode readings = client.readings(user, device, id, dep.getReadingsSince());
-            // one value per local day; a re-run of the same window (same date) keeps the newest recordedAt
             Map<LocalDate, JsonNode> byDay = new TreeMap<>();
-            String maxRecorded = dep.getReadingsSince();
-            OffsetDateTime maxAt = parse(maxRecorded);
-            for (JsonNode r : readings) {
-                OffsetDateTime from = parse(r.path("from").asText(null));
-                if (from == null || !r.path("value").isNumber() || !Double.isFinite(r.path("value").asDouble())) continue;
-                LocalDate day = from.toLocalDate();
-                JsonNode prev = byDay.get(day);
-                OffsetDateTime at = parse(r.path("recordedAt").asText(null));
-                if (prev == null || (at != null && !at.isBefore(orMin(parse(prev.path("recordedAt").asText(null)))))) {
-                    byDay.put(day, r);
-                }
-                if (at != null && (maxAt == null || at.isAfter(maxAt))) {
-                    maxAt = at;
-                    maxRecorded = r.path("recordedAt").asText();
-                }
-            }
+            String maxRecorded = collectDays(readings, dep.getReadingsSince(), byDay);
             int stored = storeDeviceReadings(kpi, cap, dep, byDay);
             dep.setReadingsSince(maxRecorded);
             dep.setLastPulledOn(LocalDate.now());
@@ -178,6 +162,50 @@ public class RunnerCollectorProvider {
             repository.save(cap);
             return new PullResult(Outcome.SKIPPED_OFFLINE, 0);
         }
+    }
+
+    /** Fills byDay with the newest reading per local day; returns the max recordedAt seen (or `since` when none newer). */
+    private static String collectDays(JsonNode readings, String since, Map<LocalDate, JsonNode> byDay) {
+        String maxRecorded = since;
+        OffsetDateTime maxAt = parse(maxRecorded);
+        for (JsonNode r : readings) {
+            OffsetDateTime from = parse(r.path("from").asText(null));
+            if (from == null || !r.path("value").isNumber() || !Double.isFinite(r.path("value").asDouble())) continue;
+            LocalDate day = from.toLocalDate();
+            JsonNode prev = byDay.get(day);
+            OffsetDateTime at = parse(r.path("recordedAt").asText(null));
+            if (prev == null || (at != null && !at.isBefore(orMin(parse(prev.path("recordedAt").asText(null)))))) {
+                byDay.put(day, r);
+            }
+            if (at != null && (maxAt == null || at.isAfter(maxAt))) {
+                maxAt = at;
+                maxRecorded = r.path("recordedAt").asText();
+            }
+        }
+        return maxRecorded;
+    }
+
+    /** Final drain of an old version's row before its collector is deleted (reconciler remove path). */
+    @Override
+    public void drain(KpiDeployment dep) {
+        if (dep.getCollectorId() == null || dep.getDeviceId() == null) return;
+        KPI kpi = kpiRepository.findById(dep.getKpiId()).orElse(null);
+        if (kpi == null) return;
+        KPIProxyCapability cap = live(kpi).orElse(null);
+        if (cap == null) return; // retired: nothing is collecting any more
+        JsonNode readings;
+        try {
+            readings = client.readings(dep.getUserId(), dep.getDeviceId(), dep.getCollectorId(), dep.getReadingsSince());
+        } catch (RunnerCallException e) {
+            if (e.getStatus() == 404) return; // already gone from the runner
+            throw e;
+        }
+        Map<LocalDate, JsonNode> byDay = new TreeMap<>();
+        String max = collectDays(readings, dep.getReadingsSince(), byDay);
+        storeDeviceReadings(kpi, cap, dep, byDay);
+        dep.setReadingsSince(max);
+        saveDeployment(dep);
+        repository.save(cap);
     }
 
     /**

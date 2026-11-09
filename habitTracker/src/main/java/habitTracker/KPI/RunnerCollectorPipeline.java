@@ -122,6 +122,8 @@ public class RunnerCollectorPipeline {
                     return fail(cap, "Code generation failed: " + e.getMessage());
                 }
                 cap.setCollectorBundle(bundle.toJson());
+                cap.setCombine(bundle.combine());
+                cap.setCombineWhy(bundle.combineWhy());
                 cap.setSourceCode(bundle.collectorPy());
                 cap.setAttempts(attempts(cap) + 1);
                 cap.setCollectorTests(null);

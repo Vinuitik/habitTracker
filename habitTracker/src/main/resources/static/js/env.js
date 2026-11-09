@@ -106,7 +106,8 @@ window.ENV = {
     SOURCE_URL:        'https://github.com/Vinuitik/relay',
   },
   KPI_DEVICES: {
-    LOCAL_CONFIRM_URL: 'http://127.0.0.1:7777/local/confirm',   // runner default port (runner.env); opened ON the device itself
+    LOCAL_CONFIRM_URL: 'http://127.0.0.1:7777/local/confirm',   // FALLBACK only: the hub sends confirmUrl per deployment; 7777 = runner default port (runner.env)
+    COMBINE_WORDS: { sum: 'added up', max: 'highest value', avg: 'average', latest: 'most recent' },
     OS_NAMES: { windows: 'Windows', linux: 'Linux', darwin: 'Mac' },
     MANAGER_NAMES: { relay: 'Relay', winget: 'winget', brew: 'Homebrew', flatpak: 'Flatpak', pip: 'pip' },
     SOURCE_NAMES: { activitywatch: 'ActivityWatch (app and site usage)', file: 'files of an app on the computer' },

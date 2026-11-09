@@ -35,7 +35,7 @@ window.KpiDeployments = (() => {
       case 'REMOVING': return { mark: '⏳', tone: 'wait', text: 'being removed' };
       case 'AWAITING_CONFIRM': return {
         mark: '⏳', tone: 'wait', text: 'waiting for your OK',
-        hint: `Confirm the install on ${d.deviceName || 'that computer'} (open ${ENV.KPI_DEVICES.LOCAL_CONFIRM_URL} there)`,
+        hint: `Confirm the install on ${d.deviceName || 'that computer'} (open ${d.confirmUrl || ENV.KPI_DEVICES.LOCAL_CONFIRM_URL} there)`,
       };
       case 'FAILED': return { mark: '⚠', tone: 'bad', text: plainError(d.lastError), retry: true };
       default: return { mark: '⏳', tone: 'wait', text: 'working on it' };
