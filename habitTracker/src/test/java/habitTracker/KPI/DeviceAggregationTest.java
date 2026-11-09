@@ -188,6 +188,7 @@ class DeviceAggregationTest {
     private KPIProxyCapabilityRepository repo(KPIProxyCapability c) {
         KPIProxyCapabilityRepository r = mock(KPIProxyCapabilityRepository.class);
         when(r.findFirstByKpiIdAndUserIdOrderByVersionDesc("k1", "u1")).thenReturn(Optional.of(c));
+        when(r.findByKpiIdAndUserId("k1", "u1")).thenReturn(java.util.List.of(c));
         return r;
     }
 

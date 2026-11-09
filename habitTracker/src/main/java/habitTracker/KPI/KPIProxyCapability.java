@@ -89,6 +89,8 @@ public class KPIProxyCapability {
     private String combine = "sum";
     // R4: set when a redefine changed the unit/sources, so history is no longer comparable.
     private Boolean meaningChanged;
+    // The day this version first went live (SHADOW/ACTIVE); the chart marks it when meaningChanged.
+    private LocalDate liveSince;
     // Generated bundle as one JSON string {manifest, files} (file paths contain dots, which Mongo map keys can't).
     private String collectorBundle;
     // contractHash = the runner's sha256 of {sources, schedule, window} for the proposing device's manifest (display);

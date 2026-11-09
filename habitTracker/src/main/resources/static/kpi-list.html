@@ -496,6 +496,7 @@
             <button class="btn btn--ghost btn--sm" onclick='openManageHabitsModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.linkedHabitIds || [])})'>Manage Habits</button>
             <button class="btn btn--ghost btn--sm" onclick='openAutomateModal(${JSON.stringify(kpi.name)}, ${needsRepair && kpi.proxyType === "RUNNER_COLLECTOR"})'>Automate</button>
             <button class="btn btn--ghost btn--sm" onclick='openProxyModal(${JSON.stringify(kpi.name)}, ${JSON.stringify(kpi.proxyType || "NONE")}, ${JSON.stringify(kpi.proxyConfig || {})})'>Data Source</button>
+            ${kpi.proxyType === 'RUNNER_COLLECTOR' ? `<button class="btn btn--ghost btn--sm" onclick='openAutomateModal(${JSON.stringify(kpi.name)}, false, true)'>Redefine</button>` : ''}
             ${kpi.proxyType === 'RUNNER_COLLECTOR' ? `<button class="btn btn--ghost btn--sm" onclick='KpiRetire.open(${JSON.stringify(kpi.id)}, ${JSON.stringify(kpi.name)})'>Stop automating</button>` : ''}
             ${needsRepair ? `<button class="btn btn--ghost btn--sm" onclick="resetProxyHealth('${kpi.name}')">Reset Proxy</button>` : ''}
             <button class="btn btn--danger btn--sm" onclick="deleteKPI('${kpi.name}')">Delete</button>
