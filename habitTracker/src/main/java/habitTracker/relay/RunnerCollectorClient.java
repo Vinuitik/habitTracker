@@ -36,8 +36,12 @@ public class RunnerCollectorClient {
         this.longCallMs = longCallMs;
     }
 
-    /** What the runner reports about itself: Go runtime.GOOS / GOARCH and the package managers found on PATH. */
-    public record RunnerInfo(String os, String arch, java.util.List<String> managers) {}
+    /** What the runner reports about itself: Go runtime.GOOS / GOARCH, package managers on PATH, and its local listen port when it says (null otherwise). */
+    public record RunnerInfo(String os, String arch, java.util.List<String> managers, Integer port) {
+        public RunnerInfo(String os, String arch, java.util.List<String> managers) {
+            this(os, arch, managers, null);
+        }
+    }
 
     /**
      * GET /v1/runner/info → os/arch/managers. An older runner (no such fields, or no such route) yields os null,
@@ -48,14 +52,16 @@ public class RunnerCollectorClient {
         try {
             n = jobs.send(userId, deviceId, "GET", "/v1/runner/info", "");
         } catch (RunnerCallException e) {
-            if (e.getStatus() == 404) return new RunnerInfo(null, null, java.util.List.of());
+            if (e.getStatus() == 404) return new RunnerInfo(null, null, java.util.List.of(), null);
             throw e;
         }
         java.util.List<String> managers = new java.util.ArrayList<>();
         if (n != null && n.path("managers").isArray()) n.get("managers").forEach(m -> managers.add(m.asText()));
         String os = n == null ? "" : n.path("os").asText("");
         String arch = n == null ? "" : n.path("arch").asText("");
-        return new RunnerInfo(os.isBlank() ? null : os, arch.isBlank() ? null : arch, java.util.List.copyOf(managers));
+        int port = n == null ? 0 : n.path("port").asInt(n.path("listenPort").asInt(0));
+        return new RunnerInfo(os.isBlank() ? null : os, arch.isBlank() ? null : arch, java.util.List.copyOf(managers),
+                port > 0 && port < 65536 ? port : null);
     }
 
     /** → {activitywatch:{installed, running, buckets, error?}, sandbox:{available, kind, error?}, operation}. */

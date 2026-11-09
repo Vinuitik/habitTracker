@@ -273,7 +273,7 @@ class KpiDeploymentReconcilerTest {
         d.setUserId("u");
         d.setStatus(KpiDeploymentStatus.FAILED);
         d.setAttempts(5);
-        KpiDeploymentController c = new KpiDeploymentController(repo, kpis, devices, uplinks, rec);
+        KpiDeploymentController c = new KpiDeploymentController(repo, kpis, devices, uplinks, rec, mock(RunnerCollectorClient.class));
         try (MockedStatic<SecurityUtils> sec = mockStatic(SecurityUtils.class)) {
             sec.when(SecurityUtils::getCurrentUserId).thenReturn("u");
             var rows = c.list("k1").getBody();

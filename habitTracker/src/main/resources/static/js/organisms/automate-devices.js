@@ -93,6 +93,11 @@ window.AutomateDevices = (() => {
       if (plan.runsOn && plan.runsOn.length) {
         box.append(el('div', 'device-plan__runs', 'Runs on: ' + plan.runsOn.map(label).join(', ')));
       }
+      if (plan.runsOn && plan.runsOn.length > 1 && plan.combine) {
+        const rule = CFG.COMBINE_WORDS[plan.combine] || plan.combine;
+        box.append(el('div', 'device-plan__combine',
+          'Combined across devices: ' + rule + (plan.combineWhy ? ' \u2014 ' + plan.combineWhy : '')));
+      }
       (plan.variants || []).forEach((v) => {
         const os = osName(v.os);
         const list = el('ul', 'device-plan__list');

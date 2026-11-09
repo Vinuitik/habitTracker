@@ -4,6 +4,7 @@ import habitTracker.KPI.KPIRepository;
 import habitTracker.auth.SecurityUtils;
 import habitTracker.relay.Device;
 import habitTracker.relay.DeviceService;
+import habitTracker.relay.RunnerCollectorClient;
 import habitTracker.relay.UplinkRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,13 +23,15 @@ public class KpiDeploymentController {
 
     public record DeploymentDTO(String id, String deviceId, String deviceName, String os, Integer capabilityVersion,
                                 KpiDeploymentTarget target, KpiDeploymentStatus status, String lastError,
-                                int attempts, Instant nextAttemptAt, boolean online) {}
+                                int attempts, Instant nextAttemptAt, boolean online, String confirmUrl) {}
 
     private final KpiDeploymentRepository deployments;
     private final KPIRepository kpis;
     private final DeviceService devices;
     private final UplinkRegistry uplinks;
     private final KpiDeploymentReconciler reconciler;
+    private final RunnerCollectorClient runner;
+    static final int DEFAULT_RUNNER_PORT = 7777;
 
     @GetMapping
     public ResponseEntity<List<DeploymentDTO>> list(@PathVariable String kpiId) {
@@ -68,6 +71,22 @@ public class KpiDeploymentController {
     private DeploymentDTO dto(String user, KpiDeployment d) {
         String name = devices.owned(user, d.getDeviceId()).map(Device::getName).orElse(null);
         return new DeploymentDTO(d.getId(), d.getDeviceId(), name, d.getOs(), d.getCapabilityVersion(), d.getTarget(),
-                d.getStatus(), d.getLastError(), d.getAttempts(), d.getNextAttemptAt(), uplinks.isOnline(d.getDeviceId()));
+                d.getStatus(), d.getLastError(), d.getAttempts(), d.getNextAttemptAt(), uplinks.isOnline(d.getDeviceId()),
+                confirmUrl(user, d));
+    }
+
+    /** Only rows waiting for the user's OK get one; the port is the runner's own when it reports it, else 7777. */
+    private String confirmUrl(String user, KpiDeployment d) {
+        if (d.getStatus() != KpiDeploymentStatus.AWAITING_CONFIRM) return null;
+        int port = DEFAULT_RUNNER_PORT;
+        if (uplinks.isOnline(d.getDeviceId())) {
+            try {
+                Integer p = runner.info(user, d.getDeviceId()).port();
+                if (p != null) port = p;
+            } catch (RuntimeException e) {
+                // offline / old runner: the default port
+            }
+        }
+        return "http://127.0.0.1:" + port + "/local/confirm";
     }
 }

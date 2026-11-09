@@ -27,7 +27,7 @@ public class KpiAutomateDevicesController {
     public record DeviceChip(String deviceId, String name, String os, boolean online) {}
     public record Install(String manager, String id, String why) {}
     public record Variant(String os, List<String> sources, List<Install> installs) {}
-    public record Plan(List<DeviceChip> runsOn, List<Variant> variants) {}
+    public record Plan(List<DeviceChip> runsOn, List<Variant> variants, String combine, String combineWhy) {}
 
     private final DeviceService devices;
     private final UplinkRegistry uplinks;
@@ -66,7 +66,7 @@ public class KpiAutomateDevicesController {
                 bundle.variants().forEach((os, v) -> variants.add(variant(os, v)));
             }
         }
-        return ResponseEntity.ok(new Plan(runsOn, variants));
+        return ResponseEntity.ok(new Plan(runsOn, variants, cap.getCombine(), cap.getCombineWhy()));
     }
 
     private static Variant variant(String os, JsonNode v) {

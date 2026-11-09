@@ -87,6 +87,8 @@ public class KPIProxyCapability {
     // How per-device values combine into the KPI's daily value: sum | max | avg | latest.
     @Builder.Default
     private String combine = "sum";
+    // The model's one plain sentence on why that rule fits (shown on the approval screen); null when it gave none.
+    private String combineWhy;
     // R4: set when a redefine changed the unit/sources, so history is no longer comparable.
     private Boolean meaningChanged;
     // The day this version first went live (SHADOW/ACTIVE); the chart marks it when meaningChanged.
