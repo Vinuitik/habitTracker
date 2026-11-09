@@ -302,9 +302,11 @@ public class RunnerCollectorProvider {
     }
 
     private Optional<KPIProxyCapability> live(KPI kpi) {
-        return repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), kpi.getUserId())
+        // newest LIVE version: a redefine's newer PROPOSED version must not stop the running one from collecting
+        return repository.findByKpiIdAndUserId(kpi.getId(), kpi.getUserId()).stream()
                 .filter(c -> c.getPlatform() == CapabilityPlatform.RUNNER)
-                .filter(c -> c.getStatus() == CapabilityStatus.ACTIVE || c.getStatus() == CapabilityStatus.SHADOW);
+                .filter(c -> c.getStatus() == CapabilityStatus.ACTIVE || c.getStatus() == CapabilityStatus.SHADOW)
+                .max(java.util.Comparator.comparing(c -> c.getVersion() == null ? 0 : c.getVersion()));
     }
 
     private static JsonNode find(JsonNode list, String id) {

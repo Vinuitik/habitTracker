@@ -29,6 +29,7 @@ window.ENV = {
     KPI_CAP_JOB:     (name, id, after) => `/api/kpis/${encodeURIComponent(name)}/capability/jobs/${encodeURIComponent(id)}?after=${after}`,
     KPI_AUTOMATE_DEVICES: '/api/kpi/automate/devices',   // [{deviceId, name, os, online}]
     KPI_AUTOMATE_PLAN:    (name) => `/api/kpi/automate/plan?kpiName=${encodeURIComponent(name)}`,   // {runsOn, variants}
+    KPI_DEFINITION_CHANGES: (kpiId) => `/api/kpi/${encodeURIComponent(kpiId)}/definition-changes`,   // [{date, version}]
     KPI_DEPLOYMENTS:      (kpiId) => `/api/kpi/${encodeURIComponent(kpiId)}/deployments`,
     KPI_DEPLOYMENT_RETRY: (kpiId, id) => `/api/kpi/${encodeURIComponent(kpiId)}/deployments/${encodeURIComponent(id)}/retry`,
     PROJECTS:        '/api/projects',
@@ -109,6 +110,11 @@ window.ENV = {
     OS_NAMES: { windows: 'Windows', linux: 'Linux', darwin: 'Mac' },
     MANAGER_NAMES: { relay: 'Relay', winget: 'winget', brew: 'Homebrew', flatpak: 'Flatpak', pip: 'pip' },
     SOURCE_NAMES: { activitywatch: 'ActivityWatch (app and site usage)', file: 'files of an app on the computer' },
+  },
+  KPI_REDEFINE: {
+    BANNER: 'The current version keeps collecting until the new one is approved.',
+    CHANGED_LABEL: 'Definition changed',
+    MARKER_COLOR: '#8b90a0',   // --color-text-secondary; Chart.js needs a literal colour
   },
   EXTERNAL: {
     TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',

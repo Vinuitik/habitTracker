@@ -37,6 +37,15 @@ window.AutomateDevices = (() => {
     if (!selected.size && devices.length === 1) selected.add(devices[0].deviceId);
   }
 
+  // Redefine: start from the devices the running version uses (ids not paired any more are ignored).
+  function preselect(ids) {
+    const known = new Set(devices.map((d) => d.deviceId));
+    const keep = (ids || []).filter((id) => known.has(id));
+    if (!keep.length) return;
+    selected.clear();
+    keep.forEach((id) => selected.add(id));
+  }
+
   const targetIds = () => devices.filter((d) => selected.has(d.deviceId)).map((d) => d.deviceId);
 
   // Appends the chip row to `parent`; nothing is mounted for 0 or 1 device (1 is preselected, 0 = "Connect a runner").
@@ -98,5 +107,5 @@ window.AutomateDevices = (() => {
     }).catch(() => { /* optional info: the rest of the screen stands without it */ });
   }
 
-  return { load, mountChips, mountPlan, targetIds, installText, label };
+  return { load, preselect, mountChips, mountPlan, targetIds, installText, label };
 })();

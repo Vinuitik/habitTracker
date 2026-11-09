@@ -37,7 +37,7 @@ public class CapabilityTaskService {
     static final int MAX_EVENTS = 200;
     static final int WORKERS = 4;
 
-    enum Action { PROPOSE, APPROVE, REGENERATE, REPAIR, WRONG, CONTRACT, SENSOR, REFINE }
+    enum Action { PROPOSE, REDEFINE, APPROVE, REGENERATE, REPAIR, WRONG, CONTRACT, SENSOR, REFINE }
 
     record Event(long seq, String kind, String text) {}
 
@@ -181,6 +181,7 @@ public class CapabilityTaskService {
                 case PROPOSE -> targetDeviceIds == null || targetDeviceIds.isEmpty()
                         ? agent.proposeAs(task.userId, task.kpiName, description)
                         : agent.proposeAs(task.userId, task.kpiName, description, targetDeviceIds);
+                case REDEFINE -> agent.redefineAs(task.userId, task.kpiName, description, targetDeviceIds);
                 case APPROVE -> agent.approveAs(task.userId, task.kpiName, capabilityId);
                 case REGENERATE -> agent.regenerateAs(task.userId, task.kpiName, capabilityId);
                 case REPAIR -> agent.repairAs(task.userId, task.kpiName);
@@ -224,7 +225,7 @@ public class CapabilityTaskService {
         try {
             return Action.valueOf(String.valueOf(action).trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown action (expected propose, approve, regenerate, repair, wrong, contract, sensor or refine)");
+            throw new IllegalArgumentException("Unknown action (expected propose, redefine, approve, regenerate, repair, wrong, contract, sensor or refine)");
         }
     }
 }

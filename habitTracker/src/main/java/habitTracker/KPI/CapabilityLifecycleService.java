@@ -132,8 +132,38 @@ public class CapabilityLifecycleService {
         return due.size();
     }
 
+    /**
+     * Redefine (R4): compared with the live version it replaces, did the unit or the source types change? Then old
+     * and new history are not comparable and the chart marks the switch. Repairs keep the meaning, so never flag.
+     */
+    private void markDefinitionChange(KPIProxyCapability cap) {
+        if (cap.getLiveSince() == null) cap.setLiveSince(LocalDate.now());
+        if (Boolean.TRUE.equals(cap.getRepair())) {
+            repository.save(cap);
+            return;
+        }
+        KPIProxyCapability prev = repository.findByKpiIdAndUserId(cap.getKpiId(), cap.getUserId()).stream()
+                .filter(o -> !o.getId().equals(cap.getId()))
+                .filter(o -> o.getStatus() == CapabilityStatus.ACTIVE || o.getStatus() == CapabilityStatus.SHADOW
+                        || o.getStatus() == CapabilityStatus.NEEDS_REPAIR)
+                .max(java.util.Comparator.comparing(o -> o.getVersion() == null ? 0 : o.getVersion())).orElse(null);
+        if (prev != null) {
+            boolean unit = prev.getLastUnit() != null && cap.getLastUnit() != null
+                    && !prev.getLastUnit().trim().equalsIgnoreCase(cap.getLastUnit().trim());
+            boolean sources = !sourceTypes(prev).equals(sourceTypes(cap));
+            cap.setMeaningChanged(unit || sources);
+        }
+        repository.save(cap);
+    }
+
+    private static java.util.Set<String> sourceTypes(KPIProxyCapability c) {
+        List<String> l = c.getDeclaredCapabilities() == null ? null : c.getDeclaredCapabilities().get("sources");
+        return l == null ? java.util.Set.of() : new java.util.HashSet<>(l);
+    }
+
     /** Wires the KPI to the capability and retires older live versions. */
     public void wire(KPIProxyCapability cap, KPI kpi) {
+        markDefinitionChange(cap);
         for (KPIProxyCapability other : repository.findByKpiIdAndUserId(cap.getKpiId(), cap.getUserId())) {
             if (!other.getId().equals(cap.getId())
                     && (other.getStatus() == CapabilityStatus.ACTIVE || other.getStatus() == CapabilityStatus.NEEDS_REPAIR

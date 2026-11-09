@@ -169,6 +169,8 @@ const AUTOMATE = {
     notice: null,       // one-shot line at the top of the panel ("Setup discarded...")
     returnFocus: null,  // element focused before the dialog opened
     refineDraft: '',    // typed refine feedback; survives re-renders, cleared once a refine job is accepted
+    redefine: false,    // opened from "Redefine": the running version keeps collecting; a new one is proposed beside it
+    redefineDevices: null, // device ids of the running version (prefill)
     runnerOnline: null, // GET KPI_CAP_RUNNER at open: false → "Connect a runner" (null = unknown, not blocking)
 };
 // CapabilityGeneratorException.NO_RUNNER_MESSAGE: a job that failed for it also gets the Relay link.
@@ -208,14 +210,14 @@ async function automateFetch(url, method, body) {
     return data;
 }
 
-async function openAutomateModal(kpiName, needsRepair) {
+async function openAutomateModal(kpiName, needsRepair, redefine) {
     automateStopPolling();
     const gen = ++AUTOMATE.gen;
     const modal = document.getElementById('automateModal');
     if (!modal.classList.contains('open')) AUTOMATE.returnFocus = document.activeElement;
     Object.assign(AUTOMATE, { kpiName, needsRepair: !!needsRepair, reloadOnClose: false, job: null, current: null,
-        confirming: false, notice: null, runnerOnline: null, refineDraft: '' });
-    document.getElementById('automateTitle').textContent = `Automate · ${kpiName}`;
+        confirming: false, notice: null, runnerOnline: null, refineDraft: '', redefine: !!redefine, redefineDevices: null });
+    document.getElementById('automateTitle').textContent = `${redefine ? 'Redefine' : 'Automate'} · ${kpiName}`;
     modal.classList.add('open');
     renderAutomate(null);
     document.getElementById('automateClose').focus();
@@ -228,6 +230,12 @@ async function openAutomateModal(kpiName, needsRepair) {
         ]);
         if (gen !== AUTOMATE.gen) return;
         AUTOMATE.runnerOnline = runner ? !!runner.online : null;
+        if (AUTOMATE.redefine) {
+            const plan = await automateFetch(E_KPI.KPI_AUTOMATE_PLAN(kpiName)).catch(() => null);
+            if (gen !== AUTOMATE.gen) return;
+            AUTOMATE.redefineDevices = plan && plan.runsOn ? plan.runsOn.map(d => d.deviceId) : null;
+            AutomateDevices.preselect(AUTOMATE.redefineDevices);
+        }
         renderAutomate(cap);
         if (active && active.jobId) automateWatch(active.jobId);   // a job started earlier is still running
     } catch (e) {
@@ -778,10 +786,12 @@ function renderAutomate(cap, error) {
     errEl.hidden = !errText;
 
     const status = cap ? cap.status : null;
-    const fresh = !cap || status === 'REJECTED' || status === 'DISABLED' || status === 'RETIRED';
+    const redefineForm = AUTOMATE.redefine && (status === 'ACTIVE' || status === 'SHADOW');
+    const fresh = !cap || status === 'REJECTED' || status === 'DISABLED' || status === 'RETIRED' || redefineForm;
     renderAutomateStatus(cap, fresh);
     renderAutomateRail(cap);
     renderAutomateDiscard(cap);
+    if (AUTOMATE.redefine) body.append(automateEl('div', 'automate-dialog__notice', ENV.KPI_REDEFINE.BANNER));
     if (AUTOMATE.notice) body.append(automateEl('div', 'automate-dialog__notice', AUTOMATE.notice));
     const noRunner = !automateRunning() && (AUTOMATE.runnerOnline === false || (errText || '').includes(AUTOMATE_NO_RUNNER));
     if (noRunner) body.append(automateConnectRunner());
@@ -803,14 +813,14 @@ function renderAutomate(cap, error) {
         ta.rows = 5;
         ta.maxLength = 2000;
         ta.placeholder = 'e.g. Count the lines of code in my project folder each day';
-        if (cap && cap.description && status === 'REJECTED') ta.value = cap.description;
+        if (cap && cap.description && (status === 'REJECTED' || redefineForm)) ta.value = cap.description;
         group.append(label, ta,
             automateEl('span', 'form-group__hint',
                 'The AI proposes a plan first. Nothing runs until you approve it. Collectors run on your own runner, in a sandbox with no internet, reading only what you approve.'));
-        const propose = automateButton('Propose a plan', 'btn--primary', () => {
+        const propose = automateButton(AUTOMATE.redefine ? 'Propose a new plan' : 'Propose a plan', 'btn--primary', () => {
             const description = ta.value.trim();
             if (!description) { renderAutomate(cap, 'Describe what to capture first.'); return; }
-            automateStart('propose', { description, targetDeviceIds: AutomateDevices.targetIds() });
+            automateStart(AUTOMATE.redefine ? 'redefine' : 'propose', { description, targetDeviceIds: AutomateDevices.targetIds() });
         });
         propose.disabled = AUTOMATE.runnerOnline === false;
         automateFoot(propose);

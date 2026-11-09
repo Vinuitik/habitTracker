@@ -73,7 +73,9 @@ async function loadKPIChart(kpiName) {
         const data = await response.json();
 
         if (response.ok) {
-            renderChart(kpiName, data);
+            const card0 = document.querySelector(`.kpi-chart-card[data-kpi-name="${CSS.escape(kpiName)}"]`);
+            const changes = await loadDefinitionChanges(card0 && card0.getAttribute('data-kpi-id'));
+            renderChart(kpiName, data, changes);
             updateKPIStats(kpiName, data);
             const card = document.querySelector(`.kpi-chart-card[data-kpi-name="${CSS.escape(kpiName)}"]`);
             if (card && window.KpiDevices) KpiDevices.update(card, card.getAttribute('data-kpi-id'), data);
@@ -86,7 +88,48 @@ async function loadKPIChart(kpiName) {
     }
 }
 
-function renderChart(kpiName, data) {
+// Days this KPI's definition changed (redefine with a different unit or source): [{date}]. Best effort.
+async function loadDefinitionChanges(kpiId) {
+    if (!kpiId) return [];
+    try {
+        const res = await fetch(ENV.ENDPOINTS.KPI_DEFINITION_CHANGES(kpiId), { credentials: 'include' });
+        return res.ok ? await res.json() : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+// Chart.js plugin: a dashed vertical line + "Definition changed" at the first point on/after each change date.
+function definitionMarkers(data, changes) {
+    const cfg = ENV.KPI_REDEFINE;
+    const idxs = (changes || []).map(c => data.findIndex(d => String(d.date).slice(0, 10) >= c.date)).filter(i => i >= 0);
+    return {
+        id: 'definitionMarkers',
+        afterDatasetsDraw(chart) {
+            const { ctx, chartArea, scales } = chart;
+            ctx.save();
+            ctx.strokeStyle = cfg.MARKER_COLOR;
+            ctx.fillStyle = cfg.MARKER_COLOR;
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1;
+            ctx.font = '12px sans-serif';
+            idxs.forEach(i => {
+                const x = scales.x.getPixelForValue(i);
+                ctx.beginPath();
+                ctx.moveTo(x, chartArea.top);
+                ctx.lineTo(x, chartArea.bottom);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.textAlign = x > chartArea.right - 130 ? 'right' : 'left';
+                ctx.fillText(cfg.CHANGED_LABEL, x + (ctx.textAlign === 'left' ? 4 : -4), chartArea.top + 12);
+                ctx.setLineDash([4, 4]);
+            });
+            ctx.restore();
+        }
+    };
+}
+
+function renderChart(kpiName, data, changes) {
     const canvas = document.getElementById(`chart-${kpiName}`);
     if (!canvas) return;
     
@@ -116,6 +159,7 @@ function renderChart(kpiName, data) {
     
     const config = {
         type: 'line',
+        plugins: [definitionMarkers(data, changes)],
         data: {
             labels: labels,
             datasets: [

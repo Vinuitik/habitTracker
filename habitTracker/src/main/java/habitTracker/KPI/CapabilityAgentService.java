@@ -70,6 +70,26 @@ public class CapabilityAgentService {
 
     /** targetDeviceIds = the devices the collector will run on; null/empty = the one online runner (as before). */
     CapabilityDTO proposeAs(String userId, String kpiName, String description, List<String> targetDeviceIds) {
+        return proposeAs(userId, kpiName, description, targetDeviceIds, false);
+    }
+
+    /**
+     * Redefine a running KPI: same loop, but the live (ACTIVE/SHADOW) version is allowed and stays untouched; blank
+     * description / no devices default to the live version's. The new PROPOSED version goes live only via the usual approvals.
+     */
+    CapabilityDTO redefineAs(String userId, String kpiName, String description, List<String> targetDeviceIds) {
+        KPI kpi = requireKpi(userId, kpiName);
+        KPIProxyCapability live = repository.findByKpiIdAndUserId(kpi.getId(), userId).stream()
+                .filter(c -> c.getStatus() == CapabilityStatus.ACTIVE || c.getStatus() == CapabilityStatus.SHADOW)
+                .max(java.util.Comparator.comparing(c -> c.getVersion() == null ? 0 : c.getVersion())).orElse(null);
+        if (live == null) throw new IllegalStateException("This KPI is not running yet, so there is nothing to redefine");
+        String desc = description == null || description.isBlank() ? live.getDescription() : description;
+        List<String> devs = targetDeviceIds == null || targetDeviceIds.isEmpty() ? live.getTargetDeviceIds() : targetDeviceIds;
+        return proposeAs(userId, kpiName, desc, devs, true);
+    }
+
+    private CapabilityDTO proposeAs(String userId, String kpiName, String description, List<String> targetDeviceIds,
+                                    boolean redefine) {
         KPI kpi = requireKpi(userId, kpiName);
         if (description == null || description.isBlank()) {
             throw new IllegalArgumentException("Describe what should be captured");
@@ -78,7 +98,7 @@ public class CapabilityAgentService {
             throw new IllegalArgumentException("Description too long (max " + MAX_DESCRIPTION_CHARS + " chars)");
         }
         Optional<KPIProxyCapability> latest = repository.findFirstByKpiIdAndUserIdOrderByVersionDesc(kpi.getId(), userId);
-        if (latest.isPresent() && (latest.get().getStatus() == CapabilityStatus.ACTIVE
+        if (!redefine && latest.isPresent() && (latest.get().getStatus() == CapabilityStatus.ACTIVE
                 || latest.get().getStatus() == CapabilityStatus.SHADOW)) {
             throw new IllegalStateException("This KPI already has an active capability");
         }
@@ -237,7 +257,11 @@ public class CapabilityAgentService {
     }
 
     public CapabilityDTO reject(String kpiName, String capabilityId) {
-        String userId = currentUser();
+        return rejectAs(currentUser(), kpiName, capabilityId);
+    }
+
+    /** Rejecting a redefine's draft only touches that draft: the live version keeps running. */
+    CapabilityDTO rejectAs(String userId, String kpiName, String capabilityId) {
         KPI kpi = requireKpi(userId, kpiName);
         KPIProxyCapability cap = requireCapability(userId, kpi, capabilityId);
         if (cap.getStatus() != CapabilityStatus.PROPOSED && cap.getStatus() != CapabilityStatus.TEST_FAILED
