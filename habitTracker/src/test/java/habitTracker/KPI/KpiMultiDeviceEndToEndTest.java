@@ -411,10 +411,15 @@ class KpiMultiDeviceEndToEndTest {
         LocalDate d3 = LocalDate.now();
         runnerB.addReading(c1, d3, 11, "2026-11-06T00:10:00Z");
         runnerA.addReading(c2, d3, 7, "2026-11-06T00:20:00Z");
+        LocalDate d4 = LocalDate.now().minusDays(3);   // an unpulled reading still sitting on A's OLD collector at handoff
+        runnerA.addReading(c1, d4, 5, "2026-11-06T00:05:00Z");
+        assertNull(day(kpi, d4));
         events.publishEvent(new RunnerConnected(USER, A));
         await("A runs v2 and v1 is gone from A", () -> row(kpi, A, 2).getStatus() == KpiDeploymentStatus.ACTIVE
                 && row(kpi, A, 1).getStatus() == KpiDeploymentStatus.REMOVED);
         assertFalse(runnerA.collectors.containsKey(c1), "old collector deleted on A once v2 runs there");
+        assertNotNull(day(kpi, d4), "the old collector was drained before it was deleted");
+        assertEquals(5.0, day(kpi, d4).getValue());
         assertTrue(runnerA.collectors.get(c2).active);
         assertEquals(KpiDeploymentTarget.REMOVED, row(kpi, A, 1).getTarget());
         assertEquals(KpiDeploymentStatus.PENDING, row(kpi, B, 2).getStatus());

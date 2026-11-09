@@ -59,6 +59,7 @@ public class KpiDeploymentReconciler {
     private final RunnerCollectorClient client;
     private final Executor background;
     private final Clock clock;
+    private KpiCollectorDrain drain;
 
     @Autowired
     public KpiDeploymentReconciler(KpiDeploymentRepository deployments, KPIProxyCapabilityRepository capabilities,
@@ -79,6 +80,12 @@ public class KpiDeploymentReconciler {
         this.client = client;
         this.background = background;
         this.clock = clock;
+    }
+
+    /** Setter-injected so test constructors stay unchanged; null = no drain (unit tests). */
+    @Autowired(required = false)
+    void setDrain(KpiCollectorDrain drain) {
+        this.drain = drain;
     }
 
     // ── triggers ─────────────────────────────────────────────────────────────
@@ -233,6 +240,7 @@ public class KpiDeploymentReconciler {
                         && o.getTarget() == KpiDeploymentTarget.ACTIVE
                         && dep.getCollectorId() != null && dep.getCollectorId().equals(o.getCollectorId()));
         if (!shared && dep.getCollectorId() != null) {
+            if (drain != null) drain.drain(dep); // offline/failed: throws, so nothing is deleted and the row stays REMOVING
             try {
                 client.delete(dep.getUserId(), dep.getDeviceId(), dep.getCollectorId());
             } catch (RunnerCallException e) {
