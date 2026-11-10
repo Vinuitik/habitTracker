@@ -146,10 +146,70 @@ window.RelayChat = (() => {
     const sig = JSON.stringify(msgs);
     if (sig === c.sig) return;
     const el = $('chat-msgs');
-    const atBottom = c.sig === null || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const atBottom = c.sig === null || nearBottom(el);
+    track(c, msgs, c.sig === null);
     c.sig = sig;
-    el.innerHTML = msgs.length ? msgs.map(messageHtml).join('') : '<div class="relay-empty">Say something to start.</div>';
+    el.innerHTML = msgs.length
+      ? msgs.map((m, i) => (c.rv && c.rv.idx === i ? streamHtml(c.rv) : messageHtml(m))).join('')
+      : '<div class="relay-empty">Say something to start.</div>';
     if (atBottom) el.scrollTop = el.scrollHeight;
+  }
+
+  const nearBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+
+  // ---- smooth streaming ----
+  // The transcript only grows once per poll and claude-agent-acp sends whole text blocks, so new agent text
+  // would land as a wall. The last agent message is revealed word by word instead (#chat-stream), fast enough
+  // to catch up in ENV.TIMING.RELAY_STREAM_CATCHUP_MS; each poll re-aims at the new end. Text already there
+  // when the chat opens, or a message that stops being last, shows in full. rv = {key, idx, text, shown, pos, cps, raf, last}.
+  function track(c, msgs, first) {
+    const idx = msgs.length - 1;
+    const m = msgs[idx];
+    if (!m || m.role !== 'agent' || m.kind || !m.text) { stopReveal(c); return; }
+    const key = `${idx}|${m.at}`;
+    if (!c.rv || c.rv.key !== key) {
+      stopReveal(c);
+      const shown = first ? m.text.length : 0;
+      c.rv = { key, idx, text: m.text, shown, pos: shown, cps: 0, raf: 0, last: 0 };
+    }
+    const rv = c.rv;
+    rv.text = m.text;
+    rv.shown = Math.min(rv.shown, rv.text.length);
+    rv.pos = Math.min(rv.pos, rv.text.length);
+    const left = rv.text.length - rv.shown;
+    rv.cps = Math.max(ENV.TIMING.RELAY_STREAM_MIN_CPS, (left * 1000) / ENV.TIMING.RELAY_STREAM_CATCHUP_MS);
+    if (left > 0 && !rv.raf) rv.raf = requestAnimationFrame(step);
+  }
+
+  function stopReveal(c) {
+    if (c.rv) cancelAnimationFrame(c.rv.raf);
+    c.rv = null;
+  }
+
+  const streamHtml = (rv) => `<div class="relay-msg relay-msg--agent" id="chat-stream">${R.md(rv.text.slice(0, rv.shown))}</div>`;
+
+  function step(ts) {
+    const rv = chat && chat.rv;
+    if (!rv) return;
+    rv.raf = 0;
+    const dt = rv.last ? Math.min(ts - rv.last, 100) : 16;
+    rv.last = ts;
+    rv.pos = Math.min(rv.text.length, rv.pos + (rv.cps * dt) / 1000);
+    const cut = Math.floor(rv.pos);
+    const sp = rv.text.slice(cut).search(/\s/);   // finish the current word
+    const next = sp < 0 ? rv.text.length : cut + sp;
+    if (next > rv.shown) {
+      rv.shown = next;
+      const node = $('chat-stream');
+      if (node) {
+        const el = $('chat-msgs');
+        const stick = nearBottom(el);
+        node.innerHTML = R.md(rv.text.slice(0, rv.shown));
+        if (stick) el.scrollTop = el.scrollHeight;
+      }
+    }
+    if (rv.shown < rv.text.length) rv.raf = requestAnimationFrame(step);
+    else rv.last = 0;
   }
 
   function messageHtml(m) {
@@ -261,7 +321,7 @@ window.RelayChat = (() => {
           <button class="btn btn--primary" type="submit" id="chat-send">Send</button>
         </form>
       </div>`;
-    chat = { dev, sid, state: '', sig: null, notice: '', configOptions: [], prefsDone: false };
+    chat = { dev, sid, state: '', sig: null, notice: '', configOptions: [], prefsDone: false, rv: null };
     agentsOff = RelayAgents.mount($('chat-agents'), { dev, sid });
     const input = $('chat-input');
     input.value = loadDraft(sid);
@@ -286,6 +346,7 @@ window.RelayChat = (() => {
     document.addEventListener('visibilitychange', onVisibility);
     refresh();
     return () => {
+      if (chat) stopReveal(chat);
       chat = null;
       closePopover();
       if (agentsOff) { agentsOff(); agentsOff = null; }

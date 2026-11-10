@@ -82,14 +82,92 @@ window.Relay = (() => {
       <div class="relay-head__actions">${actions}</div>
     </div>`;
 
-  // Markdown-ish: ``` fences → <pre>, blank lines → paragraphs, `code`, **bold**. Escape first, always.
-  const inline = (s) => esc(s)
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
-  const md = (text) => String(text ?? '').split(/^ {0,3}```.*$/m).map((part, i) => (i % 2
-    ? `<pre class="relay-pre"><code>${esc(part.replace(/^\n|\n$/g, ''))}</code></pre>`
-    : part.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).map((p) => `<p>${inline(p)}</p>`).join(''))).join('');
+  // Markdown for agent replies (port of the Relay Android MarkdownText.kt): fenced code, headings, bullet /
+  // numbered lists (indent → md-li--iN), quotes, rules, pipe tables; inline `code`, **bold**, *italic*,
+  // ~~strike~~, [links](https://…). Escape first, always. `_` is never emphasis (snake_case stays intact).
+  // Unclosed fences render as code to the end, so a half-streamed reply still looks right. Styles: molecules/markdown.css.
+  const FENCE = /^ {0,3}(```|~~~)/;
+  const RULE = /^ {0,3}([-*_])( *\1){2,} *$/;
+  const TABLE_SEP = /^ *\|? *:?-+:? *(\| *:?-+:? *)*\|? *$/;
+  const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+  const BULLET = /^(\s*)[-*+]\s+(.*)$/;
+  const NUMBERED = /^(\s*)(\d+)[.)]\s+(.*)$/;
+  const inline = (s) => {
+    const keep = [];   // code spans + links, swapped back in last so emphasis can't reach into them
+    const stash = (html) => `\u0000${keep.push(html) - 1}\u0000`;
+    return esc(s)
+      .replace(/`([^`\n]+)`/g, (_, c) => stash(`<code>${c}</code>`))
+      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, t, u) => stash(`<a class="md-a" href="${u}" target="_blank" rel="noopener noreferrer">${t}</a>`))
+      .replace(/\*\*(?=\S)(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/~~(?=\S)(.+?)~~/g, '<del>$1</del>')
+      .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?!\*)/g, '$1<em>$2</em>')
+      .replace(/\n/g, '<br>')
+      .replace(/\u0000(\d+)\u0000/g, (_, i) => keep[i]);
+  };
+  const cells = (line) => line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '').split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
+  function md(text) {
+    const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+    const out = [];
+    let para = [];
+    let list = null;    // {tag, items: [{indent, text}], start}
+    let quote = [];
+    const flush = () => {
+      if (para.length) out.push(`<p>${inline(para.join('\n'))}</p>`);
+      if (quote.length) out.push(`<blockquote class="md-quote">${inline(quote.join('\n'))}</blockquote>`);
+      if (list) {
+        const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+        out.push(`<${list.tag} class="md-list"${start}>${list.items.map((it) =>
+          `<li class="md-li md-li--i${it.indent}">${inline(it.text)}</li>`).join('')}</${list.tag}>`);
+      }
+      para = []; quote = []; list = null;
+    };
+    const item = (tag, indent, txt, n) => {
+      if (para.length || quote.length || (list && list.tag !== tag && indent === 0)) flush();
+      if (!list) list = { tag, items: [], start: n };
+      list.items.push({ indent: Math.min(3, Math.floor(indent / 2)), text: txt });
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const t = line.trim();
+      let m;
+      if (FENCE.test(line)) {
+        flush();
+        const code = [];
+        for (i++; i < lines.length && !FENCE.test(lines[i]); i++) code.push(lines[i]);
+        out.push(`<pre class="relay-pre"><code>${esc(code.join('\n'))}</code></pre>`);
+      } else if (!t) {
+        flush();
+      } else if (t.includes('|') && i + 1 < lines.length && lines[i + 1].includes('|') && TABLE_SEP.test(lines[i + 1])) {
+        flush();
+        const head = cells(line);
+        const rows = [];
+        for (i += 2; i < lines.length && lines[i].trim() && lines[i].includes('|'); i++) rows.push(cells(lines[i]));
+        i--;
+        const row = (r, tag) => `<tr>${head.map((_, c) => `<${tag}>${inline(r[c] || '')}</${tag}>`).join('')}</tr>`;
+        out.push(`<div class="md-table"><table><thead>${row(head, 'th')}</thead><tbody>${rows.map((r) => row(r, 'td')).join('')}</tbody></table></div>`);
+      } else if (RULE.test(line)) {
+        flush();
+        out.push('<hr class="md-hr">');
+      } else if ((m = HEADING.exec(t))) {
+        flush();
+        out.push(`<div class="md-h md-h${m[1].length}" role="heading" aria-level="${m[1].length}">${inline(m[2])}</div>`);
+      } else if ((m = BULLET.exec(line))) {
+        item('ul', m[1].length, m[2]);
+      } else if ((m = NUMBERED.exec(line))) {
+        item('ol', m[1].length, m[3], Number(m[2]));
+      } else if (t.startsWith('>')) {
+        if (para.length || list) flush();
+        quote.push(t.replace(/^>\s?/, ''));
+      } else if (list && /^\s/.test(line)) {
+        list.items[list.items.length - 1].text += '\n' + t;   // wrapped continuation of a list item
+      } else {
+        if (list || quote.length) flush();
+        para.push(line);
+      }
+    }
+    flush();
+    return out.join('');
+  }
 
   const cmdBlock = (cmd) => `<div class="relay-cmd"><code>${esc(cmd)}</code>
     <button class="btn btn--ghost btn--sm" data-act="copy">Copy</button></div>`;

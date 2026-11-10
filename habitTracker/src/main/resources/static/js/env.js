@@ -121,6 +121,8 @@ window.ENV = {
     TRELLO_POWERUP_ADMIN: 'https://trello.com/power-ups/admin',
   },
   TIMING: {
+    RELAY_STREAM_CATCHUP_MS: 1200,     // relay chat: new agent text is revealed word by word over ~this long (≈ one busy poll)
+    RELAY_STREAM_MIN_CPS: 60,          // ...but never slower than this many chars/s
     RELAY_INSTALL_POLL_MS: 3000,       // #/install waiting panel: GET /relay/api/devices cadence
     RELAY_INSTALL_WAIT_MS: 900000,     // ...gives up after 15 min
     RELAY_RAIL_POLL_MS: 10000, // relay shell: waiting/busy sessions poll for the rail lamps + Needs-you strip
